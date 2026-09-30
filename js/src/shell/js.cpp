@@ -60,6 +60,7 @@
 
 #include "builtin/TestingFunctions.h"
 #include "frontend/Parser.h"
+#include "jit/arm/Simulator-arm.h"
 #include "jit/Ion.h"
 #include "js/OldDebugAPI.h"
 #include "js/StructuredClone.h"
@@ -765,6 +766,87 @@ LoadScriptRelativeToScript(JSContext *cx, unsigned argc, jsval *vp)
     return LoadScript(cx, argc, vp, true);
 }
 
+// Populate |options| with the options given by |opts|'s properties. If we
+// need to convert a filename to a C string, let fileNameBytes own the
+// bytes.
+static bool
+ParseCompileOptions(JSContext *cx, CompileOptions &options, HandleObject opts,
+                    JSAutoByteString &fileNameBytes)
+{
+    RootedValue v(cx);
+    RootedString s(cx);
+
+    if (!JS_GetProperty(cx, opts, "compileAndGo", &v))
+        return false;
+    if (!v.isUndefined())
+        options.setCompileAndGo(ToBoolean(v));
+
+    if (!JS_GetProperty(cx, opts, "noScriptRval", &v))
+        return false;
+    if (!v.isUndefined())
+        options.setNoScriptRval(ToBoolean(v));
+
+    if (!JS_GetProperty(cx, opts, "fileName", &v))
+        return false;
+    if (v.isNull()) {
+        options.setFile(nullptr);
+    } else if (!v.isUndefined()) {
+        s = ToString(cx, v);
+        if (!s)
+            return false;
+        char *fileName = fileNameBytes.encodeLatin1(cx, s);
+        if (!fileName)
+            return false;
+        options.setFile(fileName);
+    }
+
+    if (!JS_GetProperty(cx, opts, "element", &v))
+        return false;
+    if (v.isObject())
+        options.setElement(&v.toObject());
+
+    if (!JS_GetProperty(cx, opts, "elementAttributeName", &v))
+        return false;
+    if (!v.isUndefined()) {
+        s = ToString(cx, v);
+        if (!s)
+            return false;
+        options.setElementAttributeName(s);
+    }
+
+    if (!JS_GetProperty(cx, opts, "lineNumber", &v))
+        return false;
+    if (!v.isUndefined()) {
+        uint32_t u;
+        if (!ToUint32(cx, v, &u))
+            return false;
+        options.setLine(u);
+    }
+
+    if (!JS_GetProperty(cx, opts, "sourcePolicy", &v))
+        return false;
+    if (!v.isUndefined()) {
+        JSString *s = ToString(cx, v);
+        if (!s)
+            return false;
+        char *policy = JS_EncodeStringToUTF8(cx, s);
+        if (!policy)
+            return false;
+        if (strcmp(policy, "NO_SOURCE") == 0) {
+            options.setSourcePolicy(CompileOptions::NO_SOURCE);
+        } else if (strcmp(policy, "LAZY_SOURCE") == 0) {
+            options.setSourcePolicy(CompileOptions::LAZY_SOURCE);
+        } else if (strcmp(policy, "SAVE_SOURCE") == 0) {
+            options.setSourcePolicy(CompileOptions::SAVE_SOURCE);
+        } else {
+            JS_ReportError(cx, "bad 'sourcePolicy' option: '%s'", policy);
+            return false;
+        }
+    }
+
+    return true;
+}
+
 class AutoNewContext
 {
   private:
@@ -849,21 +931,17 @@ Evaluate(JSContext *cx, unsigned argc, jsval *vp)
         return false;
     }
 
-    bool newContext = false;
-    bool compileAndGo = true;
-    bool noScriptRval = false;
-    const char *fileName = "@evaluate";
-    RootedObject element(cx);
-    RootedString elementProperty(cx);
+    CompileOptions options(cx);
     JSAutoByteString fileNameBytes;
+    bool newContext = false;
     RootedString displayURL(cx);
     RootedString sourceMapURL(cx);
-    unsigned lineNumber = 1;
     RootedObject global(cx, nullptr);
     bool catchTermination = false;
     bool saveFrameChain = false;
     RootedObject callerGlobal(cx, cx->global());
-    CompileOptions::SourcePolicy sourcePolicy = CompileOptions::SAVE_SOURCE;
+
+    options.setFileAndLine("@evaluate", 1);
 
     global = JS_GetGlobalForObject(cx, &args.callee());
     if (!global)
@@ -873,46 +951,13 @@ Evaluate(JSContext *cx, unsigned argc, jsval *vp)
         RootedObject opts(cx, &args[1].toObject());
         RootedValue v(cx);
 
+        if (!ParseCompileOptions(cx, options, opts, fileNameBytes))
+            return false;
+
         if (!JS_GetProperty(cx, opts, "newContext", &v))
             return false;
         if (!v.isUndefined())
             newContext = ToBoolean(v);
-
-        if (!JS_GetProperty(cx, opts, "compileAndGo", &v))
-            return false;
-        if (!v.isUndefined())
-            compileAndGo = ToBoolean(v);
-
-        if (!JS_GetProperty(cx, opts, "noScriptRval", &v))
-            return false;
-        if (!v.isUndefined())
-            noScriptRval = ToBoolean(v);
-
-        if (!JS_GetProperty(cx, opts, "fileName", &v))
-            return false;
-        if (v.isNull()) {
-            fileName = nullptr;
-        } else if (!v.isUndefined()) {
-            JSString *s = ToString(cx, v);
-            if (!s)
-                return false;
-            fileName = fileNameBytes.encodeLatin1(cx, s);
-            if (!fileName)
-                return false;
-        }
-
-        if (!JS_GetProperty(cx, opts, "element", &v))
-            return false;
-        if (v.isObject())
-            element = &v.toObject();
-
-        if (!JS_GetProperty(cx, opts, "elementProperty", &v))
-            return false;
-        if (!v.isUndefined()) {
-            elementProperty = ToString(cx, v);
-            if (!elementProperty)
-                return false;
-        }
 
         if (!JS_GetProperty(cx, opts, "displayURL", &v))
             return false;
@@ -928,15 +973,6 @@ Evaluate(JSContext *cx, unsigned argc, jsval *vp)
             sourceMapURL = ToString(cx, v);
             if (!sourceMapURL)
                 return false;
-        }
-
-        if (!JS_GetProperty(cx, opts, "lineNumber", &v))
-            return false;
-        if (!v.isUndefined()) {
-            uint32_t u;
-            if (!ToUint32(cx, v, &u))
-                return false;
-            lineNumber = u;
         }
 
         if (!JS_GetProperty(cx, opts, "global", &v))
@@ -963,28 +999,6 @@ Evaluate(JSContext *cx, unsigned argc, jsval *vp)
             return false;
         if (!v.isUndefined())
             saveFrameChain = ToBoolean(v);
-
-        if (!JS_GetProperty(cx, opts, "sourcePolicy", &v))
-            return false;
-        if (!v.isUndefined()) {
-            JSString *s = ToString(cx, v);
-            if (!s)
-                return false;
-            char *policy = JS_EncodeStringToUTF8(cx, s);
-            if (!policy)
-                return false;
-            if (strcmp(policy, "NO_SOURCE") == 0) {
-                sourcePolicy = CompileOptions::NO_SOURCE;
-            } else if (strcmp(policy, "LAZY_SOURCE") == 0) {
-                sourcePolicy = CompileOptions::LAZY_SOURCE;
-            } else if (strcmp(policy, "SAVE_SOURCE") == 0) {
-                sourcePolicy = CompileOptions::SAVE_SOURCE;
-            } else {
-                JS_ReportError(cx, "bad 'sourcePolicy' option passed to 'evaluate': '%s'",
-                               policy);
-                return false;
-            }
-        }
     }
 
     RootedString code(cx, args[0].toString());
@@ -1009,16 +1023,12 @@ Evaluate(JSContext *cx, unsigned argc, jsval *vp)
         JSAutoCompartment ac(cx, global);
         RootedScript script(cx);
 
+        if (!options.wrap(cx, cx->compartment()))
+            return false;
+
         {
             JS::AutoSaveContextOptions asco(cx);
-            JS::ContextOptionsRef(cx).setNoScriptRval(noScriptRval);
-
-            CompileOptions options(cx);
-            options.setFileAndLine(fileName, lineNumber)
-                   .setElement(element)
-                   .setElementProperty(elementProperty)
-                   .setSourcePolicy(sourcePolicy)
-                   .setCompileAndGo(compileAndGo);
+            JS::ContextOptionsRef(cx).setNoScriptRval(options.noScriptRval);
 
             script = JS::Compile(cx, global, options, codeChars, codeLength);
             if (!script)
@@ -2349,9 +2359,7 @@ GetPDA(JSContext *cx, unsigned argc, jsval *vp)
         }
 
         /* Protect pdobj from GC by setting it as an element of aobj now */
-        RootedValue v(cx);
-        v.setObject(*pdobj);
-        ok = !!JS_SetElement(cx, aobj, i, &v);
+        ok = !!JS_SetElement(cx, aobj, i, pdobj);
         if (!ok)
             break;
 
@@ -2526,7 +2534,7 @@ EvalInContext(JSContext *cx, unsigned argc, jsval *vp)
         if (!JS_EvaluateUCScript(cx, sobj, src, srclen,
                                  script->filename(),
                                  lineno,
-                                 rval.address())) {
+                                 &rval)) {
             return false;
         }
     }
@@ -3298,16 +3306,30 @@ OffThreadCompileScript(JSContext *cx, unsigned argc, jsval *vp)
         return false;
     }
 
-    JSString *scriptContents = args[0].toString();
+    JSAutoByteString fileNameBytes;
     CompileOptions options(cx);
-    options.setFileAndLine("<string>", 1)
-           .setCompileAndGo(true)
+    options.setFileAndLine("<string>", 1);
+
+    if (args.length() >= 2) {
+        if (args[1].isPrimitive()) {
+            JS_ReportErrorNumber(cx, my_GetErrorMessage, nullptr, JSSMSG_INVALID_ARGS, "evaluate");
+            return false;
+        }
+
+        RootedObject opts(cx, &args[1].toObject());
+        if (!ParseCompileOptions(cx, options, opts, fileNameBytes))
+            return false;
+    }
+
+    // These option settings must override whatever the caller requested.
+    options.setCompileAndGo(true)
            .setSourcePolicy(CompileOptions::SAVE_SOURCE);
 
     // We assume the caller wants caching if at all possible, ignoring
     // heuristics that make sense for a real browser.
     options.forceAsync = true;
 
+    JSString *scriptContents = args[0].toString();
     const jschar *chars = JS_GetStringCharsZ(cx, scriptContents);
     if (!chars)
         return false;
@@ -3743,34 +3765,6 @@ ThisFilename(JSContext *cx, unsigned argc, Value *vp)
     return true;
 }
 
-/*
- * Internal class for testing hasPrototype easily.
- * Uses passed in prototype instead of target's.
- */
-class WrapperWithProto : public Wrapper
-{
-  public:
-    explicit WrapperWithProto(unsigned flags)
-      : Wrapper(flags, true)
-    { }
-
-    static JSObject *New(JSContext *cx, JSObject *obj, JSObject *proto, JSObject *parent,
-                         Wrapper *handler);
-};
-
-/* static */ JSObject *
-WrapperWithProto::New(JSContext *cx, JSObject *obj, JSObject *proto, JSObject *parent,
-                      Wrapper *handler)
-{
-    JS_ASSERT(parent);
-    AutoMarkInDeadZone amd(cx->zone());
-
-    RootedValue priv(cx, ObjectValue(*obj));
-    ProxyOptions options;
-    options.setCallable(obj->isCallable());
-    return NewProxyObject(cx, handler, priv, proto, parent, options);
-}
-
 static bool
 Wrap(JSContext *cx, unsigned argc, jsval *vp)
 {
@@ -3804,9 +3798,11 @@ WrapWithProto(JSContext *cx, unsigned argc, jsval *vp)
         return false;
     }
 
-    JSObject *wrapped = WrapperWithProto::New(cx, &obj.toObject(), proto.toObjectOrNull(),
-                                              &obj.toObject().global(),
-                                              &Wrapper::singletonWithPrototype);
+    WrapperOptions options(cx);
+    options.setProto(proto.toObjectOrNull());
+    options.selectDefaultClass(obj.toObject().isCallable());
+    JSObject *wrapped = Wrapper::New(cx, &obj.toObject(), &obj.toObject().global(),
+                                     &Wrapper::singletonWithPrototype, &options);
     if (!wrapped)
         return false;
 
@@ -4041,13 +4037,13 @@ static const JSFunctionSpecWithHelp shell_functions[] = {
 "      catchTermination: if true, catch termination (failure without\n"
 "         an exception value, as for slow scripts or out-of-memory)\n"
 "         and return 'terminated'\n"
-"      element: if present with value |v|, convert |v| to an object |o| mark\n"
-"         the source as being attached to the DOM element |o|. If the\n"
+"      element: if present with value |v|, convert |v| to an object |o| and\n"
+"         mark the source as being attached to the DOM element |o|. If the\n"
 "         property is omitted or |v| is null, don't attribute the source to\n"
 "         any DOM element.\n"
-"      elementProperty: if present and not undefined, the name of property\n"
-"         of 'element' that holds this code. This is what Debugger.Source\n"
-"         .prototype.elementProperty returns.\n"
+"      elementAttributeName: if present and not undefined, the name of\n"
+"         property of 'element' that holds this code. This is what\n"
+"         Debugger.Source.prototype.elementAttributeName returns.\n"
 "      sourceMapURL: if present with value |v|, convert |v| to a string, and\n"
 "         provide that as the code's source map URL. If omitted, attach no\n"
 "         source map URL to the code (although the code may provide one itself,\n"
@@ -4236,14 +4232,26 @@ static const JSFunctionSpecWithHelp shell_functions[] = {
 
 #ifdef JS_THREADSAFE
     JS_FN_HELP("offThreadCompileScript", OffThreadCompileScript, 1, 0,
-"offThreadCompileScript(code)",
-"  Trigger an off thread parse/emit for the input string"),
+"offThreadCompileScript(code[, options])",
+"  Compile |code| on a helper thread. To wait for the compilation to finish\n"
+"  and run the code, call |runOffThreadScript|. If present, |options| may\n"
+"  have properties saying how the code should be compiled:\n"
+"      noScriptRval: use the no-script-rval compiler option (default: false)\n"
+"      fileName: filename for error messages and debug info\n"
+"      lineNumber: starting line number for error messages and debug info\n"
+"      element: if present with value |v|, convert |v| to an object |o| and\n"
+"         mark the source as being attached to the DOM element |o|. If the\n"
+"         property is omitted or |v| is null, don't attribute the source to\n"
+"         any DOM element.\n"
+"      elementAttributeName: if present and not undefined, the name of\n"
+"         property of 'element' that holds this code. This is what\n"
+"         Debugger.Source.prototype.elementAttributeName returns.\n"),
 
     JS_FN_HELP("runOffThreadScript", runOffThreadScript, 0, 0,
 "runOffThreadScript()",
 "  Wait for off-thread compilation to complete. If an error occurred,\n"
 "  throw the appropriate exception; otherwise, run the script and return\n"
-               "  its value."),
+"  its value."),
 
 #endif
 
@@ -4465,7 +4473,8 @@ Help(JSContext *cx, unsigned argc, jsval *vp)
 
         for (size_t i = 0; i < ida.length(); i++) {
             RootedValue v(cx);
-            if (!JS_LookupPropertyById(cx, global, ida[i], &v))
+            RootedId id(cx, ida[i]);
+            if (!JS_LookupPropertyById(cx, global, id, &v))
                 return false;
             if (JSVAL_IS_PRIMITIVE(v)) {
                 JS_ReportError(cx, "primitive arg");
@@ -4879,10 +4888,10 @@ static const JSJitInfo doFoo_methodinfo = {
 static const JSPropertySpec dom_props[] = {
     {"x", 0,
      JSPROP_SHARED | JSPROP_ENUMERATE | JSPROP_NATIVE_ACCESSORS,
-     { (JSPropertyOp)dom_genericGetter, &dom_x_getterinfo },
-     { (JSStrictPropertyOp)dom_genericSetter, &dom_x_setterinfo }
+     { { (JSPropertyOp)dom_genericGetter, &dom_x_getterinfo } },
+     { { (JSStrictPropertyOp)dom_genericSetter, &dom_x_setterinfo } }
     },
-    {nullptr,0,0,JSOP_NULLWRAPPER, JSOP_NULLWRAPPER}
+    JS_PS_END
 };
 
 static const JSFunctionSpec dom_methods[] = {
@@ -4900,7 +4909,6 @@ static const JSClass dom_class = {
     JS_ResolveStub,
     JS_ConvertStub,
     nullptr,               /* finalize */
-    nullptr,               /* checkAccess */
     nullptr,               /* call */
     nullptr,               /* hasInstance */
     nullptr,               /* construct */
@@ -5355,8 +5363,8 @@ NewGlobalObject(JSContext *cx, JS::CompartmentOptions &options)
         };
         SetDOMCallbacks(cx->runtime(), &DOMcallbacks);
 
-        RootedObject domProto(cx, JS_InitClass(cx, glob, nullptr, &dom_class, dom_constructor, 0,
-                                               dom_props, dom_methods, nullptr, nullptr));
+        RootedObject domProto(cx, JS_InitClass(cx, glob, js::NullPtr(), &dom_class, dom_constructor,
+                                               0, dom_props, dom_methods, nullptr, nullptr));
         if (!domProto)
             return nullptr;
 
@@ -5693,18 +5701,6 @@ MaybeOverrideOutFileFromEnv(const char* const envVar,
     }
 }
 
-static bool
-CheckObjectAccess(JSContext *cx, HandleObject obj, HandleId id, JSAccessMode mode,
-                  MutableHandleValue vp)
-{
-    return true;
-}
-
-static const JSSecurityCallbacks securityCallbacks = {
-    CheckObjectAccess,
-    nullptr
-};
-
 /* Pretend we can always preserve wrappers for dummy DOM objects. */
 static bool
 DummyPreserveWrapperCallback(JSContext *cx, JSObject *obj)
@@ -5849,6 +5845,12 @@ main(int argc, char **argv, char **envp)
 #endif
         || !op.addIntOption('\0', "available-memory", "SIZE",
                             "Select GC settings based on available memory (MB)", 0)
+#ifdef JS_ARM_SIMULATOR
+        || !op.addBoolOption('\0', "arm-sim-icache-checks", "Enable icache flush checks in the ARM "
+                             "simulator.")
+        || !op.addIntOption('\0', "arm-sim-stop-at", "NUMBER", "Stop the ARM simulator after the given "
+                            "NUMBER of instructions.", -1)
+#endif
     )
     {
         return EXIT_FAILURE;
@@ -5880,12 +5882,12 @@ main(int argc, char **argv, char **envp)
     if (op.getBoolOption('O'))
         OOM_printAllocationCount = true;
 
-#if defined(JS_CPU_X86) && defined(JS_ION)
+#if defined(JS_CODEGEN_X86) && defined(JS_ION)
     if (op.getBoolOption("no-fpu"))
         JSC::MacroAssembler::SetFloatingPointDisabled();
 #endif
 
-#if (defined(JS_CPU_X86) || defined(JS_CPU_X64)) && defined(JS_ION)
+#if (defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_X64)) && defined(JS_ION)
     if (op.getBoolOption("no-sse3")) {
         JSC::MacroAssembler::SetSSE3Disabled();
         PropagateFlagToNestedShells("--no-sse3");
@@ -5895,6 +5897,15 @@ main(int argc, char **argv, char **envp)
         PropagateFlagToNestedShells("--no-sse4");
     }
 #endif
+#endif
+
+#ifdef JS_ARM_SIMULATOR
+    if (op.getBoolOption("arm-sim-icache-checks"))
+        jit::Simulator::ICacheCheckingEnabled = true;
+
+    int32_t stopAt = op.getIntOption("arm-sim-stop-at");
+    if (stopAt >= 0)
+        jit::Simulator::StopSimAt = stopAt;
 #endif
 
     // Start the engine.
@@ -5931,7 +5942,6 @@ main(int argc, char **argv, char **envp)
     shellTrustedPrincipals.refcount = 1;
 
     JS_SetTrustedPrincipals(rt, &shellTrustedPrincipals);
-    JS_SetSecurityCallbacks(rt, &securityCallbacks);
     JS_SetOperationCallback(rt, ShellOperationCallback);
     JS::SetAsmJSCacheOps(rt, &asmJSCacheOps);
 

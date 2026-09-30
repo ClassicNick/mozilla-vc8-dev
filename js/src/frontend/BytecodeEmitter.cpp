@@ -18,7 +18,6 @@
 
 #include "jsapi.h"
 #include "jsatom.h"
-#include "jsautooplen.h"
 #include "jscntxt.h"
 #include "jsfun.h"
 #include "jsnum.h"
@@ -314,6 +313,12 @@ EmitBackPatchOp(ExclusiveContext *cx, BytecodeEmitter *bce, ptrdiff_t *lastp)
     return EmitJump(cx, bce, JSOP_BACKPATCH, delta);
 }
 
+static inline unsigned
+LengthOfSetLine(unsigned line)
+{
+    return 1 /* SN_SETLINE */ + (line > SN_4BYTE_OFFSET_MASK ? 4 : 1);
+}
+
 /* Updates line number notes, not column notes. */
 static inline bool
 UpdateLineNumberNotes(ExclusiveContext *cx, BytecodeEmitter *bce, uint32_t offset)
@@ -336,7 +341,7 @@ UpdateLineNumberNotes(ExclusiveContext *cx, BytecodeEmitter *bce, uint32_t offse
          */
         bce->current->currentLine = line;
         bce->current->lastColumn  = 0;
-        if (delta >= (unsigned)(2 + ((line > SN_3BYTE_OFFSET_MASK)<<1))) {
+        if (delta >= LengthOfSetLine(line)) {
             if (NewSrcNote2(cx, bce, SRC_SETLINE, (ptrdiff_t)line) < 0)
                 return false;
         } else {
@@ -2903,29 +2908,28 @@ EmitDestructuringDecl(ExclusiveContext *cx, BytecodeEmitter *bce, JSOp prologOp,
 }
 
 static bool
-EmitDestructuringDecls(ExclusiveContext *cx, BytecodeEmitter *bce, JSOp prologOp, ParseNode *pn)
+EmitDestructuringDecls(ExclusiveContext *cx, BytecodeEmitter *bce, JSOp prologOp,
+                       ParseNode *pattern)
 {
-    ParseNode *pn2, *pn3;
-    DestructuringDeclEmitter emitter;
-
-    if (pn->isKind(PNK_ARRAY)) {
-        for (pn2 = pn->pn_head; pn2; pn2 = pn2->pn_next) {
-            if (pn2->isKind(PNK_ELISION))
+    if (pattern->isKind(PNK_ARRAY)) {
+        for (ParseNode *element = pattern->pn_head; element; element = element->pn_next) {
+            if (element->isKind(PNK_ELISION))
                 continue;
-            emitter = (pn2->isKind(PNK_NAME))
-                      ? EmitDestructuringDecl
-                      : EmitDestructuringDecls;
-            if (!emitter(cx, bce, prologOp, pn2))
+            DestructuringDeclEmitter emitter =
+                element->isKind(PNK_NAME) ? EmitDestructuringDecl : EmitDestructuringDecls;
+            if (!emitter(cx, bce, prologOp, element))
                 return false;
         }
-    } else {
-        JS_ASSERT(pn->isKind(PNK_OBJECT));
-        for (pn2 = pn->pn_head; pn2; pn2 = pn2->pn_next) {
-            pn3 = pn2->pn_right;
-            emitter = pn3->isKind(PNK_NAME) ? EmitDestructuringDecl : EmitDestructuringDecls;
-            if (!emitter(cx, bce, prologOp, pn3))
-                return false;
-        }
+        return true;
+    }
+
+    MOZ_ASSERT(pattern->isKind(PNK_OBJECT));
+    for (ParseNode *member = pattern->pn_head; member; member = member->pn_next) {
+        ParseNode *target = member->pn_right;
+        DestructuringDeclEmitter emitter =
+            target->isKind(PNK_NAME) ? EmitDestructuringDecl : EmitDestructuringDecls;
+        if (!emitter(cx, bce, prologOp, target))
+            return false;
     }
     return true;
 }
@@ -3122,25 +3126,29 @@ EmitDestructuringOpsHelper(ExclusiveContext *cx, BytecodeEmitter *bce, ParseNode
         } else {
             JS_ASSERT(pn->isKind(PNK_OBJECT));
             JS_ASSERT(pn2->isKind(PNK_COLON));
-            pn3 = pn2->pn_left;
-            if (pn3->isKind(PNK_NUMBER)) {
-                if (!EmitNumberOp(cx, pn3->pn_dval, bce))
+
+            ParseNode *key = pn2->pn_left;
+            if (key->isKind(PNK_NUMBER)) {
+                if (!EmitNumberOp(cx, key->pn_dval, bce))
                     return false;
             } else {
+                MOZ_ASSERT(key->isKind(PNK_STRING) || key->isKind(PNK_NAME));
+                PropertyName *name = key->pn_atom->asPropertyName();
+
                 // The parser already checked for atoms representing indexes and
                 // used PNK_NUMBER instead, but also watch for ids which TI treats
-                // as indexes for simpliciation of downstream analysis.
-                JS_ASSERT(pn3->isKind(PNK_STRING) || pn3->isKind(PNK_NAME));
-                jsid id = NameToId(pn3->pn_atom->asPropertyName());
+                // as indexes for simplification of downstream analysis.
+                jsid id = NameToId(name);
                 if (id != types::IdToTypeId(id)) {
-                    if (!EmitTree(cx, bce, pn3))
+                    if (!EmitTree(cx, bce, key))
                         return false;
                 } else {
-                    if (!EmitAtomOp(cx, pn3, JSOP_GETPROP, bce))
+                    if (!EmitAtomOp(cx, name, JSOP_GETPROP, bce))
                         return false;
                     doElemOp = false;
                 }
             }
+
             pn3 = pn2->pn_right;
         }
 
@@ -4818,7 +4826,7 @@ EmitFor(ExclusiveContext *cx, BytecodeEmitter *bce, ParseNode *pn, ptrdiff_t top
     return EmitNormalFor(cx, bce, pn, top);
 }
 
-static JS_NEVER_INLINE bool
+static MOZ_NEVER_INLINE bool
 EmitFunc(ExclusiveContext *cx, BytecodeEmitter *bce, ParseNode *pn)
 {
     FunctionBox *funbox = pn->pn_funbox;
@@ -5158,7 +5166,7 @@ EmitReturn(ExclusiveContext *cx, BytecodeEmitter *bce, ParseNode *pn)
     if (!nle.prepareForNonLocalJump(nullptr))
         return false;
 
-    if (top + JSOP_RETURN_LENGTH != bce->offset()) {
+    if (top + static_cast<ptrdiff_t>(JSOP_RETURN_LENGTH) != bce->offset()) {
         bce->code()[top] = JSOP_SETRVAL;
         if (Emit1(cx, bce, JSOP_RETRVAL) < 0)
             return false;
@@ -5889,11 +5897,8 @@ EmitObject(ExclusiveContext *cx, BytecodeEmitter *bce, ParseNode *pn)
 
     /*
      * Emit code for {p:a, '%q':b, 2:c} that is equivalent to constructing
-     * a new object and in source order evaluating each property value and
-     * adding the property to the object, without invoking latent setters.
-     * We use the JSOP_NEWINIT and JSOP_INITELEM/JSOP_INITPROP bytecodes to
-     * ignore setters and to avoid dup'ing and popping the object as each
-     * property is added, as JSOP_SETELEM/JSOP_SETPROP would do.
+     * a new object and defining (in source order) each property on the object
+     * (or mutating the object's [[Prototype]], in the case of __proto__).
      */
     ptrdiff_t offset = bce->offset();
     if (!EmitNewInit(cx, bce, JSProto_Object))
@@ -5956,16 +5961,22 @@ EmitObject(ExclusiveContext *cx, BytecodeEmitter *bce, ParseNode *pn)
                 return false;
         } else {
             JS_ASSERT(pn3->isKind(PNK_NAME) || pn3->isKind(PNK_STRING));
+
+            // If we have { __proto__: expr }, implement prototype mutation.
+            if (op == JSOP_INITPROP && pn3->pn_atom == cx->names().proto) {
+                obj = nullptr;
+                if (Emit1(cx, bce, JSOP_MUTATEPROTO) < 0)
+                    return false;
+                continue;
+            }
+
             jsatomid index;
             if (!bce->makeAtomIndex(pn3->pn_atom, &index))
                 return false;
 
-            /*
-             * Disable NEWOBJECT on initializers that set __proto__, which has
-             * a non-standard setter on objects.
-             */
-            if (pn3->pn_atom == cx->names().proto)
-                obj = nullptr;
+            MOZ_ASSERT(op == JSOP_INITPROP ||
+                       op == JSOP_INITPROP_GETTER ||
+                       op == JSOP_INITPROP_SETTER);
 
             if (obj) {
                 JS_ASSERT(!obj->inDictionaryMode());
@@ -6712,8 +6723,8 @@ SetSrcNoteOffset(ExclusiveContext *cx, BytecodeEmitter *bce, unsigned index, uns
     JS_ASSERT(SN_TYPE(sn) != SRC_XDELTA);
     JS_ASSERT((int) which < js_SrcNoteSpec[SN_TYPE(sn)].arity);
     for (sn++; which; sn++, which--) {
-        if (*sn & SN_3BYTE_OFFSET_FLAG)
-            sn += 2;
+        if (*sn & SN_4BYTE_OFFSET_FLAG)
+            sn += 3;
     }
 
     /*
@@ -6721,55 +6732,58 @@ SetSrcNoteOffset(ExclusiveContext *cx, BytecodeEmitter *bce, unsigned index, uns
      * the offset has already been inflated (in which case, we need to stay big
      * to not break the srcnote encoding if this isn't the last srcnote).
      */
-    if (offset > (ptrdiff_t)SN_3BYTE_OFFSET_MASK || (*sn & SN_3BYTE_OFFSET_FLAG)) {
+    if (offset > (ptrdiff_t)SN_4BYTE_OFFSET_MASK || (*sn & SN_4BYTE_OFFSET_FLAG)) {
         /* Maybe this offset was already set to a three-byte value. */
-        if (!(*sn & SN_3BYTE_OFFSET_FLAG)) {
+        if (!(*sn & SN_4BYTE_OFFSET_FLAG)) {
             /* Insert two dummy bytes that will be overwritten shortly. */
             jssrcnote dummy = 0;
             if (!(sn = notes.insert(sn, dummy)) ||
+                !(sn = notes.insert(sn, dummy)) ||
                 !(sn = notes.insert(sn, dummy)))
             {
                 js_ReportOutOfMemory(cx);
                 return false;
             }
         }
-        *sn++ = (jssrcnote)(SN_3BYTE_OFFSET_FLAG | (offset >> 16));
+        *sn++ = (jssrcnote)(SN_4BYTE_OFFSET_FLAG | (offset >> 24));
+        *sn++ = (jssrcnote)(offset >> 16);
         *sn++ = (jssrcnote)(offset >> 8);
     }
     *sn = (jssrcnote)offset;
     return true;
 }
 
-#ifdef DEBUG_notme
-#define DEBUG_srcnotesize
-#endif
-
-#ifdef DEBUG_srcnotesize
-#define NBINS 10
-static uint32_t hist[NBINS];
-
-static void
-DumpSrcNoteSizeHist()
+/*
+ * Finish taking source notes in cx's notePool, copying final notes to the new
+ * stable store allocated by the caller and passed in via notes. Return false
+ * on malloc failure, which means this function reported an error.
+ *
+ * Use this to compute the number of jssrcnotes to allocate and pass in via
+ * notes. This method knows a lot about details of FinishTakingSrcNotes, so
+ * DON'T CHANGE js::frontend::FinishTakingSrcNotes WITHOUT CHECKING WHETHER
+ * THIS METHOD NEEDS CORRESPONDING CHANGES!
+ */
+ptrdiff_t
+BytecodeEmitter::countFinalSourceNotes()
 {
-    static FILE *fp;
-    int i, n;
-
-    if (!fp) {
-        fp = fopen("/tmp/srcnotes.hist", "w");
-        if (!fp)
-            return;
-        setvbuf(fp, nullptr, _IONBF, 0);
+    ptrdiff_t diff = prologOffset() - prolog.lastNoteOffset;
+    ptrdiff_t cnt = prolog.notes.length() + main.notes.length() + 1;
+    if (prolog.notes.length() && prolog.currentLine != firstLine) {
+        if (diff > SN_DELTA_MASK)
+            cnt += JS_HOWMANY(diff - SN_DELTA_MASK, SN_XDELTA_MASK);
+        cnt += LengthOfSetLine(firstLine);
+    } else if (diff > 0) {
+        if (main.notes.length()) {
+            jssrcnote *sn = main.notes.begin();
+            diff -= SN_IS_XDELTA(sn)
+                    ? SN_XDELTA_MASK - (*sn & SN_XDELTA_MASK)
+                    : SN_DELTA_MASK - (*sn & SN_DELTA_MASK);
+        }
+        if (diff > 0)
+            cnt += JS_HOWMANY(diff, SN_XDELTA_MASK);
     }
-    fprintf(fp, "SrcNote size histogram:\n");
-    for (i = 0; i < NBINS; i++) {
-        fprintf(fp, "%4u %4u ", JS_BIT(i), hist[i]);
-        for (n = (int) JS_HOWMANY(hist[i], 10); n > 0; --n)
-            fputc('*', fp);
-        fputc('\n', fp);
-    }
-    fputc('\n', fp);
+    return cnt;
 }
-#endif
 
 /*
  * Fill in the storage at notes with prolog and main srcnotes; the space at
@@ -7032,8 +7046,8 @@ js_SrcNoteLength(jssrcnote *sn)
 
     arity = SrcNoteArity(sn);
     for (base = sn++; arity; sn++, arity--) {
-        if (*sn & SN_3BYTE_OFFSET_FLAG)
-            sn += 2;
+        if (*sn & SN_4BYTE_OFFSET_FLAG)
+            sn += 3;
     }
     return sn - base;
 }
@@ -7045,13 +7059,14 @@ js_GetSrcNoteOffset(jssrcnote *sn, unsigned which)
     JS_ASSERT(SN_TYPE(sn) != SRC_XDELTA);
     JS_ASSERT((int) which < SrcNoteArity(sn));
     for (sn++; which; sn++, which--) {
-        if (*sn & SN_3BYTE_OFFSET_FLAG)
-            sn += 2;
+        if (*sn & SN_4BYTE_OFFSET_FLAG)
+            sn += 3;
     }
-    if (*sn & SN_3BYTE_OFFSET_FLAG) {
-        return (ptrdiff_t)(((uint32_t)(sn[0] & SN_3BYTE_OFFSET_MASK) << 16)
-                           | (sn[1] << 8)
-                           | sn[2]);
+    if (*sn & SN_4BYTE_OFFSET_FLAG) {
+        return (ptrdiff_t)(((uint32_t)(sn[0] & SN_4BYTE_OFFSET_MASK) << 24)
+                           | (sn[1] << 16)
+                           | (sn[2] << 8)
+                           | sn[3]);
     }
     return (ptrdiff_t)*sn;
 }

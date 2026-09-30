@@ -1973,7 +1973,7 @@ Parser<ParseHandler>::functionDef(HandlePropertyName funName, const TokenStream:
         // already been created by js::StartOffThreadParseScript, so cx will not
         // be necessary.
         JSContext *cx = context->maybeJSContext();
-        proto = context->global()->getOrCreateStarGeneratorFunctionPrototype(cx);
+        proto = GlobalObject::getOrCreateStarGeneratorFunctionPrototype(cx, context->global());
         if (!proto)
             return null();
     }
@@ -3099,32 +3099,31 @@ Parser<FullParseHandler>::checkDestructuring(BindData<FullParseHandler> *data,
         }
     } else {
         JS_ASSERT(left->isKind(PNK_OBJECT));
-        for (ParseNode *pair = left->pn_head; pair; pair = pair->pn_next) {
-            JS_ASSERT(pair->isKind(PNK_COLON));
-            ParseNode *pn = pair->pn_right;
+        for (ParseNode *member = left->pn_head; member; member = member->pn_next) {
+            MOZ_ASSERT(member->isKind(PNK_COLON));
+            ParseNode *expr = member->pn_right;
 
-            if (pn->isKind(PNK_ARRAY) || pn->isKind(PNK_OBJECT)) {
-                ok = checkDestructuring(data, pn, false);
+            if (expr->isKind(PNK_ARRAY) || expr->isKind(PNK_OBJECT)) {
+                ok = checkDestructuring(data, expr, false);
             } else if (data) {
-                if (!pn->isKind(PNK_NAME)) {
-                    report(ParseError, false, pn, JSMSG_NO_VARIABLE_NAME);
+                if (!expr->isKind(PNK_NAME)) {
+                    report(ParseError, false, expr, JSMSG_NO_VARIABLE_NAME);
                     return false;
                 }
-                ok = bindDestructuringVar(data, pn);
+                ok = bindDestructuringVar(data, expr);
             } else {
                 /*
-                 * If right and left point to the same node, then this is
-                 * destructuring shorthand ({x} = ...). In that case,
-                 * identifierName was not used to parse 'x' so 'x' has not been
-                 * officially linked to its def or registered in lexdeps. Do
-                 * that now.
+                 * If this is a destructuring shorthand ({x} = ...), then
+                 * identifierName wasn't used to parse |x|.  As a result, |x|
+                 * hasn't been officially linked to its def or registered in
+                 * lexdeps.  Do that now.
                  */
-                if (pair->pn_right == pair->pn_left) {
-                    RootedPropertyName name(context, pn->pn_atom->asPropertyName());
-                    if (!noteNameUse(name, pn))
+                if (member->pn_right == member->pn_left) {
+                    RootedPropertyName name(context, expr->pn_atom->asPropertyName());
+                    if (!noteNameUse(name, expr))
                         return false;
                 }
-                ok = checkAndMarkAsAssignmentLhs(pn, KeyedDestructuringAssignment);
+                ok = checkAndMarkAsAssignmentLhs(expr, KeyedDestructuringAssignment);
             }
             if (!ok)
                 return false;
@@ -3659,8 +3658,9 @@ Parser<FullParseHandler>::letStatement()
         JS_ASSERT_IF(pn, pn->isKind(PNK_LET) || pn->isKind(PNK_SEMI));
         JS_ASSERT_IF(pn && pn->isKind(PNK_LET) && pn->pn_expr->getOp() != JSOP_POPNV,
                      pn->pn_expr->isOp(JSOP_POPN));
-    } else 
+    } else {
         pn = letDeclaration();
+    }
     return pn;
 }
 
@@ -5401,7 +5401,7 @@ Precedence(ParseNodeKind pnk) {
 }
 
 template <typename ParseHandler>
-JS_ALWAYS_INLINE typename ParseHandler::Node
+MOZ_ALWAYS_INLINE typename ParseHandler::Node
 Parser<ParseHandler>::orExpr1()
 {
     // Shift-reduce parser for the left-associative binary operator part of
@@ -5467,7 +5467,7 @@ Parser<ParseHandler>::orExpr1()
 }
 
 template <typename ParseHandler>
-JS_ALWAYS_INLINE typename ParseHandler::Node
+MOZ_ALWAYS_INLINE typename ParseHandler::Node
 Parser<ParseHandler>::condExpr1()
 {
     Node condition = orExpr1();

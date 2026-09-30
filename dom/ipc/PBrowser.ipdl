@@ -152,7 +152,6 @@ parent:
 
     /**
      * Notifies chrome to refresh its text cache 
-     * Only called when NotifyIMEFocus returns PR_TRUE for mWantHints
      *
      *  text         The entire content of the text field
      */
@@ -211,6 +210,13 @@ parent:
      * Nowadays this is mainly used for link locations on hover.
      */
     SetStatus(uint32_t type, nsString status);
+
+    /**
+     * Show/hide a tooltip when the mouse hovers over an element in the content
+     * document.
+     */
+    ShowTooltip(uint32_t x, uint32_t y, nsString tooltip);
+    HideTooltip();
 
     /**
      * Initiates an asynchronous request for permission for the

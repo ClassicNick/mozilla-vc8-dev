@@ -12,6 +12,7 @@
 #include "jsfriendapi.h"
 #include "jsmath.h"
 #include "json.h"
+#include "jsprototypes.h"
 #include "jsweakmap.h"
 
 #include "builtin/Eval.h"
@@ -31,6 +32,19 @@
 #include "vm/ObjectImpl-inl.h"
 
 using namespace js;
+
+#define DECLARE_PROTOTYPE_CLASS_INIT(name,code,init,clasp) \
+    extern JSObject *init(JSContext *cx, Handle<JSObject*> obj);
+JS_FOR_EACH_PROTOTYPE(DECLARE_PROTOTYPE_CLASS_INIT)
+#undef DECLARE_PROTOTYPE_CLASS_INIT
+
+static const ClassInitializerOp class_init_functions[JSProto_LIMIT] = {
+#define INIT_FUNC(name,code,init,clasp) init,
+#define INIT_FUNC_DUMMY(name,code,init,clasp) nullptr,
+    JS_FOR_PROTOTYPES(INIT_FUNC, INIT_FUNC_DUMMY)
+#undef INIT_FUNC_DUMMY
+#undef INIT_FUNC
+};
 
 // This method is not in the header file to avoid having to include
 // TypedObject.h from GlobalObject.h. It is not generally perf
@@ -82,14 +96,11 @@ ProtoGetterImpl(JSContext *cx, CallArgs args)
     if (thisv.isPrimitive() && !BoxNonStrictThis(cx, args))
         return false;
 
-    unsigned dummy;
     RootedObject obj(cx, &args.thisv().toObject());
-    RootedId nid(cx, NameToId(cx->names().proto));
-    RootedValue v(cx);
-    if (!CheckAccess(cx, obj, nid, JSACC_PROTO, &v, &dummy))
+    RootedObject proto(cx);
+    if (!JSObject::getProto(cx, obj, &proto))
         return false;
-
-    args.rval().set(v);
+    args.rval().setObjectOrNull(proto);
     return true;
 }
 
@@ -148,6 +159,14 @@ static bool
 ProtoSetter(JSContext *cx, unsigned argc, Value *vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
+
+    // Do this here, rather than in |ProtoSetterImpl|, so even likely-buggy
+    // use of the __proto__ setter on unacceptable values, where no subsequent
+    // use occurs on an acceptable value, will trigger a warning.
+    RootedObject callee(cx, &args.callee());
+    if (!GlobalObject::warnOnceAboutPrototypeMutation(cx, callee))
+        return false;
+
     return CallNonGenericMethod(cx, TestProtoThis, ProtoSetterImpl, args);
 }
 
@@ -402,6 +421,17 @@ GlobalObject::initFunctionAndObjectClasses(JSContext *cx)
     return functionProto;
 }
 
+bool
+GlobalObject::ensureConstructor(JSContext *cx, JSProtoKey key)
+{
+    if (getConstructor(key).isObject())
+        return true;
+    MOZ_ASSERT(getConstructor(key).isUndefined());
+    RootedObject self(cx, this);
+    ClassInitializerOp init = class_init_functions[key];
+    return !init || init(cx, self);
+}
+
 GlobalObject *
 GlobalObject::create(JSContext *cx, const Class *clasp)
 {
@@ -457,31 +487,11 @@ GlobalObject::initStandardClasses(JSContext *cx, Handle<GlobalObject*> global)
         return false;
     }
 
-    if (!global->initFunctionAndObjectClasses(cx))
-        return false;
-
-    /* Initialize the rest of the standard objects and functions. */
-    return js_InitArrayClass(cx, global) &&
-           js_InitBooleanClass(cx, global) &&
-           js_InitExceptionClasses(cx, global) &&
-           js_InitMathClass(cx, global) &&
-           js_InitNumberClass(cx, global) &&
-           js_InitJSONClass(cx, global) &&
-           js_InitRegExpClass(cx, global) &&
-           js_InitStringClass(cx, global) &&
-           js_InitTypedArrayClasses(cx, global) &&
-           js_InitIteratorClasses(cx, global) &&
-           js_InitDateClass(cx, global) &&
-           js_InitWeakMapClass(cx, global) &&
-           js_InitProxyClass(cx, global) &&
-           js_InitMapClass(cx, global) &&
-           GlobalObject::initMapIteratorProto(cx, global) &&
-           js_InitSetClass(cx, global) &&
-           GlobalObject::initSetIteratorProto(cx, global) &&
-#if EXPOSE_INTL_API
-           js_InitIntlClass(cx, global) &&
-#endif
-           true;
+    for (size_t k = 0; k < JSProto_LIMIT; ++k) {
+        if (!global->ensureConstructor(cx, static_cast<JSProtoKey>(k)))
+            return false;
+    }
+    return true;
 }
 
 /* static */ bool
@@ -501,18 +511,17 @@ GlobalObject::isRuntimeCodeGenEnabled(JSContext *cx, Handle<GlobalObject*> globa
 }
 
 /* static */ bool
-GlobalObject::warnOnceAboutWatch(JSContext *cx, HandleObject obj)
+GlobalObject::warnOnceAbout(JSContext *cx, HandleObject obj, uint32_t slot, unsigned errorNumber)
 {
     Rooted<GlobalObject*> global(cx, &obj->global());
-    HeapSlot &v = global->getSlotRef(WARNED_WATCH_DEPRECATED);
+    HeapSlot &v = global->getSlotRef(slot);
     if (v.isUndefined()) {
-        // Warn only once per global object.
         if (!JS_ReportErrorFlagsAndNumber(cx, JSREPORT_WARNING, js_GetErrorMessage, nullptr,
-                                          JSMSG_OBJECT_WATCH_DEPRECATED))
+                                          errorNumber))
         {
             return false;
         }
-        v.init(global, HeapSlot::Slot, WARNED_WATCH_DEPRECATED, BooleanValue(true));
+        v.init(global, HeapSlot::Slot, slot, BooleanValue(true));
     }
     return true;
 }

@@ -140,7 +140,7 @@ static bool gTouchActionPropertyEnabled = false;
  * accidentally processing taps as touch moves, and from very short/accidental
  * touches moving the screen.
  */
-static float gTouchStartTolerance = 1.0f/2.0f;
+static float gTouchStartTolerance = 1.0f/4.5f;
 
 /**
  * Default touch behavior (is used when not touch behavior is set).
@@ -495,7 +495,7 @@ AsyncPanZoomController::IsDestroyed()
 /* static */float
 AsyncPanZoomController::GetTouchStartTolerance()
 {
-  return gTouchStartTolerance;
+  return (gTouchStartTolerance * APZCTreeManager::GetDPI());
 }
 
 /* static */AsyncPanZoomController::AxisLockMode AsyncPanZoomController::GetAxisLockMode()
@@ -652,7 +652,7 @@ nsEventStatus AsyncPanZoomController::OnTouchMove(const MultiTouchInput& aEvent)
       return nsEventStatus_eIgnore;
 
     case TOUCHING: {
-      float panThreshold = gTouchStartTolerance * APZCTreeManager::GetDPI();
+      float panThreshold = GetTouchStartTolerance();
       UpdateWithTouchAtDevicePoint(aEvent);
 
       if (PanDistance() < panThreshold) {
@@ -853,17 +853,8 @@ nsEventStatus AsyncPanZoomController::OnScale(const PinchGestureInput& aEvent) {
 
 nsEventStatus AsyncPanZoomController::OnScaleEnd(const PinchGestureInput& aEvent) {
   APZC_LOG("%p got a scale-end in state %d\n", this, mState);
-  // When a pinch ends, it might either turn into a pan (if only one finger
-  // was lifted) or not (if both fingers were lifted). GestureEventListener
-  // sets mCurrentSpan to a negative value in the latter case, and sets
-  // mFocusPoint to the remaining touch point in the former case.
-  if (aEvent.mCurrentSpan >= 0) {
-    SetState(PANNING);
-    mX.StartTouch(aEvent.mFocusPoint.x);
-    mY.StartTouch(aEvent.mFocusPoint.y);
-  } else {
-    SetState(NOTHING);
-  }
+
+  SetState(NOTHING);
 
   {
     ReentrantMonitorAutoEnter lock(mMonitor);
@@ -1228,7 +1219,7 @@ bool FlingAnimation::Sample(FrameMetrics& aFrameMetrics,
     mX.AdjustDisplacement(cssOffset.x, overscroll.x,
                           aFrameMetrics.GetDisableScrollingX()),
     mY.AdjustDisplacement(cssOffset.y, overscroll.y,
-                          aFrameMetrics.GetDisableScrollingX())
+                          aFrameMetrics.GetDisableScrollingY())
   ));
 
   return true;
@@ -1309,6 +1300,15 @@ const CSSRect AsyncPanZoomController::CalculatePendingDisplayPort(
   CSSRect displayPort(scrollOffset, compositionBounds.Size());
   CSSPoint velocity = aVelocity / aFrameMetrics.mZoom;
 
+  // If scrolling is disabled here then our actual velocity is going
+  // to be zero, so treat the displayport accordingly.
+  if (aFrameMetrics.GetDisableScrollingX()) {
+    velocity.x = 0;
+  }
+  if (aFrameMetrics.GetDisableScrollingY()) {
+    velocity.y = 0;
+  }
+
   // Enlarge the displayport along both axes depending on how fast we're moving
   // on that axis and how long it takes to paint. Apply some heuristics to try
   // to minimize checkerboarding.
@@ -1323,8 +1323,8 @@ const CSSRect AsyncPanZoomController::CalculatePendingDisplayPort(
   displayPort = displayPort.ForceInside(scrollableRect) - scrollOffset;
 
   APZC_LOG_FM(aFrameMetrics,
-    "%p calculated displayport as (%f %f %f %f) from velocity (%f %f) acceleration (%f %f) paint time %f metrics",
-    this, displayPort.x, displayPort.y, displayPort.width, displayPort.height,
+    "Calculated displayport as (%f %f %f %f) from velocity (%f %f) acceleration (%f %f) paint time %f metrics",
+    displayPort.x, displayPort.y, displayPort.width, displayPort.height,
     aVelocity.x, aVelocity.y, aAcceleration.x, aAcceleration.y,
     (float)estimatedPaintDurationMillis);
 
@@ -1338,8 +1338,12 @@ void AsyncPanZoomController::ScheduleComposite() {
 }
 
 void AsyncPanZoomController::RequestContentRepaint() {
-  mFrameMetrics.mDisplayPort =
-    CalculatePendingDisplayPort(mFrameMetrics,
+  RequestContentRepaint(mFrameMetrics);
+}
+
+void AsyncPanZoomController::RequestContentRepaint(FrameMetrics& aFrameMetrics) {
+  aFrameMetrics.mDisplayPort =
+    CalculatePendingDisplayPort(aFrameMetrics,
                                 GetVelocityVector(),
                                 GetAccelerationVector(),
                                 mPaintThrottler.AverageDuration().ToSeconds());
@@ -1348,32 +1352,37 @@ void AsyncPanZoomController::RequestContentRepaint() {
   // request since it's a pointless paint.
   CSSRect oldDisplayPort = mLastPaintRequestMetrics.mDisplayPort
                          + mLastPaintRequestMetrics.mScrollOffset;
-  CSSRect newDisplayPort = mFrameMetrics.mDisplayPort
-                         + mFrameMetrics.mScrollOffset;
+  CSSRect newDisplayPort = aFrameMetrics.mDisplayPort
+                         + aFrameMetrics.mScrollOffset;
 
   if (fabsf(oldDisplayPort.x - newDisplayPort.x) < EPSILON &&
       fabsf(oldDisplayPort.y - newDisplayPort.y) < EPSILON &&
       fabsf(oldDisplayPort.width - newDisplayPort.width) < EPSILON &&
       fabsf(oldDisplayPort.height - newDisplayPort.height) < EPSILON &&
       fabsf(mLastPaintRequestMetrics.mScrollOffset.x -
-            mFrameMetrics.mScrollOffset.x) < EPSILON &&
+            aFrameMetrics.mScrollOffset.x) < EPSILON &&
       fabsf(mLastPaintRequestMetrics.mScrollOffset.y -
-            mFrameMetrics.mScrollOffset.y) < EPSILON &&
-      mFrameMetrics.mZoom == mLastPaintRequestMetrics.mZoom &&
-      fabsf(mFrameMetrics.mViewport.width - mLastPaintRequestMetrics.mViewport.width) < EPSILON &&
-      fabsf(mFrameMetrics.mViewport.height - mLastPaintRequestMetrics.mViewport.height) < EPSILON) {
+            aFrameMetrics.mScrollOffset.y) < EPSILON &&
+      aFrameMetrics.mZoom == mLastPaintRequestMetrics.mZoom &&
+      fabsf(aFrameMetrics.mViewport.width - mLastPaintRequestMetrics.mViewport.width) < EPSILON &&
+      fabsf(aFrameMetrics.mViewport.height - mLastPaintRequestMetrics.mViewport.height) < EPSILON) {
     return;
   }
 
   SendAsyncScrollEvent();
-  ScheduleContentRepaint(mFrameMetrics);
+  mPaintThrottler.PostTask(
+    FROM_HERE,
+    NewRunnableMethod(this,
+                      &AsyncPanZoomController::DispatchRepaintRequest,
+                      aFrameMetrics),
+    GetFrameTime());
+
+  aFrameMetrics.mPresShellId = mLastContentPaintMetrics.mPresShellId;
+  mLastPaintRequestMetrics = aFrameMetrics;
 }
 
 void
-AsyncPanZoomController::ScheduleContentRepaint(FrameMetrics &aFrameMetrics) {
-  // This message is compressed, so fire whether or not we already have a paint
-  // queued up. We need to know whether or not a paint was requested anyways,
-  // for the purposes of content calling window.scrollTo().
+AsyncPanZoomController::DispatchRepaintRequest(const FrameMetrics& aFrameMetrics) {
   nsRefPtr<GeckoContentController> controller = GetGeckoContentController();
   if (controller) {
     APZC_LOG_FM(aFrameMetrics, "%p requesting content repaint", this);
@@ -1381,15 +1390,9 @@ AsyncPanZoomController::ScheduleContentRepaint(FrameMetrics &aFrameMetrics) {
     LogRendertraceRect(GetGuid(), "requested displayport", "yellow",
         aFrameMetrics.mDisplayPort + aFrameMetrics.mScrollOffset);
 
-    mPaintThrottler.PostTask(
-      FROM_HERE,
-      NewRunnableMethod(controller.get(),
-                        &GeckoContentController::RequestContentRepaint,
-                        aFrameMetrics),
-      GetFrameTime());
+    controller->RequestContentRepaint(aFrameMetrics);
+    mLastDispatchedPaintMetrics = aFrameMetrics;
   }
-  aFrameMetrics.mPresShellId = mLastContentPaintMetrics.mPresShellId;
-  mLastPaintRequestMetrics = aFrameMetrics;
 }
 
 void
@@ -1530,6 +1533,14 @@ gfx3DMatrix AsyncPanZoomController::GetNontransientAsyncTransform() {
                                     1.0f);
 }
 
+gfx3DMatrix AsyncPanZoomController::GetTransformToLastDispatchedPaint() {
+  ReentrantMonitorAutoEnter lock(mMonitor);
+  CSSPoint scrollChange = mLastContentPaintMetrics.mScrollOffset - mLastDispatchedPaintMetrics.mScrollOffset;
+  float zoomChange = mLastContentPaintMetrics.mZoom.scale / mLastDispatchedPaintMetrics.mZoom.scale;
+  return gfx3DMatrix::Translation(scrollChange.x, scrollChange.y, 0) *
+         gfx3DMatrix::ScalingMatrix(zoomChange, zoomChange, 1);
+}
+
 void AsyncPanZoomController::NotifyLayersUpdated(const FrameMetrics& aLayerMetrics, bool aIsFirstPaint) {
   ReentrantMonitorAutoEnter lock(mMonitor);
 
@@ -1557,15 +1568,18 @@ void AsyncPanZoomController::NotifyLayersUpdated(const FrameMetrics& aLayerMetri
   }
 
   if (aIsFirstPaint || isDefault) {
+    // Initialize our internal state to something sane when the content
+    // that was just painted is something we knew nothing about previously
     mPaintThrottler.ClearHistory();
     mPaintThrottler.SetMaxDurations(gNumPaintDurationSamples);
 
     mX.CancelTouch();
     mY.CancelTouch();
+    SetState(NOTHING);
 
     mFrameMetrics = aLayerMetrics;
+    mLastDispatchedPaintMetrics = aLayerMetrics;
     ShareCompositorFrameMetrics();
-    SetState(NOTHING);
   } else {
     // If we're not taking the aLayerMetrics wholesale we still need to pull
     // in some things into our local mFrameMetrics because these things are
@@ -1697,7 +1711,7 @@ void AsyncPanZoomController::ZoomToRect(CSSRect aRect) {
 
     // Schedule a repaint now, so the new displayport will be painted before the
     // animation finishes.
-    ScheduleContentRepaint(endZoomToMetrics);
+    RequestContentRepaint(endZoomToMetrics);
   }
 }
 

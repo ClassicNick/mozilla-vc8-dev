@@ -174,7 +174,7 @@ WrapperFactory::PrepareForWrapping(JSContext *cx, HandleObject scope,
         JSProtoKey key = JSProto_Null;
         {
             JSAutoCompartment ac(cx, obj);
-            key = JS_IdentifyClassPrototype(cx, obj);
+            key = JS_IdentifyClassPrototype(obj);
         }
         if (key != JSProto_Null) {
             RootedObject homeProto(cx);
@@ -285,7 +285,7 @@ WrapperFactory::PrepareForWrapping(JSContext *cx, HandleObject scope,
                                                     &NS_GET_IID(nsISupports), false, &v);
     NS_ENSURE_SUCCESS(rv, nullptr);
 
-    obj = JSVAL_TO_OBJECT(v);
+    obj.set(&v.toObject());
     MOZ_ASSERT(IS_WN_REFLECTOR(obj), "bad object");
 
     // Because the underlying native didn't have a PreCreate hook, we had
@@ -314,7 +314,7 @@ DEBUG_CheckUnwrapSafety(HandleObject obj, js::Wrapper *handler,
 {
     if (AccessCheck::isChrome(target) || xpc::IsUniversalXPConnectEnabled(target)) {
         // If the caller is chrome (or effectively so), unwrap should always be allowed.
-        MOZ_ASSERT(handler->isSafeToUnwrap());
+        MOZ_ASSERT(!handler->hasSecurityPolicy());
     } else if (AccessCheck::needsSystemOnlyWrapper(obj)) {
         // The rules for SOWs are complicated enough. Just skip double-checking them here.
     } else if (handler == &FilteringWrapper<CrossCompartmentSecurityWrapper, GentlyOpaque>::singleton) {
@@ -323,7 +323,7 @@ DEBUG_CheckUnwrapSafety(HandleObject obj, js::Wrapper *handler,
         // this case.
     } else {
         // Otherwise, it should depend on whether the target subsumes the origin.
-        MOZ_ASSERT(handler->isSafeToUnwrap() == AccessCheck::subsumes(target, origin));
+        MOZ_ASSERT(handler->hasSecurityPolicy() == !AccessCheck::subsumes(target, origin));
     }
 }
 #else

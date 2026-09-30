@@ -54,10 +54,18 @@ const R_HOST       = new RegExp ("\\*|(((\\*\\.)?" + R_HOSTCHAR.source +
 // port            = ":" ( 1*DIGIT / "*" )
 const R_PORT       = new RegExp ("(\\:([0-9]+|\\*))", 'i');
 
-// host-source     = [ scheme "://" ] host [ port ]
-const R_HOSTSRC    = new RegExp ("^((" + R_SCHEME.source + "\\:\\/\\/)?("
-                                       +   R_HOST.source + ")"
-                                       +   R_PORT.source + "?)$", 'i');
+// path
+const R_PATH       = new RegExp("(\\/(([a-zA-Z0-9\\-\\_]+)\\/?)*)", 'i');
+
+// file
+const R_FILE       = new RegExp("(\\/([a-zA-Z0-9\\-\\_]+)\\.([a-zA-Z]+))", 'i');
+
+// host-source     = [ scheme "://" ] host [ port path file ]
+const R_HOSTSRC    = new RegExp ("^((((" + R_SCHEME.source + "\\:\\/\\/)?("
+                                         + R_HOST.source + ")"
+                                         + R_PORT.source + "?)"
+                                         + R_PATH.source + "?)"
+                                         + R_FILE.source + "?)$", 'i');
 
 // ext-host-source = host-source "/" *( <VCHAR except ";" and ","> )
 //                 ; ext-host-source is reserved for future use.
@@ -306,7 +314,7 @@ CSPRep.fromString = function(aStr, self, reportOnly, docRequest, csp) {
     dir = dir.trim();
     if (dir.length < 1) continue;
 
-    var dirname = dir.split(/\s+/)[0];
+    var dirname = dir.split(/\s+/)[0].toLowerCase();
     var dirvalue = dir.substring(dirname.length).trim();
 
     if (aCSPR._directives.hasOwnProperty(dirname)) {
@@ -386,32 +394,17 @@ CSPRep.fromString = function(aStr, self, reportOnly, docRequest, csp) {
           // The resulting CSPRep instance will have only absolute URIs.
           uri = gIoService.newURI(uriStrings[i],null,selfUri);
 
-          // if there's no host, don't do the ETLD+ check.  This will throw
-          // NS_ERROR_FAILURE if the URI doesn't have a host, causing a parse
-          // failure.
+          // if there's no host, this will throw NS_ERROR_FAILURE, causing a
+          // parse failure.
           uri.host;
 
-          // Verify that each report URI is in the same etld + 1 and that the
-          // scheme and port match "self" if "self" is defined, and just that
-          // it's valid otherwise.
-          if (self) {
-            if (gETLDService.getBaseDomain(uri) !==
-                gETLDService.getBaseDomain(selfUri)) {
-              cspWarn(aCSPR,
-                      CSPLocalizer.getFormatStr("reportURInotETLDPlus1",
-                                                [gETLDService.getBaseDomain(uri)]));
-              continue;
-            }
-            if (!uri.schemeIs(selfUri.scheme)) {
-              cspWarn(aCSPR, CSPLocalizer.getFormatStr("reportURInotSameSchemeAsSelf",
-                                                       [uri.asciiSpec]));
-              continue;
-            }
-            if (uri.port && uri.port !== selfUri.port) {
-              cspWarn(aCSPR, CSPLocalizer.getFormatStr("reportURInotSamePortAsSelf",
-                                                       [uri.asciiSpec]));
-              continue;
-            }
+          // warn about, but do not prohibit non-http and non-https schemes for
+          // reporting URIs.  The spec allows unrestricted URIs resolved
+          // relative to "self", but we should let devs know if the scheme is
+          // abnormal and may fail a POST.
+          if (!uri.schemeIs("http") && !uri.schemeIs("https")) {
+            cspWarn(aCSPR, CSPLocalizer.getFormatStr("reportURInotHttpsOrHttp2",
+                                                     [uri.asciiSpec]));
           }
         } catch(e) {
           switch (e.result) {
@@ -431,7 +424,7 @@ CSPRep.fromString = function(aStr, self, reportOnly, docRequest, csp) {
               continue;
           }
         }
-        // all verification passed: same ETLD+1, scheme, and port.
+        // all verification passed
         okUriStrings.push(uri.asciiSpec);
       }
       aCSPR._directives[UD.REPORT_URI] = okUriStrings.join(' ');
@@ -564,7 +557,7 @@ CSPRep.fromStringSpecCompliant = function(aStr, self, reportOnly, docRequest, cs
     dir = dir.trim();
     if (dir.length < 1) continue;
 
-    var dirname = dir.split(/\s+/)[0];
+    var dirname = dir.split(/\s+/)[0].toLowerCase();
     var dirvalue = dir.substring(dirname.length).trim();
     dirs[dirname] = dirvalue;
   }
@@ -649,34 +642,17 @@ CSPRep.fromStringSpecCompliant = function(aStr, self, reportOnly, docRequest, cs
           // The resulting CSPRep instance will have only absolute URIs.
           uri = gIoService.newURI(uriStrings[i],null,selfUri);
 
-          // if there's no host, don't do the ETLD+ check.  This will throw
-          // NS_ERROR_FAILURE if the URI doesn't have a host, causing a parse
-          // failure.
+          // if there's no host, this will throw NS_ERROR_FAILURE, causing a
+          // parse failure.
           uri.host;
 
-          // Verify that each report URI is in the same etld + 1 and that the
-          // scheme and port match "self" if "self" is defined, and just that
-          // it's valid otherwise.
-          if (self) {
-            if (gETLDService.getBaseDomain(uri) !==
-                gETLDService.getBaseDomain(selfUri)) {
-              cspWarn(aCSPR, 
-                      CSPLocalizer.getFormatStr("reportURInotETLDPlus1",
-                                                [gETLDService.getBaseDomain(uri)]));
-              continue;
-            }
-            if (!uri.schemeIs(selfUri.scheme)) {
-              cspWarn(aCSPR,
-                      CSPLocalizer.getFormatStr("reportURInotSameSchemeAsSelf",
-                                                [uri.asciiSpec]));
-              continue;
-            }
-            if (uri.port && uri.port !== selfUri.port) {
-              cspWarn(aCSPR,
-                      CSPLocalizer.getFormatStr("reportURInotSamePortAsSelf",
-                                                [uri.asciiSpec]));
-              continue;
-            }
+          // warn about, but do not prohibit non-http and non-https schemes for
+          // reporting URIs.  The spec allows unrestricted URIs resolved
+          // relative to "self", but we should let devs know if the scheme is
+          // abnormal and may fail a POST.
+          if (!uri.schemeIs("http") && !uri.schemeIs("https")) {
+            cspWarn(aCSPR, CSPLocalizer.getFormatStr("reportURInotHttpsOrHttp2",
+                                                     [uri.asciiSpec]));
           }
         } catch(e) {
           switch (e.result) {
@@ -695,7 +671,7 @@ CSPRep.fromStringSpecCompliant = function(aStr, self, reportOnly, docRequest, cs
               continue;
           }
         }
-        // all verification passed: same ETLD+1, scheme, and port.
+        // all verification passed.
        okUriStrings.push(uri.asciiSpec);
       }
       aCSPR._directives[UD.REPORT_URI] = okUriStrings.join(' ');
@@ -1003,7 +979,7 @@ CSPSourceList.fromString = function(aStr, aCSPRep, self, enforceSelfChecks) {
   slObj._CSPRep = aCSPRep;
   aStr = aStr.trim();
   // w3 specifies case insensitive equality
-  if (aStr.toUpperCase() === "'NONE'") {
+  if (aStr.toLowerCase() === "'none'") {
     slObj._permitAllSources = false;
     return slObj;
   }
@@ -1071,7 +1047,7 @@ CSPSourceList.prototype = {
     // sort both arrays and compare like a zipper
     // XXX (sid): I think we can make this more efficient
     var sortfn = function(a,b) {
-      return a.toString() > b.toString();
+      return a.toString.toLowerCase() > b.toString.toLowerCase();
     };
     var a_sorted = this._sources.sort(sortfn);
     var b_sorted = that._sources.sort(sortfn);
@@ -1378,6 +1354,11 @@ CSPSource.fromString = function(aStr, aCSPRep, self, enforceSelfChecks) {
     if (schemeMatch)
       hostMatch = R_HOSTSRC.exec(aStr.substring(schemeMatch[0].length + 3));
 
+    // Bug 916054: in CSP 1.0, source-expressions that are paths should have
+    // the path after the origin ignored and only the origin enforced.
+    hostMatch[0] = hostMatch[0].replace(R_FILE, "");
+    hostMatch[0] = hostMatch[0].replace(R_PATH, "");
+
     var portMatch = R_PORT.exec(hostMatch);
 
     // Host regex also gets port, so remove the port here.
@@ -1418,7 +1399,7 @@ CSPSource.fromString = function(aStr, aCSPRep, self, enforceSelfChecks) {
     return CSPHashSource.fromString(aStr, aCSPRep);
 
   // check for 'self' (case insensitive)
-  if (aStr.toUpperCase() === "'SELF'") {
+  if (aStr.toLowerCase() === "'self'") {
     if (!self) {
       cspError(aCSPRep, CSPLocalizer.getStr("selfKeywordNoSelfData"));
       return null;
@@ -1429,13 +1410,13 @@ CSPSource.fromString = function(aStr, aCSPRep, self, enforceSelfChecks) {
   }
 
   // check for 'unsafe-inline' (case insensitive)
-  if (aStr.toUpperCase() === "'UNSAFE-INLINE'"){
+  if (aStr.toLowerCase() === "'unsafe-inline'"){
     sObj._allowUnsafeInline = true;
     return sObj;
   }
 
   // check for 'unsafe-eval' (case insensitive)
-  if (aStr.toUpperCase() === "'UNSAFE-EVAL'"){
+  if (aStr.toLowerCase() === "'unsafe-eval'"){
     sObj._allowUnsafeEval = true;
     return sObj;
   }
@@ -1556,7 +1537,7 @@ CSPSource.prototype = {
       aSource = CSPSource.create(aSource, this._CSPRep);
 
     // verify scheme
-    if (this.scheme != aSource.scheme)
+    if (this.scheme.toLowerCase() != aSource.scheme.toLowerCase())
       return false;
 
     // port is defined in 'this' (undefined means it may not be relevant
@@ -1592,14 +1573,14 @@ CSPSource.prototype = {
     // 2. ports match
     // 3. either both hosts are undefined, or one equals the other.
     if (resolveSelf)
-      return this.scheme === that.scheme
-          && this.port   === that.port
+      return this.scheme.toLowerCase() === that.scheme.toLowerCase()
+          && this.port === that.port
           && (!(this.host || that.host) ||
                (this.host && this.host.equals(that.host)));
 
     // otherwise, compare raw (non-self-resolved values)
-    return this._scheme === that._scheme
-        && this._port   === that._port
+    return this._scheme.toLowerCase() === that._scheme.toLowerCase()
+        && this._port === that._port
         && (!(this._host || that._host) ||
               (this._host && this._host.equals(that._host)));
   },
@@ -1688,7 +1669,9 @@ CSPHost.prototype = {
    */
   permits:
   function(aHost) {
-    if (!aHost) aHost = CSPHost.fromString("*");
+    if (!aHost) {
+      aHost = CSPHost.fromString("*");
+    }
 
     if (!(aHost instanceof CSPHost)) {
       // -- compare CSPHost to String
@@ -1714,7 +1697,8 @@ CSPHost.prototype = {
     // * Compare from right to left.
     for (var i=1; i <= thislen; i++) {
       if (this._segments[thislen-i] != "*" &&
-          (this._segments[thislen-i] != aHost._segments[thatlen-i])) {
+          (this._segments[thislen-i].toLowerCase() !=
+           aHost._segments[thatlen-i].toLowerCase())) {
         return false;
       }
     }
@@ -1737,8 +1721,10 @@ CSPHost.prototype = {
       return false;
 
     for (var i=0; i<this._segments.length; i++) {
-      if (this._segments[i] != that._segments[i])
+      if (this._segments[i].toLowerCase() !=
+          that._segments[i].toLowerCase()) {
         return false;
+      }
     }
     return true;
   }

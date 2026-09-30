@@ -5,13 +5,15 @@
 #include "WifiUtils.h"
 #include <dlfcn.h>
 #include <errno.h>
+#include <cutils/properties.h>
 #include "prinit.h"
 #include "js/CharacterEncoding.h"
-#include "NetUtils.h"
+#include "mozilla/dom/network/NetUtils.h"
 
 using namespace mozilla::dom;
 
 #define BUFFER_SIZE        4096
+#define COMMAND_SIZE       256
 #define PROPERTY_VALUE_MAX 80
 
 // Intentionally not trying to dlclose() this handle. That's playing
@@ -32,6 +34,14 @@ GetSharedLibrary()
 {
   PR_CallOnce(&sInitWifiLib, InitWifiLib);
   return sWifiLib;
+}
+
+static bool
+GetWifiP2pSupported()
+{
+  char propP2pSupported[PROPERTY_VALUE_MAX];
+  property_get("ro.moz.wifi.p2p_supported", propP2pSupported, "0");
+  return (0 == strcmp(propP2pSupported, "1"));
 }
 
 // This is the same algorithm as in InflateUTF8StringToBuffer with Copy and
@@ -237,6 +247,20 @@ public:
     USE_DLFUNC(wifi_stop_supplicant)
     return wifi_stop_supplicant(arg);
   }
+
+  DEFINE_DLFUNC(wifi_command, int32_t, const char*, char*, size_t*)
+  int32_t do_wifi_command(const char* iface, const char* cmd, char* buf, size_t* len) {
+    char command[COMMAND_SIZE];
+    if (!strcmp(iface, "p2p0")) {
+      // Commands for p2p0 interface don't need prefix
+      snprintf(command, COMMAND_SIZE, "%s", cmd);
+    }
+    else {
+      snprintf(command, COMMAND_SIZE, "IFNAME=%s %s", iface, cmd);
+    }
+    USE_DLFUNC(wifi_command)
+    return wifi_command(command, buf, len);
+  }
 };
 
 // Concrete class to use to access the wpa supplicant.
@@ -307,7 +331,7 @@ bool WpaSupplicant::ExecuteCommand(CommandOptions aOptions,
   } else if (aOptions.mCmd.EqualsLiteral("unload_driver")) {
     aResult.mStatus = mImpl->do_wifi_unload_driver();
   } else if (aOptions.mCmd.EqualsLiteral("start_supplicant")) {
-    aResult.mStatus = mImpl->do_wifi_start_supplicant(0);
+    aResult.mStatus = mImpl->do_wifi_start_supplicant(GetWifiP2pSupported() ? 1 : 0);
   } else if (aOptions.mCmd.EqualsLiteral("stop_supplicant")) {
     aResult.mStatus = mImpl->do_wifi_stop_supplicant(0);
   } else if (aOptions.mCmd.EqualsLiteral("connect_to_supplicant")) {

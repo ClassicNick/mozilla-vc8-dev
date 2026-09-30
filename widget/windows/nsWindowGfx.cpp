@@ -215,7 +215,7 @@ bool nsWindow::OnPaint(HDC aDC, uint32_t aNestingLevel)
   }
 
   ClientLayerManager *clientLayerManager =
-      (GetLayerManager()->GetBackendType() == LAYERS_CLIENT)
+      (GetLayerManager()->GetBackendType() == LayersBackend::LAYERS_CLIENT)
       ? static_cast<ClientLayerManager*>(GetLayerManager())
       : nullptr;
 
@@ -309,7 +309,7 @@ bool nsWindow::OnPaint(HDC aDC, uint32_t aNestingLevel)
 #endif // WIDGET_DEBUG_OUTPUT
 
     switch (GetLayerManager()->GetBackendType()) {
-      case LAYERS_BASIC:
+      case LayersBackend::LAYERS_BASIC:
         {
           nsRefPtr<gfxASurface> targetSurface;
 
@@ -329,10 +329,10 @@ bool nsWindow::OnPaint(HDC aDC, uint32_t aNestingLevel)
               IsRenderMode(gfxWindowsPlatform::RENDER_DIRECT2D))
           {
             if (!mD2DWindowSurface) {
-              gfxContentType content = GFX_CONTENT_COLOR;
+              gfxContentType content = gfxContentType::COLOR;
 #if defined(MOZ_XUL)
               if (mTransparencyMode != eTransparencyOpaque) {
-                content = GFX_CONTENT_COLOR_ALPHA;
+                content = gfxContentType::COLOR_ALPHA;
               }
 #endif
               mD2DWindowSurface = new gfxD2DSurface(mWnd, content);
@@ -374,7 +374,7 @@ bool nsWindow::OnPaint(HDC aDC, uint32_t aNestingLevel)
             targetSurfaceImage = new gfxImageSurface(sSharedSurfaceData.get(),
                                                      surfaceSize,
                                                      surfaceSize.width * 4,
-                                                     gfxImageFormatRGB24);
+                                                     gfxImageFormat::RGB24);
 
             if (targetSurfaceImage && !targetSurfaceImage->CairoStatus()) {
               targetSurfaceImage->SetDeviceOffset(gfxPoint(-ps.rcPaint.left, -ps.rcPaint.top));
@@ -413,7 +413,7 @@ bool nsWindow::OnPaint(HDC aDC, uint32_t aNestingLevel)
           }
 
           // don't need to double buffer with anything but GDI
-          BufferMode doubleBuffering = mozilla::layers::BUFFER_NONE;
+          BufferMode doubleBuffering = mozilla::layers::BufferMode::BUFFER_NONE;
           if (IsRenderMode(gfxWindowsPlatform::RENDER_GDI)) {
 #ifdef MOZ_XUL
             switch (mTransparencyMode) {
@@ -421,7 +421,7 @@ bool nsWindow::OnPaint(HDC aDC, uint32_t aNestingLevel)
               case eTransparencyBorderlessGlass:
               default:
                 // If we're not doing translucency, then double buffer
-                doubleBuffering = mozilla::layers::BUFFER_BUFFERED;
+                doubleBuffering = mozilla::layers::BufferMode::BUFFERED;
                 break;
               case eTransparencyTransparent:
                 // If we're rendering with translucency, we're going to be
@@ -432,7 +432,7 @@ bool nsWindow::OnPaint(HDC aDC, uint32_t aNestingLevel)
                 break;
             }
 #else
-            doubleBuffering = mozilla::layers::BUFFER_BUFFERED;
+            doubleBuffering = mozilla::layers::BufferMode::BUFFERED;
 #endif
           }
 
@@ -552,7 +552,7 @@ bool nsWindow::OnPaint(HDC aDC, uint32_t aNestingLevel)
         }
         break;
 #ifdef MOZ_ENABLE_D3D9_LAYER
-      case LAYERS_D3D9:
+      case LayersBackend::LAYERS_D3D9:
         {
           nsRefPtr<LayerManagerD3D9> layerManagerD3D9 =
             static_cast<mozilla::layers::LayerManagerD3D9*>(GetLayerManager());
@@ -570,7 +570,7 @@ bool nsWindow::OnPaint(HDC aDC, uint32_t aNestingLevel)
         break;
 #endif
 #ifdef MOZ_ENABLE_D3D10_LAYER
-      case LAYERS_D3D10:
+      case LayersBackend::LAYERS_D3D10:
         {
           gfxWindowsPlatform::GetPlatform()->UpdateRenderMode();
           LayerManagerD3D10 *layerManagerD3D10 = static_cast<mozilla::layers::LayerManagerD3D10*>(GetLayerManager());
@@ -582,7 +582,7 @@ bool nsWindow::OnPaint(HDC aDC, uint32_t aNestingLevel)
         }
         break;
 #endif
-      case LAYERS_CLIENT:
+      case LayersBackend::LAYERS_CLIENT:
         result = listener->PaintWindow(this, region);
         break;
       default:
@@ -673,7 +673,7 @@ nsresult nsWindowGfx::CreateIcon(imgIContainer *aContainer,
     NS_ENSURE_ARG(aScaledSize.width > 0);
     NS_ENSURE_ARG(aScaledSize.height > 0);
     // Draw a scaled version of the image to a temporary surface
-    dest = new gfxImageSurface(aScaledSize, gfxImageFormatARGB32);
+    dest = new gfxImageSurface(aScaledSize, gfxImageFormat::ARGB32);
     if (!dest)
       return NS_ERROR_OUT_OF_MEMORY;
 

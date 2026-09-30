@@ -217,6 +217,24 @@ Components.utils.import('resource://gre/modules/ctypes.jsm');
   window.navigator.mozSettings.createLock().set(setting);
 })();
 
+// =================== DevTools ====================
+
+let devtoolsWidgetPanel;
+SettingsListener.observe('devtools.overlay', false, (value) => {
+  if (value) {
+    if (!devtoolsWidgetPanel) {
+      let scope = {};
+      Services.scriptloader.loadSubScript('chrome://browser/content/devtools.js', scope);
+      devtoolsWidgetPanel = scope.devtoolsWidgetPanel;
+    }
+    devtoolsWidgetPanel.init();
+  } else {
+    if (devtoolsWidgetPanel) {
+      devtoolsWidgetPanel.uninit();
+    }
+  }
+});
+
 // =================== Debugger / ADB ====================
 
 #ifdef MOZ_WIDGET_GONK
@@ -651,3 +669,10 @@ SettingsListener.observe("accessibility.screenreader", false, function(value) {
     });
   });
 })();
+
+// =================== AsyncPanZoom ======================
+
+SettingsListener.observe('apz.force-enable', false, function(value) {
+  Services.prefs.setBoolPref('dom.browser_frames.useAsyncPanZoom', value);
+});
+
