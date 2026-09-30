@@ -363,19 +363,22 @@ this.Download.prototype = {
 
     // This function propagates progress from the DownloadSaver object, unless
     // it comes in late from a download attempt that was replaced by a new one.
+    // If the cancellation process for the download has started, then the update
+    // is ignored.
     function DS_setProgressBytes(aCurrentBytes, aTotalBytes, aHasPartialData)
     {
-      if (this._currentAttempt == currentAttempt || !this._currentAttempt) {
+      if (this._currentAttempt == currentAttempt) {
         this._setBytes(aCurrentBytes, aTotalBytes, aHasPartialData);
       }
     }
 
     // This function propagates download properties from the DownloadSaver
     // object, unless it comes in late from a download attempt that was
-    // replaced by a new one.
+    // replaced by a new one.  If the cancellation process for the download has
+    // started, then the update is ignored.
     function DS_setProperties(aOptions)
     {
-      if (this._currentAttempt && this._currentAttempt != currentAttempt) {
+      if (this._currentAttempt != currentAttempt) {
         return;
       }
 
@@ -1401,7 +1404,12 @@ this.DownloadSaver.prototype = {
   getSha256Hash: function ()
   {
     throw new Error("Not implemented.");
-  }
+  },
+
+  getSignatureInfo: function ()
+  {
+    throw new Error("Not implemented.");
+  },
 }; // DownloadSaver
 
 /**
@@ -1459,6 +1467,13 @@ this.DownloadCopySaver.prototype = {
    * unless BackgroundFileSaver has successfully completed saving the file.
    */
   _sha256Hash: null,
+
+  /**
+   * Save the signature info as an nsIArray of nsIX509CertList of nsIX509Cert
+   * if the file is signed. This is empty if the file is unsigned, and null
+   * unless BackgroundFileSaver has successfully completed saving the file.
+   */
+  _signatureInfo: null,
 
   /**
    * True if the associated download has already been added to browsing history.
@@ -1536,6 +1551,7 @@ this.DownloadCopySaver.prototype = {
               if (Components.isSuccessCode(aStatus)) {
                 // Save the hash before freeing backgroundFileSaver.
                 this._sha256Hash = aSaver.sha256Hash;
+                this._signatureInfo = aSaver.signatureInfo;
                 deferSaveComplete.resolve();
               } else {
                 // Infer the origin of the error from the failure code, because
@@ -1643,8 +1659,10 @@ this.DownloadCopySaver.prototype = {
                 }
               }
 
-              // Enable hashing before setting the target.
+              // Enable hashing and signature verification before setting the
+              // target.
               backgroundFileSaver.enableSha256();
+              backgroundFileSaver.enableSignatureInfo();
               if (partFilePath) {
                 // If we actually resumed a request, append to the partial data.
                 if (resumeAttempted) {
@@ -1770,6 +1788,14 @@ this.DownloadCopySaver.prototype = {
   getSha256Hash: function ()
   {
     return this._sha256Hash;
+  },
+
+  /*
+   * Implements DownloadSaver.getSignatureInfo.
+   */
+  getSignatureInfo: function ()
+  {
+    return this._signatureInfo;
   }
 };
 
@@ -1817,6 +1843,13 @@ this.DownloadLegacySaver.prototype = {
    * invoked.
    */
   _sha256Hash: null,
+
+  /**
+   * Save the signature info as an nsIArray of nsIX509CertList of nsIX509Cert
+   * if the file is signed. This is empty if the file is unsigned, and null
+   * unless BackgroundFileSaver has successfully completed saving the file.
+   */
+  _signatureInfo: null,
 
   /**
    * nsIRequest object associated to the status and progress updates we
@@ -2023,10 +2056,16 @@ this.DownloadLegacySaver.prototype = {
             Cu.reportError(e2);
           }
         }
+        // In case the operation failed, ensure we stop downloading data.  Since
+        // we never re-enter this function, deferCanceled is always available.
+        this.deferCanceled.resolve();
         throw ex;
       } finally {
-        // We don't need the reference to the request anymore.
+        // We don't need the reference to the request anymore.  We must also set
+        // deferCanceled to null in order to free any indirect references it
+        // may hold to the request.
         this.request = null;
+        this.deferCanceled = null;
         // Allow the download to restart through a DownloadCopySaver.
         this.firstExecutionFinished = true;
       }
@@ -2043,8 +2082,12 @@ this.DownloadLegacySaver.prototype = {
       return this.copySaver.cancel.apply(this.copySaver, arguments);
     }
 
-    // Cancel the operation as soon as the object is connected.
-    this.deferCanceled.resolve();
+    // If the download hasn't stopped already, resolve deferCanceled so that the
+    // operation is canceled as soon as a cancellation handler is registered.
+    // Note that the handler might not have been registered yet.
+    if (this.deferCanceled) {
+      this.deferCanceled.resolve();
+    }
   },
 
   /**
@@ -2087,6 +2130,25 @@ this.DownloadLegacySaver.prototype = {
   setSha256Hash: function (hash)
   {
     this._sha256Hash = hash;
+  },
+
+  /**
+   * Implements "DownloadSaver.getSignatureInfo".
+   */
+  getSignatureInfo: function ()
+  {
+    if (this.copySaver) {
+      return this.copySaver.getSignatureInfo();
+    }
+    return this._signatureInfo;
+  },
+
+  /**
+   * Called by the nsITransfer implementation when the hash is available.
+   */
+  setSignatureInfo: function (signatureInfo)
+  {
+    this._signatureInfo = signatureInfo;
   },
 };
 

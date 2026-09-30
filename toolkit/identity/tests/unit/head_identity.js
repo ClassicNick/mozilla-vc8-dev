@@ -8,6 +8,9 @@ const Cr = Components.results;
 
 Cu.import("resource://testing-common/httpd.js");
 
+// XXX until bug 937114 is fixed
+Cu.importGlobalProperties(["atob"]);
+
 // The following boilerplate makes sure that XPCom calls
 // that use the profile directory work.
 
@@ -40,7 +43,7 @@ const TEST_URL2 = "https://myfavoritebaconinacan.com";
 const TEST_USER = "user@mozilla.com";
 const TEST_PRIVKEY = "fake-privkey";
 const TEST_CERT = "fake-cert";
-const TEST_ASSERTION = "face-assertion";
+const TEST_ASSERTION = "fake-assertion";
 const TEST_IDPPARAMS = {
   domain: "myfavoriteflan.com",
   authentication: "/foo/authenticate.html",
@@ -68,6 +71,29 @@ function uuid() {
   return uuidGenerator.generateUUID().toString();
 }
 
+function base64UrlDecode(s) {
+  s = s.replace(/-/g, "+");
+  s = s.replace(/_/g, "/");
+
+  // Replace padding if it was stripped by the sender.
+  // See http://tools.ietf.org/html/rfc4648#section-4
+  switch (s.length % 4) {
+    case 0:
+      break; // No pad chars in this case
+    case 2:
+      s += "==";
+      break; // Two pad chars
+    case 3:
+      s += "=";
+      break; // One pad char
+    default:
+      throw new InputException("Illegal base64url string!");
+  }
+
+  // With correct padding restored, apply the standard base64 decoder
+  return atob(s);
+}
+
 // create a mock "doc" object, which the Identity Service
 // uses as a pointer back into the doc object
 function mock_doc(aIdentity, aOrigin, aDoFunc) {
@@ -75,15 +101,15 @@ function mock_doc(aIdentity, aOrigin, aDoFunc) {
   mockedDoc.id = uuid();
   mockedDoc.loggedInUser = aIdentity;
   mockedDoc.origin = aOrigin;
-  mockedDoc['do'] = aDoFunc;
+  mockedDoc["do"] = aDoFunc;
   mockedDoc._mm = TEST_MESSAGE_MANAGER;
-  mockedDoc.doReady = partial(aDoFunc, 'ready');
-  mockedDoc.doLogin = partial(aDoFunc, 'login');
-  mockedDoc.doLogout = partial(aDoFunc, 'logout');
-  mockedDoc.doError = partial(aDoFunc, 'error');
-  mockedDoc.doCancel = partial(aDoFunc, 'cancel');
-  mockedDoc.doCoffee = partial(aDoFunc, 'coffee');
-  mockedDoc.childProcessShutdown = partial(aDoFunc, 'child-process-shutdown');
+  mockedDoc.doReady = partial(aDoFunc, "ready");
+  mockedDoc.doLogin = partial(aDoFunc, "login");
+  mockedDoc.doLogout = partial(aDoFunc, "logout");
+  mockedDoc.doError = partial(aDoFunc, "error");
+  mockedDoc.doCancel = partial(aDoFunc, "cancel");
+  mockedDoc.doCoffee = partial(aDoFunc, "coffee");
+  mockedDoc.childProcessShutdown = partial(aDoFunc, "child-process-shutdown");
 
   mockedDoc.RP = mockedDoc;
 
@@ -101,9 +127,9 @@ function mock_fxa_rp(aIdentity, aOrigin, aDoFunc) {
   mockedDoc.doReady = partial(aDoFunc, "ready");
   mockedDoc.doLogin = partial(aDoFunc, "login");
   mockedDoc.doLogout = partial(aDoFunc, "logout");
-  mockedDoc.doError = partial(aDoFunc, 'error');
-  mockedDoc.doCancel = partial(aDoFunc, 'cancel');
-  mockedDoc.childProcessShutdown = partial(aDoFunc, 'child-process-shutdown');
+  mockedDoc.doError = partial(aDoFunc, "error");
+  mockedDoc.doCancel = partial(aDoFunc, "cancel");
+  mockedDoc.childProcessShutdown = partial(aDoFunc, "child-process-shutdown");
 
   mockedDoc.RP = mockedDoc;
 
@@ -187,8 +213,8 @@ function setup_provisioning(identity, afterSetupCallback, doneProvisioningCallba
         doneProvisioningCallback(err);
     },
     sandbox: {
-	// Emulate the free() method on the iframe sandbox
-	free: function() {}
+  // Emulate the free() method on the iframe sandbox
+  free: function() {}
     }
   };
 

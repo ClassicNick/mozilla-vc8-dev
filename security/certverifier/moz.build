@@ -7,9 +7,10 @@
 UNIFIED_SOURCES += [
     'CertVerifier.cpp',
     'NSSCertDBTrustDomain.cpp',
+    'OCSPCache.cpp',
 ]
 
-if not CONFIG['NSS_NO_LIBPKIX']:
+if not CONFIG['NSS_NO_EV_CERTS']:
     UNIFIED_SOURCES += [
         'ExtendedValidation.cpp',
     ]
@@ -17,5 +18,13 @@ if not CONFIG['NSS_NO_LIBPKIX']:
 LOCAL_INCLUDES += [
     '../insanity/include',
 ]
+
+DIRS += [
+    '../insanity',
+]
+
+FAIL_ON_WARNINGS = True
+
+LIBRARY_NAME = 'certverifier'
 
 FINAL_LIBRARY = 'xul'

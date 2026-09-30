@@ -105,6 +105,7 @@ public:
   class DataConnectionListener : public SupportsWeakPtr<DataConnectionListener>
   {
   public:
+    MOZ_DECLARE_REFCOUNTED_TYPENAME(DataChannelConnection::DataConnectionListener)
     virtual ~DataConnectionListener() {}
 
     // Called when a the connection is open
@@ -122,9 +123,6 @@ public:
 
   bool Init(unsigned short aPort, uint16_t aNumStreams, bool aUsingDtls);
   void Destroy(); // So we can spawn refs tied to runnables in shutdown
-  // Finish Destroy on STS to avoid SCTP race condition with ABORT from far end
-  void DestroyOnSTS(struct socket *aMasterSocket,
-                    struct socket *aSocket);
 
 #ifdef ALLOW_DIRECT_SCTP_LISTEN_CONNECT
   // These block; they require something to decide on listener/connector
@@ -191,6 +189,8 @@ public:
 
   void ReadBlob(already_AddRefed<DataChannelConnection> aThis, uint16_t aStream, nsIInputStream* aBlob);
 
+  void GetStreamIds(std::vector<uint16_t>* aStreamList);
+
 protected:
   friend class DataChannelOnMessageAvailable;
   // Avoid cycles with PeerConnectionImpl
@@ -222,7 +222,7 @@ private:
 
   void DeliverQueuedData(uint16_t stream);
 
-  already_AddRefed<DataChannel> OpenFinish(already_AddRefed<DataChannel> channel) NS_WARN_UNUSED_RESULT;
+  already_AddRefed<DataChannel> OpenFinish(already_AddRefed<DataChannel>&& aChannel);
 
   void StartDefer();
   bool SendDeferredMessages();

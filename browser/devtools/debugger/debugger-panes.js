@@ -128,12 +128,14 @@ SourcesView.prototype = Heritage.extend(WidgetMethods, {
     let url = aSource.url;
     let label = SourceUtils.getSourceLabel(url.split(" -> ").pop());
     let group = SourceUtils.getSourceGroup(url.split(" -> ").pop());
+    let unicodeUrl = NetworkHelper.convertToUnicode(unescape(url));
 
     let contents = document.createElement("label");
     contents.className = "plain dbg-source-item";
     contents.setAttribute("value", label);
     contents.setAttribute("crop", "start");
     contents.setAttribute("flex", "1");
+    contents.setAttribute("tooltiptext", unicodeUrl);
 
     // Append a source item to this container.
     this.push([contents, url], {
@@ -909,7 +911,7 @@ SourcesView.prototype = Heritage.extend(WidgetMethods, {
    * The keypress listener for the breakpoints conditional expression textbox.
    */
   _onConditionalTextboxKeyPress: function(e) {
-    if (e.keyCode == e.DOM_VK_RETURN || e.keyCode == e.DOM_VK_ENTER) {
+    if (e.keyCode == e.DOM_VK_RETURN) {
       this._hideConditionalPopup();
     }
   },
@@ -1959,10 +1961,14 @@ VariableBubbleView.prototype = {
   /**
    * The mousemove listener for the source editor.
    */
-  _onMouseMove: function({ clientX: x, clientY: y }) {
+  _onMouseMove: function({ clientX: x, clientY: y, buttons: btns }) {
     // Prevent the variable inspection popup from showing when the thread client
-    // is not paused, or while a popup is already visible.
-    if (gThreadClient && gThreadClient.state != "paused" || !this._tooltip.isHidden()) {
+    // is not paused, or while a popup is already visible, or when the user tries
+    // to select text in the editor.
+    if (gThreadClient && gThreadClient.state != "paused"
+        || !this._tooltip.isHidden()
+        || (DebuggerView.editor.somethingSelected()
+         && btns > 0)) {
       clearNamedTimeout("editor-mouse-move");
       return;
     }
@@ -2266,7 +2272,6 @@ WatchExpressionsView.prototype = Heritage.extend(WidgetMethods, {
   _onKeyPress: function(e) {
     switch(e.keyCode) {
       case e.DOM_VK_RETURN:
-      case e.DOM_VK_ENTER:
       case e.DOM_VK_ESCAPE:
         e.stopPropagation();
         DebuggerView.editor.focus();

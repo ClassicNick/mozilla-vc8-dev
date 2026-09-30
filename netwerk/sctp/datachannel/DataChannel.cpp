@@ -35,6 +35,7 @@
 #include "nsIObserverService.h"
 #include "nsIObserver.h"
 #include "mozilla/Services.h"
+#include "nsProxyRelease.h"
 #include "nsThread.h"
 #include "nsThreadUtils.h"
 #include "nsAutoPtr.h"
@@ -220,8 +221,7 @@ DataChannelConnection::~DataChannelConnection()
     ASSERT_WEBRTC(NS_IsMainThread());
     if (mTransportFlow) {
       ASSERT_WEBRTC(mSTS);
-      RUN_ON_THREAD(mSTS, WrapRunnableNM(ReleaseTransportFlow, mTransportFlow.forget()),
-                    NS_DISPATCH_NORMAL);
+      NS_ProxyRelease(mSTS, mTransportFlow);
     }
 
     if (mInternalIOThread) {
@@ -255,41 +255,32 @@ DataChannelConnection::Destroy()
   // we can deregister this DataChannelConnection without leaking.
   ClearResets();
 
-  MOZ_ASSERT(mSTS);
-  ASSERT_WEBRTC(NS_IsMainThread());
-  // Finish Destroy on STS thread to avoid bug 876167 - once that's fixed,
-  // the usrsctp_close() calls can move back here (and just proxy the
-  // disconnect_all())
-  RUN_ON_THREAD(mSTS, WrapRunnable(nsRefPtr<DataChannelConnection>(this),
-                                   &DataChannelConnection::DestroyOnSTS,
-                                   mSocket, mMasterSocket),
-                NS_DISPATCH_NORMAL);
+  if (mSocket && mSocket != mMasterSocket)
+    usrsctp_close(mSocket);
+  if (mMasterSocket)
+    usrsctp_close(mMasterSocket);
 
-  // These will be released on STS
   mSocket = nullptr;
   mMasterSocket = nullptr; // also a flag that we've Destroyed this connection
 
-  // Must do this in Destroy() since we may then delete this object
   if (mUsingDtls) {
     usrsctp_deregister_address(static_cast<void *>(this));
     LOG(("Deregistered %p from the SCTP stack.", static_cast<void *>(this)));
   }
-
   // We can't get any more new callbacks from the SCTP library
   // All existing callbacks have refs to DataChannelConnection
 
   // nsDOMDataChannel objects have refs to DataChannels that have refs to us
-}
-
-void DataChannelConnection::DestroyOnSTS(struct socket *aMasterSocket,
-                                         struct socket *aSocket)
-{
-  if (aSocket && aSocket != aMasterSocket)
-    usrsctp_close(aSocket);
-  if (aMasterSocket)
-    usrsctp_close(aMasterSocket);
-
-  disconnect_all();
+  if (mTransportFlow) {
+    MOZ_ASSERT(mSTS);
+    ASSERT_WEBRTC(NS_IsMainThread());
+    RUN_ON_THREAD(mSTS, WrapRunnable(nsRefPtr<DataChannelConnection>(this),
+                                     &DataChannelConnection::disconnect_all),
+                  NS_DISPATCH_NORMAL);
+    // don't release mTransportFlow until we are destroyed in case
+    // runnables are in flight.  We may well have packets to send as the
+    // SCTP lib may have sent a shutdown.
+  }
 }
 
 NS_IMPL_ISUPPORTS1(DataChannelConnection,
@@ -401,6 +392,10 @@ DataChannelConnection::Init(unsigned short aPort, uint16_t aNumStreams, bool aUs
     if (usrsctp_setsockopt(mMasterSocket, IPPROTO_SCTP, SCTP_REUSE_PORT,
                            (const void *)&on, (socklen_t)sizeof(on)) < 0) {
       LOG(("Couldn't set SCTP_REUSE_PORT on SCTP socket"));
+    }
+    if (usrsctp_setsockopt(mMasterSocket, IPPROTO_SCTP, SCTP_NODELAY,
+                           (const void *)&on, (socklen_t)sizeof(on)) < 0) {
+      LOG(("Couldn't set SCTP_NODELAY on SCTP socket"));
     }
   }
 
@@ -1987,7 +1982,7 @@ DataChannelConnection::Open(const nsACString& label, const nsACString& protocol,
 
 // Separate routine so we can also call it to finish up from pending opens
 already_AddRefed<DataChannel>
-DataChannelConnection::OpenFinish(already_AddRefed<DataChannel> aChannel)
+DataChannelConnection::OpenFinish(already_AddRefed<DataChannel>&& aChannel)
 {
   nsRefPtr<DataChannel> channel(aChannel); // takes the reference passed in
   // Normally 1 reference if called from ::Open(), or 2 if called from
@@ -2350,6 +2345,17 @@ DataChannelConnection::ReadBlob(already_AddRefed<DataChannelConnection> aThis,
                                &DataChannelConnection::SendBinaryMsg,
                                aStream, temp),
                 NS_DISPATCH_NORMAL);
+}
+
+void
+DataChannelConnection::GetStreamIds(std::vector<uint16_t>* aStreamList)
+{
+  ASSERT_WEBRTC(NS_IsMainThread());
+  for (uint32_t i = 0; i < mStreams.Length(); ++i) {
+    if (mStreams[i]) {
+      aStreamList->push_back(mStreams[i]->mStream);
+    }
+  }
 }
 
 int32_t

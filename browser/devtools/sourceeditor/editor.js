@@ -19,7 +19,7 @@ const XUL_NS      = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.x
 const MAX_VERTICAL_OFFSET = 3;
 
 const {Promise: promise} = Cu.import("resource://gre/modules/Promise.jsm", {});
-const events  = require("devtools/shared/event-emitter");
+const events  = require("devtools/toolkit/event-emitter");
 
 Cu.import("resource://gre/modules/Services.jsm");
 const L10N = Services.strings.createBundle(L10N_BUNDLE);
@@ -32,8 +32,7 @@ const CM_STYLES   = [
   "chrome://browser/skin/devtools/common.css",
   "chrome://browser/content/devtools/codemirror/codemirror.css",
   "chrome://browser/content/devtools/codemirror/dialog.css",
-  "chrome://browser/content/devtools/codemirror/mozilla.css",
-  "chrome://browser/content/devtools/codemirror/foldgutter.css"
+  "chrome://browser/content/devtools/codemirror/mozilla.css"
 ];
 
 const CM_SCRIPTS  = [
@@ -153,8 +152,8 @@ function Editor(config) {
 
   // Additional shortcuts.
   this.config.extraKeys[Editor.keyFor("jumpToLine")] = () => this.jumpToLine();
-  this.config.extraKeys[Editor.keyFor("moveLineUp")] = () => this.moveLineUp();
-  this.config.extraKeys[Editor.keyFor("moveLineDown")] = () => this.moveLineDown();
+  this.config.extraKeys[Editor.keyFor("moveLineUp", { noaccel: true })] = () => this.moveLineUp();
+  this.config.extraKeys[Editor.keyFor("moveLineDown", { noaccel: true })] = () => this.moveLineDown();
   this.config.extraKeys[Editor.keyFor("toggleComment")] = "toggleComment";
 
   // Disable ctrl-[ and ctrl-] because toolbox uses those shortcuts.
@@ -759,6 +758,26 @@ Editor.prototype = {
   },
 
   /**
+   * Returns current font size for the editor area, in pixels.
+   */
+  getFontSize: function () {
+    let cm  = editors.get(this);
+    let el  = cm.getWrapperElement();
+    let win = el.ownerDocument.defaultView;
+
+    return parseInt(win.getComputedStyle(el).getPropertyValue("font-size"), 10);
+  },
+
+  /**
+   * Sets font size for the editor area.
+   */
+  setFontSize: function (size) {
+    let cm = editors.get(this);
+    cm.getWrapperElement().style.fontSize = parseInt(size, 10) + "px";
+    cm.refresh();
+  },
+
+  /**
    * Extends an instance of the Editor object with additional
    * functions. Each function will be called with context as
    * the first argument. Context is a {ed, cm} object where
@@ -825,12 +844,13 @@ Editor.accel = function (key, modifiers={}) {
 
 /**
  * Returns a string representation of a shortcut for a
- * specified command 'cmd'. Cmd- for macs, Ctrl- for other
- * platforms. Useful when overwriting or disabling default
- * shortcuts.
+ * specified command 'cmd'. Append Cmd- for macs, Ctrl- for other
+ * platforms unless noaccel is specified in the options. Useful when overwriting
+ * or disabling default shortcuts.
  */
-Editor.keyFor = function (cmd) {
-  return Editor.accel(L10N.GetStringFromName(cmd + ".commandkey"));
+Editor.keyFor = function (cmd, opts={ noaccel: false }) {
+  let key = L10N.GetStringFromName(cmd + ".commandkey");
+  return opts.noaccel ? key : Editor.accel(key);
 };
 
 // Since Gecko already provide complete and up to date list of CSS property

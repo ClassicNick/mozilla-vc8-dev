@@ -273,6 +273,9 @@ nsXMLHttpRequestUpload::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope)
 //
 /////////////////////////////////////////////
 
+bool
+nsXMLHttpRequest::sDontWarnAboutSyncXHR = false;
+
 nsXMLHttpRequest::nsXMLHttpRequest()
   : mResponseBodyDecodedPos(0),
     mResponseType(XML_HTTP_RESPONSE_TYPE_DEFAULT),
@@ -989,8 +992,7 @@ nsXMLHttpRequest::GetResponse(JSContext* aCx, ErrorResult& aRv)
 
     JS::Rooted<JS::Value> result(aCx, JSVAL_NULL);
     JS::Rooted<JSObject*> scope(aCx, JS::CurrentGlobalOrNull(aCx));
-    aRv = nsContentUtils::WrapNative(aCx, scope, mResponseBlob, &result,
-                                     true);
+    aRv = nsContentUtils::WrapNative(aCx, scope, mResponseBlob, &result);
     return result;
   }
   case XML_HTTP_RESPONSE_TYPE_DOCUMENT:
@@ -1001,8 +1003,7 @@ nsXMLHttpRequest::GetResponse(JSContext* aCx, ErrorResult& aRv)
 
     JS::Rooted<JSObject*> scope(aCx, JS::CurrentGlobalOrNull(aCx));
     JS::Rooted<JS::Value> result(aCx, JSVAL_NULL);
-    aRv = nsContentUtils::WrapNative(aCx, scope, mResponseXML, &result,
-                                     true);
+    aRv = nsContentUtils::WrapNative(aCx, scope, mResponseXML, &result);
     return result;
   }
   case XML_HTTP_RESPONSE_TYPE_JSON:
@@ -1540,6 +1541,11 @@ nsXMLHttpRequest::Open(const nsACString& method, const nsACString& url,
                        const Optional<nsAString>& password)
 {
   NS_ENSURE_ARG(!method.IsEmpty());
+
+  if (!async && !DontWarnAboutSyncXHR() && GetOwner() &&
+      GetOwner()->GetExtantDoc()) {
+    GetOwner()->GetExtantDoc()->WarnOnceAbout(nsIDocument::eSyncXMLHttpRequest);
+  }
 
   Telemetry::Accumulate(Telemetry::XMLHTTPREQUEST_ASYNC_OR_SYNC,
                         async ? 0 : 1);
@@ -2866,7 +2872,7 @@ nsXMLHttpRequest::Send(nsIVariant* aVariant, const Nullable<RequestBody>& aBody)
             (suspendedWindow = suspendedWindow->GetCurrentInnerWindow())) {
           suspendedDoc = suspendedWindow->GetExtantDoc();
           if (suspendedDoc) {
-            suspendedDoc->SuppressEventHandling();
+            suspendedDoc->SuppressEventHandling(nsIDocument::eEvents);
           }
           suspendedWindow->SuspendTimeouts(1, false);
           resumeTimeoutRunnable = new nsResumeTimeoutsEvent(suspendedWindow);
@@ -2890,7 +2896,8 @@ nsXMLHttpRequest::Send(nsIVariant* aVariant, const Nullable<RequestBody>& aBody)
     }
 
     if (suspendedDoc) {
-      suspendedDoc->UnsuppressEventHandlingAndFireEvents(true);
+      suspendedDoc->UnsuppressEventHandlingAndFireEvents(nsIDocument::eEvents,
+                                                         true);
     }
 
     if (resumeTimeoutRunnable) {
@@ -3509,11 +3516,11 @@ nsXMLHttpRequest::GetInterface(const nsIID & aIID, void **aResult)
   // need to see these notifications for proper functioning.
   if (aIID.Equals(NS_GET_IID(nsIChannelEventSink))) {
     mChannelEventSink = do_GetInterface(mNotificationCallbacks);
-    *aResult = static_cast<nsIChannelEventSink*>(EnsureXPCOMifier().get());
+    *aResult = static_cast<nsIChannelEventSink*>(EnsureXPCOMifier().take());
     return NS_OK;
   } else if (aIID.Equals(NS_GET_IID(nsIProgressEventSink))) {
     mProgressEventSink = do_GetInterface(mNotificationCallbacks);
-    *aResult = static_cast<nsIProgressEventSink*>(EnsureXPCOMifier().get());
+    *aResult = static_cast<nsIProgressEventSink*>(EnsureXPCOMifier().take());
     return NS_OK;
   }
 
@@ -3612,15 +3619,15 @@ nsXMLHttpRequest::GetInterface(const nsIID & aIID, void **aResult)
   // nsIProgressEventSink and nsIChannelEventSink which we already
   // handled above.
   else if (aIID.Equals(NS_GET_IID(nsIStreamListener))) {
-    *aResult = static_cast<nsIStreamListener*>(EnsureXPCOMifier().get());
+    *aResult = static_cast<nsIStreamListener*>(EnsureXPCOMifier().take());
     return NS_OK;
   }
   else if (aIID.Equals(NS_GET_IID(nsIRequestObserver))) {
-    *aResult = static_cast<nsIRequestObserver*>(EnsureXPCOMifier().get());
+    *aResult = static_cast<nsIRequestObserver*>(EnsureXPCOMifier().take());
     return NS_OK;
   }
   else if (aIID.Equals(NS_GET_IID(nsITimerCallback))) {
-    *aResult = static_cast<nsITimerCallback*>(EnsureXPCOMifier().get());
+    *aResult = static_cast<nsITimerCallback*>(EnsureXPCOMifier().take());
     return NS_OK;
   }
 

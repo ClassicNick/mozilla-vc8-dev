@@ -326,6 +326,7 @@ class ICEntry
     _(Call_Native)              \
     _(Call_ScriptedApplyArray)  \
     _(Call_ScriptedApplyArguments) \
+    _(Call_ScriptedFunCall)     \
                                 \
     _(GetElem_Fallback)         \
     _(GetElem_NativeSlot)       \
@@ -738,6 +739,7 @@ class ICStub
           case Call_Native:
           case Call_ScriptedApplyArray:
           case Call_ScriptedApplyArguments:
+          case Call_ScriptedFunCall:
           case UseCount_Fallback:
           case GetElem_NativeSlot:
           case GetElem_NativePrototypeSlot:
@@ -835,8 +837,7 @@ class ICFallbackStub : public ICStub
     }
 
     // Add a new stub to the IC chain terminated by this fallback stub.
-    void addNewStub(JSContext *cx, ICStub *stub) {
-        AutoLockForCompilation lock(cx);
+    void addNewStub(ICStub *stub) {
         JS_ASSERT(*lastStubPtrAddr_ == this);
         JS_ASSERT(stub->next() == nullptr);
         stub->setNext(this);
@@ -1078,8 +1079,8 @@ class ICStubCompiler
     }
 
 #ifdef JSGC_GENERATIONAL
-    inline bool emitPostWriteBarrierSlot(MacroAssembler &masm, Register obj, Register scratch,
-                                         GeneralRegisterSet saveRegs);
+    inline bool emitPostWriteBarrierSlot(MacroAssembler &masm, Register obj, ValueOperand val,
+                                         Register scratch, GeneralRegisterSet saveRegs);
 #endif
 
   public:
@@ -1088,7 +1089,7 @@ class ICStubCompiler
     ICStubSpace *getStubSpace(JSScript *script) {
         if (ICStub::CanMakeCalls(kind))
             return script->baselineScript()->fallbackStubSpace();
-        return script->compartment()->jitCompartment()->optimizedStubSpace();
+        return script->zone()->jitZone()->optimizedStubSpace();
     }
 };
 
@@ -2442,15 +2443,13 @@ class ICBinaryArith_Fallback : public ICFallbackStub
     bool sawDoubleResult() const {
         return extra_ & SAW_DOUBLE_RESULT_BIT;
     }
-    void setSawDoubleResult(JSContext *cx) {
-        AutoLockForCompilation lock(cx);
+    void setSawDoubleResult() {
         extra_ |= SAW_DOUBLE_RESULT_BIT;
     }
     bool hadUnoptimizableOperands() const {
         return extra_ & UNOPTIMIZABLE_OPERANDS_BIT;
     }
-    void noteUnoptimizableOperands(JSContext *cx) {
-        AutoLockForCompilation lock(cx);
+    void noteUnoptimizableOperands() {
         extra_ |= UNOPTIMIZABLE_OPERANDS_BIT;
     }
 
@@ -2851,16 +2850,14 @@ class ICGetElem_Fallback : public ICMonitoredFallbackStub
         return space->allocate<ICGetElem_Fallback>(code);
     }
 
-    void noteNonNativeAccess(JSContext *cx) {
-        AutoLockForCompilation lock(cx);
+    void noteNonNativeAccess() {
         extra_ |= EXTRA_NON_NATIVE;
     }
     bool hasNonNativeAccess() const {
         return extra_ & EXTRA_NON_NATIVE;
     }
 
-    void noteNegativeIndex(JSContext *cx) {
-        AutoLockForCompilation lock(cx);
+    void noteNegativeIndex() {
         extra_ |= EXTRA_NEGATIVE_INDEX;
     }
     bool hasNegativeIndex() const {
@@ -3448,8 +3445,7 @@ class ICSetElem_Fallback : public ICFallbackStub
         return space->allocate<ICSetElem_Fallback>(code);
     }
 
-    void noteArrayWriteHole(JSContext *cx) {
-        AutoLockForCompilation lock(cx);
+    void noteArrayWriteHole() {
         extra_ = 1;
     }
     bool hasArrayWriteHole() const {
@@ -4024,16 +4020,14 @@ class ICGetProp_Fallback : public ICMonitoredFallbackStub
     static const size_t UNOPTIMIZABLE_ACCESS_BIT = 0;
     static const size_t ACCESSED_GETTER_BIT = 1;
 
-    void noteUnoptimizableAccess(JSContext *cx) {
-        AutoLockForCompilation lock(cx);
+    void noteUnoptimizableAccess() {
         extra_ |= (1u << UNOPTIMIZABLE_ACCESS_BIT);
     }
     bool hadUnoptimizableAccess() const {
         return extra_ & (1u << UNOPTIMIZABLE_ACCESS_BIT);
     }
 
-    void noteAccessedGetter(JSContext *cx) {
-        AutoLockForCompilation lock(cx);
+    void noteAccessedGetter() {
         extra_ |= (1u << ACCESSED_GETTER_BIT);
     }
     bool hasAccessedGetter() const {
@@ -4840,8 +4834,7 @@ class ICSetProp_Fallback : public ICFallbackStub
     }
 
     static const size_t UNOPTIMIZABLE_ACCESS_BIT = 0;
-    void noteUnoptimizableAccess(JSContext *cx) {
-        AutoLockForCompilation lock(cx);
+    void noteUnoptimizableAccess() {
         extra_ |= (1u << UNOPTIMIZABLE_ACCESS_BIT);
     }
     bool hadUnoptimizableAccess() const {
@@ -5591,6 +5584,57 @@ class ICCall_ScriptedApplyArguments : public ICMonitoredStub
     };
 };
 
+// Handles calls of the form |fun.call(...)| where fun is a scripted function.
+class ICCall_ScriptedFunCall : public ICMonitoredStub
+{
+    friend class ICStubSpace;
+
+  protected:
+    uint32_t pcOffset_;
+
+    ICCall_ScriptedFunCall(JitCode *stubCode, ICStub *firstMonitorStub, uint32_t pcOffset)
+      : ICMonitoredStub(ICStub::Call_ScriptedFunCall, stubCode, firstMonitorStub),
+        pcOffset_(pcOffset)
+    {}
+
+  public:
+    static inline ICCall_ScriptedFunCall *New(ICStubSpace *space, JitCode *code,
+                                              ICStub *firstMonitorStub, uint32_t pcOffset)
+    {
+        if (!code)
+            return nullptr;
+        return space->allocate<ICCall_ScriptedFunCall>(code, firstMonitorStub, pcOffset);
+    }
+
+    static size_t offsetOfPCOffset() {
+        return offsetof(ICCall_ScriptedFunCall, pcOffset_);
+    }
+
+    // Compiler for this stub kind.
+    class Compiler : public ICCallStubCompiler {
+      protected:
+        ICStub *firstMonitorStub_;
+        uint32_t pcOffset_;
+        bool generateStubCode(MacroAssembler &masm);
+
+        virtual int32_t getKey() const {
+            return static_cast<int32_t>(kind);
+        }
+
+      public:
+        Compiler(JSContext *cx, ICStub *firstMonitorStub, uint32_t pcOffset)
+          : ICCallStubCompiler(cx, ICStub::Call_ScriptedFunCall),
+            firstMonitorStub_(firstMonitorStub),
+            pcOffset_(pcOffset)
+        { }
+
+        ICStub *getStub(ICStubSpace *space) {
+            return ICCall_ScriptedFunCall::New(space, getStubCode(), firstMonitorStub_,
+                                               pcOffset_);
+        }
+    };
+};
+
 // Stub for performing a TableSwitch, updating the IC's return address to jump
 // to whatever point the switch is branching to.
 class ICTableSwitch : public ICStub
@@ -5742,8 +5786,7 @@ class ICIteratorNext_Fallback : public ICFallbackStub
         return space->allocate<ICIteratorNext_Fallback>(code);
     }
 
-    void setHasNonStringResult(JSContext *cx) {
-        AutoLockForCompilation lock(cx);
+    void setHasNonStringResult() {
         JS_ASSERT(extra_ == 0);
         extra_ = 1;
     }

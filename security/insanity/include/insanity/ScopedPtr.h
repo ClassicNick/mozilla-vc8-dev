@@ -18,20 +18,7 @@
 #ifndef insanity_pkix__ScopedPtr_h
 #define insanity_pkix__ScopedPtr_h
 
-// GCC does not understand nullptr until 4.6
-#ifdef __GNUC__
-#if __GNUC__ * 100 + __GNUC_MINOR__ < 406
-  #define nullptr __null
-#endif
-#elif defined (_MSC_VER) && _MSC_VER <= 1500
-#if defined (_WIN64)
-#define nullptr 0LL
-#elif defined (_WIN32)
-#define nullptr 0L
-#else
-#error "nullptr is incompatible with your platform
-#endif
-#endif
+#include "insanity/nullptr.h"
 
 namespace insanity { namespace pkix {
 

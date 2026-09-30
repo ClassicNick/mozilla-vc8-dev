@@ -99,7 +99,8 @@ DownloadLegacyTransfer.prototype = {
         // To handle asynchronous cancellation properly, we should hook up the
         // handler only after we have been notified that the main request
         // started.  We will wait until the main request stopped before
-        // notifying that the download has been canceled.
+        // notifying that the download has been canceled.  Since the request has
+        // not completed yet, deferCanceled is guaranteed to be set.
         return download.saver.deferCanceled.promise.then(() => {
           // Only cancel if the object executing the download is still running.
           if (this._cancelable && !this._componentFailed) {
@@ -117,10 +118,11 @@ DownloadLegacyTransfer.prototype = {
       // The last file has been received, or the download failed.  Wait for the
       // associated Download object to be available before notifying.
       this._deferDownload.promise.then(download => {
-	// At this point, the hash has been set and we need to copy it to the
-	// DownloadSaver.
-	if (Components.isSuccessCode(aStatus)) {
+        // At this point, the hash has been set and we need to copy it to the
+        // DownloadSaver.
+        if (Components.isSuccessCode(aStatus)) {
           download.saver.setSha256Hash(this._sha256Hash);
+          download.saver.setSignatureInfo(this._signatureInfo);
         }
         download.saver.onTransferFinished(aRequest, aStatus);
       }).then(null, Cu.reportError);
@@ -223,11 +225,8 @@ DownloadLegacyTransfer.prototype = {
         aDownload.tryToKeepPartialData = true;
       }
 
-      // Start the download before allowing it to be controlled.
-      aDownload.start().then(null, function () {
-        // In case the operation failed, ensure we stop downloading data.
-        aDownload.saver.deferCanceled.resolve();
-      });
+      // Start the download before allowing it to be controlled.  Ignore errors.
+      aDownload.start().then(null, () => {});
 
       // Start processing all the other events received through nsITransfer.
       this._deferDownload.resolve(aDownload);
@@ -240,6 +239,11 @@ DownloadLegacyTransfer.prototype = {
   setSha256Hash: function (hash)
   {
     this._sha256Hash = hash;
+  },
+
+  setSignatureInfo: function (signatureInfo)
+  {
+    this._signatureInfo = signatureInfo;
   },
 
   //////////////////////////////////////////////////////////////////////////////
@@ -268,6 +272,11 @@ DownloadLegacyTransfer.prototype = {
    * Save the SHA-256 hash in raw bytes of the downloaded file.
    */
   _sha256Hash: null,
+
+  /**
+   * Save the signature info in a serialized protobuf of the downloaded file.
+   */
+  _signatureInfo: null,
 };
 
 ////////////////////////////////////////////////////////////////////////////////

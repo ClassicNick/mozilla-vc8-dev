@@ -114,16 +114,19 @@ getwintimeofday(struct timeval *tv)
 int
 Win_getifaddrs(struct ifaddrs** interfaces)
 {
+#if defined(INET) || defined(INET6)
 	DWORD Err, AdapterAddrsSize;
 	int count;
 	PIP_ADAPTER_ADDRESSES pAdapterAddrs, pAdapt;
 	struct ifaddrs *ifa;
+#endif
 #if defined(INET)
 	struct sockaddr_in *addr;
 #endif
 #if defined(INET6)
 	struct sockaddr_in6 *addr6;
 #endif
+#if defined(INET) || defined(INET6)
 	count = 0;
 
 	if(!sIPHelper) {
@@ -137,6 +140,7 @@ Win_getifaddrs(struct ifaddrs** interfaces)
 		return (-1);
 	}
 
+#endif
 #if defined(INET)
 	AdapterAddrsSize = 0;
 	if ((Err = sGetAdaptersAddresses(AF_INET, 0, NULL, NULL, &AdapterAddrsSize)) != 0) {

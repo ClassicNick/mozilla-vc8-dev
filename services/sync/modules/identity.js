@@ -89,6 +89,27 @@ IdentityManager.prototype = {
    * its state
    */
   initialize: function() {
+    // Nothing to do for this identity provider.
+    return Promise.resolve();
+  },
+
+  finalize: function() {
+    // Nothing to do for this identity provider.
+    return Promise.resolve();
+  },
+
+  /**
+   * Called whenever Service.logout() is called.
+   */
+  logout: function() {
+    // nothing to do for this identity provider.
+  },
+
+  /**
+   * Ensure the user is logged in.  Returns a promise that resolves when
+   * the user is logged in, or is rejected if the login attempt has failed.
+   */
+  ensureLoggedIn: function() {
     // nothing to do for this identity provider
     return Promise.resolve();
   },
@@ -448,9 +469,11 @@ IdentityManager.prototype = {
    * Deletes Sync credentials from the password manager.
    */
   deleteSyncCredentials: function deleteSyncCredentials() {
-    let logins = Services.logins.findLogins({}, PWDMGR_HOST, "", "");
-    for each (let login in logins) {
-      Services.logins.removeLogin(login);
+    for (let host of Utils.getSyncCredentialsHosts()) {
+      let logins = Services.logins.findLogins({}, host, "", "");
+      for each (let login in logins) {
+        Services.logins.removeLogin(login);
+      }
     }
 
     // Wait until after store is updated in case it fails.
@@ -530,5 +553,10 @@ IdentityManager.prototype = {
   createClusterManager: function(service) {
     Cu.import("resource://services-sync/stages/cluster.js");
     return new ClusterManager(service);
-  }
+  },
+
+  offerSyncOptions: function () {
+    // Do nothing for Sync 1.1.
+    return {accepted: true};
+  },
 };

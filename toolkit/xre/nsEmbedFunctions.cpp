@@ -397,7 +397,7 @@ XRE_InitChildProcess(int aArgc,
 
   if (PR_GetEnv("MOZ_DEBUG_CHILD_PROCESS")) {
 #ifdef OS_POSIX
-      printf("\n\nCHILDCHILDCHILDCHILD\n  debug me @%d\n\n", getpid());
+      printf("\n\nCHILDCHILDCHILDCHILD\n  debug me @ %d\n\n", getpid());
       sleep(30);
 #elif defined(OS_WIN)
       // Windows has a decent JIT debugging story, so NS_DebugBreak does the
@@ -721,7 +721,7 @@ ContentParent* gContentParent; //long-lived, manually refcounted
 TestShellParent* GetOrCreateTestShellParent()
 {
     if (!gContentParent) {
-        nsRefPtr<ContentParent> parent = ContentParent::GetNewOrUsed().get();
+        nsRefPtr<ContentParent> parent = ContentParent::GetNewOrUsed();
         parent.forget(&gContentParent);
     } else if (!gContentParent->IsAlive()) {
         return nullptr;

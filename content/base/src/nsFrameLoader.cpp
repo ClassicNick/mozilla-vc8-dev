@@ -53,6 +53,7 @@
 #include "nsIEditor.h"
 #include "nsIMozBrowserFrame.h"
 #include "nsIPermissionManager.h"
+#include "nsISHistory.h"
 
 #include "nsLayoutUtils.h"
 #include "nsView.h"
@@ -63,7 +64,7 @@
 #include "nsNetUtil.h"
 
 #include "nsGkAtoms.h"
-#include "nsINameSpaceManager.h"
+#include "nsNameSpaceManager.h"
 
 #include "nsThreadUtils.h"
 
@@ -271,7 +272,6 @@ nsFrameLoader::nsFrameLoader(Element* aOwner, bool aNetworkCreated)
   , mInShow(false)
   , mHideCalled(false)
   , mNetworkCreated(aNetworkCreated)
-  , mDelayRemoteDialogs(false)
   , mRemoteBrowserShown(false)
   , mRemoteFrame(false)
   , mClipSubdocument(true)
@@ -461,9 +461,9 @@ nsFrameLoader::ReallyStartLoadingInternal()
     if (!mRemoteBrowser) {
       if (!mPendingFrameSent) {
         nsCOMPtr<nsIObserverService> os = services::GetObserverService();
-        if (OwnerIsBrowserOrAppFrame() && os && !mRemoteBrowserInitialized) {
+        if (os && !mRemoteBrowserInitialized) {
           os->NotifyObservers(NS_ISUPPORTS_CAST(nsIFrameLoader*, this),
-                              "remote-browser-frame-pending", nullptr);
+                              "remote-browser-pending", nullptr);
           mPendingFrameSent = true;
         }
       }
@@ -526,6 +526,8 @@ nsFrameLoader::ReallyStartLoadingInternal()
     rv = NS_NewURI(getter_AddRefs(referrer), referrerStr);
 
     loadInfo->SetSrcdocData(srcdoc);
+    nsCOMPtr<nsIURI> baseURI = mOwnerContent->GetBaseURI();
+    loadInfo->SetBaseURI(baseURI);
   }
   else {
     rv = mOwnerContent->NodePrincipal()->GetURI(getter_AddRefs(referrer));
@@ -992,14 +994,14 @@ nsFrameLoader::ShowRemoteFrame(const nsIntSize& size,
     EnsureMessageManager();
 
     nsCOMPtr<nsIObserverService> os = services::GetObserverService();
-    if (OwnerIsBrowserOrAppFrame() && os && !mRemoteBrowserInitialized) {
+    if (os && !mRemoteBrowserInitialized) {
       if (!mPendingFrameSent) {
         os->NotifyObservers(NS_ISUPPORTS_CAST(nsIFrameLoader*, this),
-                            "remote-browser-frame-pending", nullptr);
+                            "remote-browser-pending", nullptr);
         mPendingFrameSent = true;
       }
       os->NotifyObservers(NS_ISUPPORTS_CAST(nsIFrameLoader*, this),
-                          "remote-browser-frame-shown", nullptr);
+                          "remote-browser-shown", nullptr);
       mRemoteBrowserInitialized = true;
     }
   } else {
@@ -1446,6 +1448,14 @@ nsFrameLoader::OwnerIsBrowserOrAppFrame()
   return browserFrame ? browserFrame->GetReallyIsBrowserOrApp() : false;
 }
 
+// The xpcom getter version
+NS_IMETHODIMP
+nsFrameLoader::GetOwnerIsBrowserOrAppFrame(bool* aResult)
+{
+  *aResult = OwnerIsBrowserOrAppFrame();
+  return NS_OK;
+}
+
 bool
 nsFrameLoader::OwnerIsAppFrame()
 {
@@ -1671,6 +1681,18 @@ nsFrameLoader::MaybeCreateDocShell()
     return NS_ERROR_FAILURE;
   }
 
+  if (mIsTopLevelContent &&
+      mOwnerContent->IsXUL(nsGkAtoms::browser) &&
+      !mOwnerContent->HasAttr(kNameSpaceID_None, nsGkAtoms::disablehistory)) {
+    nsresult rv;
+    nsCOMPtr<nsISHistory> sessionHistory =
+      do_CreateInstance(NS_SHISTORY_CONTRACTID, &rv);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    nsCOMPtr<nsIWebNavigation> webNav(do_QueryInterface(mDocShell));
+    webNav->SetSessionHistory(sessionHistory);
+  }
+
   EnsureMessageManager();
 
   if (OwnerIsAppFrame()) {
@@ -1700,19 +1722,17 @@ nsFrameLoader::MaybeCreateDocShell()
     mDocShell->SetIsBrowserInsideApp(containingAppId);
   }
 
-  if (OwnerIsBrowserOrAppFrame()) {
-    nsCOMPtr<nsIObserverService> os = services::GetObserverService();
-    if (os) {
-      os->NotifyObservers(NS_ISUPPORTS_CAST(nsIFrameLoader*, this),
-                          "in-process-browser-or-app-frame-shown", nullptr);
-    }
+  nsCOMPtr<nsIObserverService> os = services::GetObserverService();
+  if (os) {
+    os->NotifyObservers(NS_ISUPPORTS_CAST(nsIFrameLoader*, this),
+                        "inprocess-browser-shown", nullptr);
+  }
 
-    if (mMessageManager) {
-      mMessageManager->LoadFrameScript(
-        NS_LITERAL_STRING("chrome://global/content/BrowserElementChild.js"),
-        /* allowDelayedLoad = */ true,
-        /* aRunInGlobalScope */ true);
-    }
+  if (OwnerIsBrowserOrAppFrame() && mMessageManager) {
+    mMessageManager->LoadFrameScript(
+      NS_LITERAL_STRING("chrome://global/content/BrowserElementChild.js"),
+      /* allowDelayedLoad = */ true,
+      /* aRunInGlobalScope */ true);
   }
 
   return NS_OK;
@@ -1778,8 +1798,21 @@ nsFrameLoader::CheckForRecursiveLoad(nsIURI* aURI)
     temp.swap(parentAsItem);
     temp->GetSameTypeParent(getter_AddRefs(parentAsItem));
   }
-  
-  // Bug 136580: Check for recursive frame loading
+
+  // Bug 136580: Check for recursive frame loading excluding about:srcdoc URIs.
+  // srcdoc URIs require their contents to be specified inline, so it isn't
+  // possible for undesirable recursion to occur without the aid of a
+  // non-srcdoc URI,  which this method will block normally.
+  // Besides, URI is not enough to guarantee uniqueness of srcdoc documents.
+  nsAutoCString buffer;
+  rv = aURI->GetScheme(buffer);
+  if (NS_SUCCEEDED(rv) && buffer.EqualsLiteral("about")) {
+    rv = aURI->GetPath(buffer);
+    if (NS_SUCCEEDED(rv) && buffer.EqualsLiteral("srcdoc")) {
+      // Duplicates allowed up to depth limits
+      return NS_OK;
+    }
+  }
   int32_t matchCount = 0;
   mDocShell->GetSameTypeParent(getter_AddRefs(parentAsItem));
   while (parentAsItem) {
@@ -2065,6 +2098,8 @@ nsFrameLoader::TryRemoteBrowser()
   } else if (OwnerIsBrowserFrame()) {
     // The |else| above is unnecessary; OwnerIsBrowserFrame() implies !ownApp.
     rv = context.SetTabContextForBrowserFrame(containingApp, scrollingBehavior);
+  } else {
+    rv = context.SetTabContextForNormalFrame(scrollingBehavior);
   }
   NS_ENSURE_TRUE(rv, false);
 
@@ -2162,26 +2197,6 @@ nsFrameLoader::SendCrossProcessKeyEvent(const nsAString& aType,
   return NS_ERROR_FAILURE;
 }
 
-NS_IMETHODIMP
-nsFrameLoader::GetDelayRemoteDialogs(bool* aRetVal)
-{
-  *aRetVal = mDelayRemoteDialogs;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsFrameLoader::SetDelayRemoteDialogs(bool aDelay)
-{
-  if (mRemoteBrowser && mDelayRemoteDialogs && !aDelay) {
-    nsRefPtr<nsIRunnable> ev =
-      NS_NewRunnableMethod(mRemoteBrowser,
-                           &mozilla::dom::TabParent::HandleDelayedDialogs);
-    NS_DispatchToCurrentThread(ev);
-  }
-  mDelayRemoteDialogs = aDelay;
-  return NS_OK;
-}
-
 nsresult
 nsFrameLoader::CreateStaticClone(nsIFrameLoader* aDest)
 {
@@ -2220,7 +2235,8 @@ nsFrameLoader::DoLoadFrameScript(const nsAString& aURL, bool aRunInGlobalScope)
   return true;
 }
 
-class nsAsyncMessageToChild : public nsRunnable
+class nsAsyncMessageToChild : public nsSameProcessAsyncMessageBase,
+                              public nsRunnable
 {
 public:
   nsAsyncMessageToChild(JSContext* aCx,
@@ -2229,23 +2245,9 @@ public:
                         const StructuredCloneData& aData,
                         JS::Handle<JSObject *> aCpows,
                         nsIPrincipal* aPrincipal)
-    : mRuntime(js::GetRuntime(aCx)), mFrameLoader(aFrameLoader)
-    , mMessage(aMessage), mCpows(aCpows), mPrincipal(aPrincipal)
+    : nsSameProcessAsyncMessageBase(aCx, aMessage, aData, aCpows, aPrincipal)
+    , mFrameLoader(aFrameLoader)
   {
-    if (aData.mDataLength && !mData.copy(aData.mData, aData.mDataLength)) {
-      NS_RUNTIMEABORT("OOM");
-    }
-    if (mCpows && !js_AddObjectRoot(mRuntime, &mCpows)) {
-      NS_RUNTIMEABORT("OOM");
-    }
-    mClosure = aData.mClosure;
-  }
-
-  ~nsAsyncMessageToChild()
-  {
-    if (mCpows) {
-      JS_RemoveObjectRootRT(mRuntime, &mCpows);
-    }
   }
 
   NS_IMETHOD Run()
@@ -2254,26 +2256,12 @@ public:
       static_cast<nsInProcessTabChildGlobal*>(mFrameLoader->mChildMessageManager.get());
     if (tabChild && tabChild->GetInnerManager()) {
       nsCOMPtr<nsIXPConnectJSObjectHolder> kungFuDeathGrip(tabChild->GetGlobal());
-      StructuredCloneData data;
-      data.mData = mData.data();
-      data.mDataLength = mData.nbytes();
-      data.mClosure = mClosure;
-
-      SameProcessCpowHolder cpows(mRuntime, JS::Handle<JSObject *>::fromMarkedLocation(&mCpows));
-
-      nsRefPtr<nsFrameMessageManager> mm = tabChild->GetInnerManager();
-      mm->ReceiveMessage(static_cast<EventTarget*>(tabChild), mMessage,
-                         false, &data, &cpows, mPrincipal, nullptr);
+      ReceiveMessage(static_cast<EventTarget*>(tabChild),
+                     tabChild->GetInnerManager());
     }
     return NS_OK;
   }
-  JSRuntime* mRuntime;
   nsRefPtr<nsFrameLoader> mFrameLoader;
-  nsString mMessage;
-  JSAutoStructuredCloneBuffer mData;
-  StructuredCloneClosure mClosure;
-  JSObject* mCpows;
-  nsCOMPtr<nsIPrincipal> mPrincipal;
 };
 
 bool

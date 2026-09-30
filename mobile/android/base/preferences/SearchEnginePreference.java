@@ -4,27 +4,22 @@
 
 package org.mozilla.gecko.preferences;
 
+import org.json.JSONException;
+import org.json.JSONObject;
+import org.mozilla.gecko.R;
+import org.mozilla.gecko.favicons.Favicons;
+import org.mozilla.gecko.favicons.decoders.FaviconDecoder;
+import org.mozilla.gecko.util.ThreadUtils;
+import org.mozilla.gecko.widget.FaviconView;
+
 import android.app.AlertDialog;
 import android.content.Context;
-import android.content.res.Resources;
 import android.graphics.Bitmap;
 import android.graphics.drawable.BitmapDrawable;
 import android.text.SpannableString;
 import android.util.Log;
 import android.view.View;
 import android.widget.Toast;
-
-import java.util.Iterator;
-
-import org.json.JSONException;
-import org.json.JSONObject;
-
-import org.mozilla.gecko.favicons.decoders.FaviconDecoder;
-import org.mozilla.gecko.favicons.decoders.LoadFaviconResult;
-import org.mozilla.gecko.favicons.Favicons;
-import org.mozilla.gecko.R;
-import org.mozilla.gecko.util.ThreadUtils;
-import org.mozilla.gecko.widget.FaviconView;
 
 /**
  * Represents an element in the list of search engines on the preferences menu.
@@ -70,10 +65,9 @@ public class SearchEnginePreference extends CustomListPreference {
      * Returns the strings to be displayed in the dialog.
      */
     @Override
-    protected String[] getDialogStrings() {
-        Resources res = getContext().getResources();
+    protected String[] createDialogItems() {
         return new String[] { LABEL_SET_AS_DEFAULT,
-                              res.getString(R.string.pref_dialog_remove) };
+                              LABEL_REMOVE };
     }
 
     @Override
@@ -135,54 +129,22 @@ public class SearchEnginePreference extends CustomListPreference {
         final String iconURI = geckoEngineJSON.getString("iconURI");
         // Keep a reference to the bitmap - we'll need it later in onBindView.
         try {
-
-            // Bug 961600: we shouldn't be doing all of this work. The favicon cache
-            // should be used, and will give us the right size icon.
-
-            LoadFaviconResult result = FaviconDecoder.decodeDataURI(iconURI);
-            if (result == null) {
-                // Nothing we can do.
-                Log.w(LOGTAG, "Unable to decode icon URI.");
-                return;
-            }
-
-            Iterator<Bitmap> bitmaps = result.getBitmaps();
-            if (!bitmaps.hasNext()) {
-                Log.w(LOGTAG, "No bitmaps in decoded icon.");
-                return;
-            }
-
-            mIconBitmap = bitmaps.next();
-
-            if (!bitmaps.hasNext()) {
-                // We're done! There was only one, so this is as big as it gets.
-                return;
-            }
-
-            // Find a bitmap of a more suitable size.
             final int desiredWidth;
             if (mFaviconView != null) {
                 desiredWidth = mFaviconView.getWidth();
             } else {
-                // sLargestFaviconSize is initialized when Favicons is attached to a
+                // largestFaviconSize is initialized when Favicons is attached to a
                 // context, which occurs during GeckoApp.onCreate. That might not
                 // ever happen (leaving it at 0), so we fall back.
-                if (Favicons.sLargestFaviconSize == 0) {
+                if (Favicons.largestFaviconSize == 0) {
                     desiredWidth = 128;
                 } else {
-                    desiredWidth = Favicons.sLargestFaviconSize;
+                    desiredWidth = Favicons.largestFaviconSize;
                 }
             }
 
-            int currentWidth = mIconBitmap.getWidth();
-            while ((currentWidth < desiredWidth) &&
-                   bitmaps.hasNext()) {
-                Bitmap b = bitmaps.next();
-                if (b.getWidth() > currentWidth) {
-                    currentWidth = b.getWidth();
-                    mIconBitmap = b;
-                }
-            }
+            // TODO: use the cache. Bug 961600.
+            mIconBitmap = FaviconDecoder.getMostSuitableBitmapFromDataURI(iconURI, desiredWidth);
 
         } catch (IllegalArgumentException e) {
             Log.e(LOGTAG, "IllegalArgumentException creating Bitmap. Most likely a zero-length bitmap.", e);

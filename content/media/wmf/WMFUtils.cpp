@@ -685,4 +685,3 @@ MFCreateAlignedMemoryBuffer(DWORD cbMaxLength,
 
 } // end namespace wmf
 } // end namespace mozilla
->>>>>>> 985eeb6

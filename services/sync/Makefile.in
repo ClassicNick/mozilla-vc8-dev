@@ -20,6 +20,7 @@ sync_modules := \
   addonutils.js \
   browserid_identity.js \
   engines.js \
+  healthreport.jsm \
   identity.js \
   jpakeclient.js \
   keys.js \
@@ -50,6 +51,7 @@ sync_engine_modules := \
 
 sync_stage_modules := \
   cluster.js \
+  declined.js \
   enginesync.js \
   $(NULL)
 

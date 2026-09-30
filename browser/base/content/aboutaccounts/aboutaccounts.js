@@ -9,8 +9,16 @@ const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/FxAccounts.jsm");
 
+let fxAccountsCommon = {};
+Cu.import("resource://gre/modules/FxAccountsCommon.js", fxAccountsCommon);
+
 const PREF_LAST_FXA_USER = "identity.fxaccounts.lastSignedInUserHash";
 const PREF_SYNC_SHOW_CUSTOMIZATION = "services.sync.ui.showCustomizationDialog";
+
+const OBSERVER_TOPICS = [
+  fxAccountsCommon.ONVERIFIED_NOTIFICATION,
+  fxAccountsCommon.ONLOGOUT_NOTIFICATION,
+];
 
 function log(msg) {
   //dump("FXA: " + msg + "\n");
@@ -92,7 +100,7 @@ let wrapper = {
     iframe.addEventListener("load", this);
 
     try {
-      iframe.src = url || fxAccounts.getAccountsURI();
+      iframe.src = url || fxAccounts.getAccountsSignUpURI();
     } catch (e) {
       error("Couldn't init Firefox Account wrapper: " + e.message);
     }
@@ -142,18 +150,28 @@ let wrapper = {
     // Remember who it was so we can log out next time.
     setPreviousAccountNameHash(newAccountEmail);
 
-    fxAccounts.setSignedInUser(accountData).then(
-      () => {
-        this.injectData("message", { status: "login" });
-        // until we sort out a better UX, just leave the jelly page in place.
-        // If the account email is not yet verified, it will tell the user to
-        // go check their email, but then it will *not* change state after
-        // the verification completes (the browser will begin syncing, but
-        // won't notify the user). If the email has already been verified,
-        // the jelly will say "Welcome! You are successfully signed in as
-        // EMAIL", but it won't then say "syncing started".
-      },
-      (err) => this.injectData("message", { status: "error", error: err })
+    // A sync-specific hack - we want to ensure sync has been initialized
+    // before we set the signed-in user.
+    let xps = Cc["@mozilla.org/weave/service;1"]
+              .getService(Ci.nsISupports)
+              .wrappedJSObject;
+    xps.whenLoaded().then(() => {
+      return fxAccounts.setSignedInUser(accountData);
+    }).then(() => {
+      // If the user data is verified, we want it to immediately look like
+      // they are signed in without waiting for messages to bounce around.
+      if (accountData.verified) {
+        showManage();
+      }
+      this.injectData("message", { status: "login" });
+      // until we sort out a better UX, just leave the jelly page in place.
+      // If the account email is not yet verified, it will tell the user to
+      // go check their email, but then it will *not* change state after
+      // the verification completes (the browser will begin syncing, but
+      // won't notify the user). If the email has already been verified,
+      // the jelly will say "Welcome! You are successfully signed in as
+      // EMAIL", but it won't then say "syncing started".
+    }, (err) => this.injectData("message", { status: "error", error: err })
     );
   },
 
@@ -205,7 +223,7 @@ let wrapper = {
   injectData: function (type, content) {
     let authUrl;
     try {
-      authUrl = fxAccounts.getAccountsURI();
+      authUrl = fxAccounts.getAccountsSignUpURI();
     } catch (e) {
       error("Couldn't inject data: " + e.message);
       return;
@@ -221,8 +239,16 @@ let wrapper = {
 
 // Button onclick handlers
 function handleOldSync() {
-  // we just want to navigate the current tab to the new location...
-  window.location = Services.urlFormatter.formatURLPref("app.support.baseURL") + "old-sync";
+  let chromeWin = window
+    .QueryInterface(Ci.nsIInterfaceRequestor)
+    .getInterface(Ci.nsIWebNavigation)
+    .QueryInterface(Ci.nsIDocShellTreeItem)
+    .rootTreeItem
+    .QueryInterface(Ci.nsIInterfaceRequestor)
+    .getInterface(Ci.nsIDOMWindow)
+    .QueryInterface(Ci.nsIDOMChromeWindow);
+  let url = Services.urlFormatter.formatURLPref("app.support.baseURL") + "old-sync";
+  chromeWin.switchToTabHavingURI(url, true);
 }
 
 function getStarted() {
@@ -236,20 +262,36 @@ function openPrefs() {
 }
 
 function init() {
-  if (window.location.href.contains("action=signin")) {
-    show("remote");
-    wrapper.init();
-  } else if (window.location.href.contains("action=reauth")) {
-    fxAccounts.promiseAccountsForceSigninURI().then(url => {
-      show("remote");
-      wrapper.init(url);
-    });
-  } else {
-    // Check if we have a local account
-    fxAccounts.getSignedInUser().then(user => {
+  fxAccounts.getSignedInUser().then(user => {
+    if (window.location.href.contains("action=signin")) {
       if (user) {
-        show("stage");
-        show("manage");
+        // asking to sign-in when already signed in just shows manage.
+        showManage();
+      } else {
+        show("remote");
+        wrapper.init(fxAccounts.getAccountsSignInURI());
+      }
+    } else if (window.location.href.contains("action=signup")) {
+      if (user) {
+        // asking to sign-up when already signed in just shows manage.
+        showManage();
+      } else {
+        show("remote");
+        wrapper.init();
+      }
+    } else if (window.location.href.contains("action=reauth")) {
+      // ideally we would only show this when we know the user is in a
+      // "must reauthenticate" state - but we don't.
+      // As the email address will be included in the URL returned from
+      // promiseAccountsForceSigninURI, just always show it.
+      fxAccounts.promiseAccountsForceSigninURI().then(url => {
+        show("remote");
+        wrapper.init(url);
+      });
+    } else {
+      // No action specified
+      if (user) {
+        showManage();
         let sb = Services.strings.createBundle("chrome://browser/locale/syncSetup.properties");
         document.title = sb.GetStringFromName("manage.pageTitle");
       } else {
@@ -258,8 +300,8 @@ function init() {
         // load the remote frame in the background
         wrapper.init();
       }
-    });
-  }
+    }
+  });
 }
 
 function show(id) {
@@ -269,7 +311,38 @@ function hide(id) {
   document.getElementById(id).style.display = 'none';
 }
 
+function showManage() {
+  show("stage");
+  show("manage");
+  hide("remote");
+  hide("intro");
+}
+
 document.addEventListener("DOMContentLoaded", function onload() {
   document.removeEventListener("DOMContentLoaded", onload, true);
   init();
 }, true);
+
+function initObservers() {
+  function observe(subject, topic, data) {
+    log("about:accounts observed " + topic);
+    if (topic == fxAccountsCommon.ONLOGOUT_NOTIFICATION) {
+      // All about:account windows get changed to action=signin on logout.
+      window.location = "about:accounts?action=signin";
+      return;
+    }
+    // must be onverified - just about:accounts is loaded.
+    window.location = "about:accounts";
+  }
+
+  for (let topic of OBSERVER_TOPICS) {
+    Services.obs.addObserver(observe, topic, false);
+  }
+  window.addEventListener("unload", function(event) {
+    log("about:accounts unloading")
+    for (let topic of OBSERVER_TOPICS) {
+      Services.obs.removeObserver(observe, topic);
+    }
+  });
+}
+initObservers();

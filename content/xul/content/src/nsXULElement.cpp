@@ -38,7 +38,7 @@
 #include "nsFocusManager.h"
 #include "nsHTMLStyleSheet.h"
 #include "nsIJSRuntimeService.h"
-#include "nsINameSpaceManager.h"
+#include "nsNameSpaceManager.h"
 #include "nsIObjectInputStream.h"
 #include "nsIObjectOutputStream.h"
 #include "nsIPresShell.h"
@@ -58,7 +58,7 @@
 #include "nsIXULTemplateBuilder.h"
 #include "nsLayoutCID.h"
 #include "nsContentCID.h"
-#include "nsDOMEvent.h"
+#include "mozilla/dom/Event.h"
 #include "nsRDFCID.h"
 #include "nsStyleConsts.h"
 #include "nsXPIDLString.h"
@@ -73,8 +73,8 @@
 #include "nsIListBoxObject.h"
 #include "nsContentUtils.h"
 #include "nsContentList.h"
+#include "mozilla/InternalMutationEvent.h"
 #include "mozilla/MouseEvents.h"
-#include "mozilla/MutationEvent.h"
 #include "nsAsyncDOMEvent.h"
 #include "nsIDOMMutationEvent.h"
 #include "nsPIDOMWindow.h"
@@ -293,28 +293,31 @@ nsXULElement::Create(nsXULPrototypeElement* aPrototype,
 }
 
 nsresult
-NS_NewXULElement(Element** aResult, already_AddRefed<nsINodeInfo> aNodeInfo)
+NS_NewXULElement(Element** aResult, already_AddRefed<nsINodeInfo>&& aNodeInfo)
 {
-    NS_PRECONDITION(aNodeInfo.get(), "need nodeinfo for non-proto Create");
+    nsCOMPtr<nsINodeInfo> ni = aNodeInfo;
 
-    nsIDocument* doc = aNodeInfo.get()->GetDocument();
+    NS_PRECONDITION(ni, "need nodeinfo for non-proto Create");
+
+    nsIDocument* doc = ni->GetDocument();
     if (doc && !doc->AllowXULXBL()) {
-        nsCOMPtr<nsINodeInfo> ni = aNodeInfo;
         return NS_ERROR_NOT_AVAILABLE;
     }
 
-    NS_ADDREF(*aResult = new nsXULElement(aNodeInfo));
+    NS_ADDREF(*aResult = new nsXULElement(ni.forget()));
 
     return NS_OK;
 }
 
 void
-NS_TrustedNewXULElement(nsIContent** aResult, already_AddRefed<nsINodeInfo> aNodeInfo)
+NS_TrustedNewXULElement(nsIContent** aResult,
+                        already_AddRefed<nsINodeInfo>&& aNodeInfo)
 {
-    NS_PRECONDITION(aNodeInfo.get(), "need nodeinfo for non-proto Create");
+    nsCOMPtr<nsINodeInfo> ni = aNodeInfo;
+    NS_PRECONDITION(ni, "need nodeinfo for non-proto Create");
 
     // Create an nsXULElement with the specified namespace and tag.
-    NS_ADDREF(*aResult = new nsXULElement(aNodeInfo));
+    NS_ADDREF(*aResult = new nsXULElement(ni.forget()));
 }
 
 //----------------------------------------------------------------------
@@ -416,7 +419,7 @@ nsXULElement::GetElementsByAttribute(const nsAString& aAttribute,
                                      const nsAString& aValue,
                                      nsIDOMNodeList** aReturn)
 {
-    *aReturn = GetElementsByAttribute(aAttribute, aValue).get();
+    *aReturn = GetElementsByAttribute(aAttribute, aValue).take();
     return NS_OK;
 }
 
@@ -445,7 +448,7 @@ nsXULElement::GetElementsByAttributeNS(const nsAString& aNamespaceURI,
 {
     ErrorResult rv;
     *aReturn =
-        GetElementsByAttributeNS(aNamespaceURI, aAttribute, aValue, rv).get();
+        GetElementsByAttributeNS(aNamespaceURI, aAttribute, aValue, rv).take();
     return rv.ErrorCode();
 }
 
@@ -1185,7 +1188,7 @@ nsXULElement::PreHandleEvent(nsEventChainPreVisitor& aVisitor)
                 // handling.
                 nsCOMPtr<nsIDOMEvent> domEvent = aVisitor.mDOMEvent;
                 while (domEvent) {
-                    nsDOMEvent* event = domEvent->InternalDOMEvent();
+                    Event* event = domEvent->InternalDOMEvent();
                     NS_ENSURE_STATE(!SameCOMIdentity(event->GetOriginalTarget(),
                                                      commandContent));
                     nsCOMPtr<nsIDOMXULCommandEvent> commandEvent =
@@ -1222,7 +1225,7 @@ NS_IMETHODIMP
 nsXULElement::GetResource(nsIRDFResource** aResource)
 {
     ErrorResult rv;
-    *aResource = GetResource(rv).get();
+    *aResource = GetResource(rv).take();
     return rv.ErrorCode();
 }
 
@@ -1248,7 +1251,7 @@ nsXULElement::GetResource(ErrorResult& rv)
 NS_IMETHODIMP
 nsXULElement::GetDatabase(nsIRDFCompositeDataSource** aDatabase)
 {
-    *aDatabase = GetDatabase().get();
+    *aDatabase = GetDatabase().take();
     return NS_OK;
 }
 
@@ -1269,7 +1272,7 @@ nsXULElement::GetDatabase()
 NS_IMETHODIMP
 nsXULElement::GetBuilder(nsIXULTemplateBuilder** aBuilder)
 {
-    *aBuilder = GetBuilder().get();
+    *aBuilder = GetBuilder().take();
     return NS_OK;
 }
 
@@ -1363,7 +1366,7 @@ NS_IMETHODIMP
 nsXULElement::GetBoxObject(nsIBoxObject** aResult)
 {
     ErrorResult rv;
-    *aResult = GetBoxObject(rv).get();
+    *aResult = GetBoxObject(rv).take();
     return rv.ErrorCode();
 }
 
@@ -1466,7 +1469,7 @@ nsXULElement::LoadSrc()
 nsresult
 nsXULElement::GetFrameLoader(nsIFrameLoader **aFrameLoader)
 {
-    *aFrameLoader = GetFrameLoader().get();
+    *aFrameLoader = GetFrameLoader().take();
     return NS_OK;
 }
 
@@ -2643,7 +2646,7 @@ nsXULPrototypeScript::Compile(const char16_t* aText,
     // Ok, compile it to create a prototype script object!
     NS_ENSURE_TRUE(JSVersion(mLangVersion) != JSVERSION_UNKNOWN, NS_OK);
     JS::CompileOptions options(cx);
-    options.setPrincipals(nsJSPrincipals::get(aDocument->NodePrincipal()))
+    options.setIntroductionType("scriptElement")
            .setFileAndLine(urlspec.get(), aLineNo)
            .setVersion(JSVersion(mLangVersion));
     // If the script was inline, tell the JS parser to save source for

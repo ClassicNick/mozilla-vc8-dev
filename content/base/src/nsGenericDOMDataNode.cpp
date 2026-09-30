@@ -18,8 +18,7 @@
 #include "nsEventListenerManager.h"
 #include "nsIDOMDocument.h"
 #include "nsReadableUtils.h"
-#include "mozilla/MutationEvent.h"
-#include "nsINameSpaceManager.h"
+#include "mozilla/InternalMutationEvent.h"
 #include "nsIURI.h"
 #include "nsIDOMEvent.h"
 #include "nsIDOMText.h"
@@ -43,7 +42,19 @@
 using namespace mozilla;
 using namespace mozilla::dom;
 
-nsGenericDOMDataNode::nsGenericDOMDataNode(already_AddRefed<nsINodeInfo> aNodeInfo)
+nsGenericDOMDataNode::nsGenericDOMDataNode(already_AddRefed<nsINodeInfo>& aNodeInfo)
+  : nsIContent(aNodeInfo)
+{
+  NS_ABORT_IF_FALSE(mNodeInfo->NodeType() == nsIDOMNode::TEXT_NODE ||
+                    mNodeInfo->NodeType() == nsIDOMNode::CDATA_SECTION_NODE ||
+                    mNodeInfo->NodeType() == nsIDOMNode::COMMENT_NODE ||
+                    mNodeInfo->NodeType() ==
+                      nsIDOMNode::PROCESSING_INSTRUCTION_NODE ||
+                    mNodeInfo->NodeType() == nsIDOMNode::DOCUMENT_TYPE_NODE,
+                    "Bad NodeType in aNodeInfo");
+}
+
+nsGenericDOMDataNode::nsGenericDOMDataNode(already_AddRefed<nsINodeInfo>&& aNodeInfo)
   : nsIContent(aNodeInfo)
 {
   NS_ABORT_IF_FALSE(mNodeInfo->NodeType() == nsIDOMNode::TEXT_NODE ||
@@ -711,6 +722,17 @@ nsGenericDOMDataNode::SetXBLInsertionParent(nsIContent* aContent)
     SetFlags(NODE_MAY_BE_IN_BINDING_MNGR);
   }
   slots->mXBLInsertionParent = aContent;
+}
+
+CustomElementData *
+nsGenericDOMDataNode::GetCustomElementData() const
+{
+  return nullptr;
+}
+
+void
+nsGenericDOMDataNode::SetCustomElementData(CustomElementData* aData)
+{
 }
 
 bool

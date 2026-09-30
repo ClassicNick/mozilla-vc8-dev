@@ -5,12 +5,13 @@
 
 #include "nsCocoaWindow.h"
 
+#include "NativeKeyBindings.h"
+#include "TextInputHandler.h"
 #include "nsObjCExceptions.h"
 #include "nsCOMPtr.h"
 #include "nsWidgetsCID.h"
 #include "nsIRollupListener.h"
 #include "nsChildView.h"
-#include "TextInputHandler.h"
 #include "nsWindowMap.h"
 #include "nsAppShell.h"
 #include "nsIAppShellService.h"
@@ -35,6 +36,7 @@
 #include "gfxPlatform.h"
 #include "qcms.h"
 
+#include "mozilla/AutoRestore.h"
 #include "mozilla/BasicEvents.h"
 #include "mozilla/Preferences.h"
 #include <algorithm>
@@ -112,6 +114,7 @@ nsCocoaWindow::nsCocoaWindow()
 , mUsesNativeFullScreen(false)
 , mIsAnimationSuppressed(false)
 , mInReportMoveEvent(false)
+, mInResize(false)
 , mNumModalDescendents(0)
 {
 
@@ -590,7 +593,7 @@ bool nsCocoaWindow::IsVisible() const
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
 
-  return (mWindow && ([mWindow isVisible] || mSheetNeedsShow));
+  return (mWindow && ([mWindow isVisibleOrBeingShown] || mSheetNeedsShow));
 
   NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(false);
 }
@@ -686,6 +689,10 @@ NS_IMETHODIMP nsCocoaWindow::Show(bool bState)
   if (!mSheetNeedsShow && !bState && ![mWindow isVisible])
     return NS_OK;
 
+  // Protect against re-entering.
+  if (bState && [mWindow isBeingShown])
+    return NS_OK;
+
   [mWindow setBeingShown:bState];
 
   nsIWidget* parentWidget = mParent;
@@ -694,6 +701,11 @@ NS_IMETHODIMP nsCocoaWindow::Show(bool bState)
     (NSWindow*)parentWidget->GetNativeData(NS_NATIVE_WINDOW) : nil;
 
   if (bState && !mBounds.IsEmpty()) {
+    if (mPopupContentView) {
+      // Ensure our content view is visible. We never need to hide it.
+      mPopupContentView->Show(true);
+    }
+
     if (mWindowType == eWindowType_sheet) {
       // bail if no parent window (its basically what we do in Carbon)
       if (!nativeParentWindow || !piParentWidget)
@@ -756,6 +768,7 @@ NS_IMETHODIMP nsCocoaWindow::Show(bool bState)
       // NSException.  These errors shouldn't be fatal.  So we need to wrap
       // calls to ...orderFront: in LOGONLY blocks.  See bmo bug 470864.
       NS_OBJC_BEGIN_TRY_LOGONLY_BLOCK;
+      [[mWindow contentView] setNeedsDisplay:YES];
       [mWindow orderFront:nil];
       NS_OBJC_END_TRY_LOGONLY_BLOCK;
       SendSetZLevelEvent();
@@ -901,11 +914,6 @@ NS_IMETHODIMP nsCocoaWindow::Show(bool bState)
                         object:@"org.mozilla.gecko.PopupWindow"];
       }
     }
-  }
-  
-  if (mPopupContentView) {
-    mPopupContentView->Show(bState);
-    [[mWindow contentView] setNeedsDisplay:YES];
   }
 
   [mWindow setBeingShown:NO];
@@ -1328,9 +1336,12 @@ nsresult nsCocoaWindow::DoResize(double aX, double aY,
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
-  if (!mWindow) {
+  if (!mWindow || mInResize) {
     return NS_OK;
   }
+
+  AutoRestore<bool> reentrantResizeGuard(mInResize);
+  mInResize = true;
 
   // ConstrainSize operates in device pixels, so we need to convert using
   // the backing scale factor here
@@ -1716,8 +1727,7 @@ nsCocoaWindow::ReportMoveEvent()
   UpdateBounds();
 
   // Dispatch the move event to Gecko
-  if (mWidgetListener)
-    mWidgetListener->WindowMoved(this, mBounds.x, mBounds.y);
+  NotifyWindowMoved(mBounds.x, mBounds.y);
 
   mInReportMoveEvent = false;
 
@@ -2115,9 +2125,9 @@ bool nsCocoaWindow::ShouldFocusPlugin()
 }
 
 NS_IMETHODIMP
-nsCocoaWindow::NotifyIME(NotificationToIME aNotification)
+nsCocoaWindow::NotifyIME(const IMENotification& aIMENotification)
 {
-  switch (aNotification) {
+  switch (aIMENotification.mMessage) {
     case NOTIFY_IME_OF_FOCUS:
       if (mInputContext.IsPasswordEditor()) {
         TextInputHandler::EnableSecureEventInput();
@@ -2153,6 +2163,17 @@ nsCocoaWindow::SetInputContext(const InputContext& aContext,
 
   NS_OBJC_END_TRY_ABORT_BLOCK;
 }
+
+NS_IMETHODIMP_(bool)
+nsCocoaWindow::ExecuteNativeKeyBinding(NativeKeyBindingsType aType,
+                                       const WidgetKeyboardEvent& aEvent,
+                                       DoCommandCallback aCallback,
+                                       void* aCallbackData)
+{
+  NativeKeyBindings* keyBindings = NativeKeyBindings::GetInstance(aType);
+  return keyBindings->Execute(aEvent, aCallback, aCallbackData);
+}
+
 
 @implementation WindowDelegate
 
@@ -2635,6 +2656,11 @@ static NSMutableSet *gSwizzledFrameViewClasses = nil;
 - (void)setBeingShown:(BOOL)aValue
 {
   mBeingShown = aValue;
+}
+
+- (BOOL)isBeingShown
+{
+  return mBeingShown;
 }
 
 - (BOOL)isVisibleOrBeingShown

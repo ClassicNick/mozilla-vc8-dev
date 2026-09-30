@@ -742,21 +742,6 @@ NativeKey::NativeKey(nsWindowBase* aWidget,
 }
 
 bool
-NativeKey::IsFollowedByCharMessage() const
-{
-  MSG nextMsg;
-  if (mFakeCharMsgs) {
-    nextMsg = mFakeCharMsgs->ElementAt(0).GetCharMsg(mMsg.hwnd);
-  } else {
-    if (!WinUtils::PeekMessage(&nextMsg, mMsg.hwnd, WM_KEYFIRST, WM_KEYLAST,
-                               PM_NOREMOVE | PM_NOYIELD)) {
-      return false;
-    }
-  }
-  return IsCharMessage(nextMsg);
-}
-
-bool
 NativeKey::IsFollowedByDeadCharMessage() const
 {
   MSG nextMsg;
@@ -1083,8 +1068,16 @@ NativeKey::HandleKeyDownMessage(bool* aEventDispatched) const
             DispatchKeyPressEventsWithKeyboardLayout());
   }
 
-  if (IsFollowedByCharMessage()) {
-    return DispatchKeyPressEventForFollowingCharMessage();
+  MSG followingCharMsg;
+  if (GetFollowingCharMessage(followingCharMsg)) {
+    // Even if there was char message, it might be redirected by different
+    // window (perhaps, focus move?).  Then, we shouldn't continue to handle
+    // the message since no input should occur on the window.
+    if (followingCharMsg.message == WM_NULL ||
+        followingCharMsg.hwnd != mMsg.hwnd) {
+      return false;
+    }
+    return DispatchKeyPressEventForFollowingCharMessage(followingCharMsg);
   }
 
   if (!mModKeyState.IsControl() && !mModKeyState.IsAlt() &&
@@ -1266,59 +1259,273 @@ NativeKey::NeedsToHandleWithoutFollowingCharMessages() const
   return mIsPrintableKey;
 }
 
-MSG
-NativeKey::RemoveFollowingCharMessage() const
+#ifdef MOZ_CRASHREPORTER
+
+static nsCString
+GetResultOfInSendMessageEx()
 {
-  MOZ_ASSERT(IsFollowedByCharMessage());
-
-  if (mFakeCharMsgs) {
-    MOZ_ASSERT(!mFakeCharMsgs->ElementAt(0).mConsumed,
-      "Doesn't assume that it's used for removing two or more char messages");
-    mFakeCharMsgs->ElementAt(0).mConsumed = true;
-    return mFakeCharMsgs->ElementAt(0).GetCharMsg(mMsg.hwnd);
+  DWORD ret = ::InSendMessageEx(nullptr);
+  if (!ret) {
+    return NS_LITERAL_CSTRING("ISMEX_NOSEND");
   }
-
-  MSG msg;
-  if (!WinUtils::PeekMessage(&msg, mMsg.hwnd, WM_KEYFIRST, WM_KEYLAST,
-                             PM_REMOVE | PM_NOYIELD) ||
-      !IsCharMessage(msg)) {
-    MOZ_CRASH("We lost the following char message");
+  nsAutoCString result;
+  if (ret & ISMEX_CALLBACK) {
+    result = "ISMEX_CALLBACK";
   }
+  if (ret & ISMEX_NOTIFY) {
+    if (!result.IsEmpty()) {
+      result += " | ";
+    }
+    result += "ISMEX_NOTIFY";
+  }
+  if (ret & ISMEX_REPLIED) {
+    if (!result.IsEmpty()) {
+      result += " | ";
+    }
+    result += "ISMEX_REPLIED";
+  }
+  if (ret & ISMEX_SEND) {
+    if (!result.IsEmpty()) {
+      result += " | ";
+    }
+    result += "ISMEX_SEND";
+  }
+  return result;
+}
 
-  return msg;
+static const char*
+GetMessageName(UINT aMessage)
+{
+  switch (aMessage) {
+    case WM_KEYDOWN:     return "WM_KEYDOWN";
+    case WM_SYSKEYDOWN:  return "WM_SYSKEYDOWN";
+    case WM_KEYUP:       return "WM_KEYUP";
+    case WM_SYSKEYUP:    return "WM_SYSKEYUP";
+    case WM_CHAR:        return "WM_CHAR";
+    case WM_DEADCHAR:    return "WM_DEADCHAR";
+    case WM_SYSCHAR:     return "WM_SYSCHAR";
+    case WM_SYSDEADCHAR: return "WM_SYSDEADCHAR";
+    case WM_UNICHAR:     return "WM_UNICHAR";
+    case WM_QUIT:        return "WM_QUIT";
+    case WM_NULL:        return "WM_NULL";
+    default:             return "Unknown";
+  }
+}
+
+#endif // #ifdef MOZ_CRASHREPORTER
+
+bool
+NativeKey::MayBeSameCharMessage(const MSG& aCharMsg1,
+                                const MSG& aCharMsg2) const
+{
+  // NOTE: Although, we don't know when this case occurs, the scan code value
+  //       in lParam may be changed from 0 to something.  The changed value
+  //       is different from the scan code of handling keydown message.
+  static const LPARAM kScanCodeMask = 0x00FF0000;
+  return
+    aCharMsg1.message == aCharMsg2.message &&
+    aCharMsg1.wParam == aCharMsg2.wParam &&
+    (aCharMsg1.lParam & ~kScanCodeMask) == (aCharMsg2.lParam & ~kScanCodeMask);
 }
 
 bool
-NativeKey::RemoveMessageAndDispatchPluginEvent(UINT aFirstMsg,
-                                               UINT aLastMsg) const
+NativeKey::GetFollowingCharMessage(MSG& aCharMsg) const
 {
-  MSG msg;
+  MOZ_ASSERT(IsKeyDownMessage());
+
+  aCharMsg.message = WM_NULL;
+
   if (mFakeCharMsgs) {
-    DebugOnly<bool> found = false;
-    for (uint32_t i = 0; i < mFakeCharMsgs->Length(); i++) {
-      FakeCharMsg& fakeCharMsg = mFakeCharMsgs->ElementAt(i);
-      if (fakeCharMsg.mConsumed) {
-        continue;
-      }
-      MSG fakeMsg = fakeCharMsg.GetCharMsg(mMsg.hwnd);
-      if (fakeMsg.message < aFirstMsg || fakeMsg.message > aLastMsg) {
-        continue;
-      }
-      fakeCharMsg.mConsumed = true;
-      msg = fakeMsg;
-      found = true;
-      break;
+    FakeCharMsg& fakeCharMsg = mFakeCharMsgs->ElementAt(0);
+    if (fakeCharMsg.mConsumed) {
+      return false;
     }
-    MOZ_ASSERT(found, "Fake char message must be found");
-  } else {
-    WinUtils::PeekMessage(&msg, mMsg.hwnd, aFirstMsg, aLastMsg,
-                          PM_REMOVE | PM_NOYIELD);
+    MSG charMsg = fakeCharMsg.GetCharMsg(mMsg.hwnd);
+    fakeCharMsg.mConsumed = true;
+    if (!IsCharMessage(charMsg)) {
+      return false;
+    }
+    aCharMsg = charMsg;
+    return true;
   }
-  if (mWidget->Destroyed()) {
-    MOZ_CRASH("NativeKey tries to dispatch a plugin event on destroyed widget");
+
+  // If next key message is not char message, we should give up to find a
+  // related char message for the handling keydown event for now.
+  // Note that it's possible other applications may send other key message
+  // after we call TranslateMessage(). That may cause PeekMessage() failing
+  // to get char message for the handling keydown message.
+  MSG nextKeyMsg;
+  if (!WinUtils::PeekMessage(&nextKeyMsg, mMsg.hwnd, WM_KEYFIRST, WM_KEYLAST,
+                             PM_NOREMOVE | PM_NOYIELD) ||
+      !IsCharMessage(nextKeyMsg)) {
+    return false;
   }
-  mWidget->DispatchPluginEvent(msg);
-  return mWidget->Destroyed();
+
+  // On Metrofox, PeekMessage() sometimes returns WM_NULL even if we specify
+  // the message range.  So, if it returns WM_NULL, we should retry to get
+  // the following char message it was found above.
+  for (uint32_t i = 0; i < 5; i++) {
+    MSG removedMsg, nextKeyMsgInAllWindows;
+    bool doCrash = false;
+    if (!WinUtils::PeekMessage(&removedMsg, mMsg.hwnd,
+                               nextKeyMsg.message, nextKeyMsg.message,
+                               PM_REMOVE | PM_NOYIELD)) {
+      // We meets unexpected case.  We should collect the message queue state
+      // and crash for reporting the bug.
+      doCrash = true;
+      // The char message is redirected to different thread's window by focus
+      // move or something or just cancelled by external application.
+      if (!WinUtils::PeekMessage(&nextKeyMsgInAllWindows, 0,
+                                 WM_KEYFIRST, WM_KEYLAST,
+                                 PM_NOREMOVE | PM_NOYIELD)) {
+        return true;
+      }
+      if (MayBeSameCharMessage(nextKeyMsgInAllWindows, nextKeyMsg)) {
+        // The char message is redirected to different window created by our
+        // thread.
+        if (nextKeyMsgInAllWindows.hwnd != mMsg.hwnd) {
+          aCharMsg = nextKeyMsgInAllWindows;
+          return true;
+        }
+        // The found char message still in the queue, but PeekMessage() failed
+        // to remove it only with PM_REMOVE.  Although, we don't know why this
+        // occurs.  However, this occurs acctually.
+        // Try to remove the char message with GetMessage() again.
+        if (WinUtils::GetMessage(&removedMsg, mMsg.hwnd,
+                                 nextKeyMsg.message, nextKeyMsg.message)) {
+          // Cancel to crash, but we need to check the removed message value.
+          doCrash = false;
+        }
+      }
+    }
+
+    if (doCrash) {
+#ifdef MOZ_CRASHREPORTER
+      nsPrintfCString info("\nPeekMessage() failed to remove char message! "
+                           "\nHandling message: %s (0x%08X), wParam: 0x%08X, "
+                           "lParam: 0x%08X, hwnd=0x%p, InSendMessageEx()=%s, \n"
+                           "Found message: %s (0x%08X), wParam: 0x%08X, "
+                           "lParam: 0x%08X, hwnd=0x%p, "
+                           "\nWM_NULL has been removed: %d, "
+                           "\nNext key message in all windows: %s (0x%08X), "
+                           "wParam: 0x%08X, lParam: 0x%08X, hwnd=0x%p, "
+                           "time=%d, ",
+                           GetMessageName(mMsg.message),
+                           mMsg.message, mMsg.wParam, mMsg.lParam,
+                           nextKeyMsg.hwnd,
+                           GetResultOfInSendMessageEx().get(),
+                           GetMessageName(nextKeyMsg.message),
+                           nextKeyMsg.message, nextKeyMsg.wParam,
+                           nextKeyMsg.lParam, nextKeyMsg.hwnd, i,
+                           GetMessageName(nextKeyMsgInAllWindows.message),
+                           nextKeyMsgInAllWindows.message,
+                           nextKeyMsgInAllWindows.wParam,
+                           nextKeyMsgInAllWindows.lParam,
+                           nextKeyMsgInAllWindows.hwnd,
+                           nextKeyMsgInAllWindows.time);
+      CrashReporter::AppendAppNotesToCrashReport(info);
+      MSG nextMsg;
+      if (WinUtils::PeekMessage(&nextMsg, 0, 0, 0,
+                                PM_NOREMOVE | PM_NOYIELD)) {
+        nsPrintfCString info("\nNext message in all windows: %s (0x%08X), "
+                             "wParam: 0x%08X, lParam: 0x%08X, hwnd=0x%p, "
+                             "time=%d",
+                             GetMessageName(nextMsg.message),
+                             nextMsg.message, nextMsg.wParam, nextMsg.lParam,
+                             nextMsg.hwnd, nextMsg.time);
+        CrashReporter::AppendAppNotesToCrashReport(info);
+      } else {
+        CrashReporter::AppendAppNotesToCrashReport(
+          NS_LITERAL_CSTRING("\nThere is no message in any window"));
+      }
+#endif // #ifdef MOZ_CRASHREPORTER
+      MOZ_CRASH("We lost the following char message");
+    }
+
+    // Retry for the strange case.
+    if (removedMsg.message == WM_NULL) {
+      continue;
+    }
+
+    // NOTE: Although, we don't know when this case occurs, the scan code value
+    //       in lParam may be changed from 0 to something.  The changed value
+    //       is different from the scan code of handling keydown message.
+    if (!MayBeSameCharMessage(removedMsg, nextKeyMsg)) {
+#ifdef MOZ_CRASHREPORTER
+      nsPrintfCString info("\nPeekMessage() removed unexpcted char message! "
+                           "\nHandling message: %s (0x%08X), wParam: 0x%08X, "
+                           "lParam: 0x%08X, hwnd=0x%p, InSendMessageEx()=%s, "
+                           "\nFound message: %s (0x%08X), wParam: 0x%08X, "
+                           "lParam: 0x%08X, hwnd=0x%p, "
+                           "\nRemoved message: %s (0x%08X), wParam: 0x%08X, "
+                           "lParam: 0x%08X, hwnd=0x%p, ",
+                           GetMessageName(mMsg.message),
+                           mMsg.message, mMsg.wParam, mMsg.lParam, mMsg.hwnd,
+                           GetResultOfInSendMessageEx().get(),
+                           GetMessageName(nextKeyMsg.message),
+                           nextKeyMsg.message, nextKeyMsg.wParam,
+                           nextKeyMsg.lParam, nextKeyMsg.hwnd,
+                           GetMessageName(removedMsg.message),
+                           removedMsg.message, removedMsg.wParam,
+                           removedMsg.lParam, removedMsg.hwnd);
+      CrashReporter::AppendAppNotesToCrashReport(info);
+      // What's the next key message?
+      MSG nextKeyMsgAfter;
+      if (WinUtils::PeekMessage(&nextKeyMsgAfter, mMsg.hwnd,
+                                WM_KEYFIRST, WM_KEYLAST,
+                                PM_NOREMOVE | PM_NOYIELD)) {
+        nsPrintfCString info("\nNext key message after unexpected char message "
+                             "removed: %s (0x%08X), wParam: 0x%08X, "
+                             "lParam: 0x%08X, hwnd=0x%p, ",
+                             GetMessageName(nextKeyMsgAfter.message),
+                             nextKeyMsgAfter.message, nextKeyMsgAfter.wParam,
+                             nextKeyMsgAfter.lParam, nextKeyMsgAfter.hwnd);
+        CrashReporter::AppendAppNotesToCrashReport(info);
+      } else {
+        CrashReporter::AppendAppNotesToCrashReport(
+          NS_LITERAL_CSTRING("\nThere is no key message after unexpected char "
+                             "message removed, "));
+      }
+      // Another window has a key message?
+      MSG nextKeyMsgInAllWindows;
+      if (WinUtils::PeekMessage(&nextKeyMsgInAllWindows, 0,
+                                WM_KEYFIRST, WM_KEYLAST,
+                                PM_NOREMOVE | PM_NOYIELD)) {
+        nsPrintfCString info("\nNext key message in all windows: %s (0x%08X), "
+                             "wParam: 0x%08X, lParam: 0x%08X, hwnd=0x%p.",
+                             GetMessageName(nextKeyMsgInAllWindows.message),
+                             nextKeyMsgInAllWindows.message,
+                             nextKeyMsgInAllWindows.wParam,
+                             nextKeyMsgInAllWindows.lParam,
+                             nextKeyMsgInAllWindows.hwnd);
+        CrashReporter::AppendAppNotesToCrashReport(info);
+      } else {
+        CrashReporter::AppendAppNotesToCrashReport(
+          NS_LITERAL_CSTRING("\nThere is no key message in any windows."));
+      }
+#endif // #ifdef MOZ_CRASHREPORTER
+      MOZ_CRASH("PeekMessage() removed unexpected message");
+    }
+
+    aCharMsg = removedMsg;
+    return true;
+  }
+#ifdef MOZ_CRASHREPORTER
+  nsPrintfCString info("\nWe lost following char message! "
+                       "\nHandling message: %s (0x%08X), wParam: 0x%08X, "
+                       "lParam: 0x%08X, InSendMessageEx()=%s, \n"
+                       "Found message: %s (0x%08X), wParam: 0x%08X, "
+                       "lParam: 0x%08X, removed a lot of WM_NULL",
+                       GetMessageName(mMsg.message),
+                       mMsg.message, mMsg.wParam, mMsg.lParam,
+                       GetResultOfInSendMessageEx().get(),
+                       GetMessageName(nextKeyMsg.message),
+                       nextKeyMsg.message, nextKeyMsg.wParam,
+                       nextKeyMsg.lParam);
+  CrashReporter::AppendAppNotesToCrashReport(info);
+#endif // #ifdef MOZ_CRASHREPORTER
+  MOZ_CRASH("We lost the following char message");
+  return false;
 }
 
 bool
@@ -1326,37 +1533,46 @@ NativeKey::DispatchPluginEventsAndDiscardsCharMessages() const
 {
   MOZ_ASSERT(IsKeyDownMessage());
 
-  if (mFakeCharMsgs) {
-    for (uint32_t i = 0; i < mFakeCharMsgs->Length(); i++) {
-      if (RemoveMessageAndDispatchPluginEvent(WM_KEYFIRST, WM_KEYLAST)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
   // Remove a possible WM_CHAR or WM_SYSCHAR messages from the message queue.
   // They can be more than one because of:
   //  * Dead-keys not pairing with base character
   //  * Some keyboard layouts may map up to 4 characters to the single key
-  bool anyCharMessagesRemoved = true;
+  bool anyCharMessagesRemoved = false;
   MSG msg;
-  bool gotMsg =
-    WinUtils::PeekMessage(&msg, mMsg.hwnd, WM_KEYFIRST, WM_KEYLAST,
-                          PM_NOREMOVE | PM_NOYIELD);
-  while (gotMsg && IsCharMessage(msg)) {
-    if (RemoveMessageAndDispatchPluginEvent(WM_KEYFIRST, WM_KEYLAST)) {
-      return true;
+  while (GetFollowingCharMessage(msg)) {
+    if (msg.message == WM_NULL) {
+      continue;
     }
     anyCharMessagesRemoved = true;
-    gotMsg = WinUtils::PeekMessage(&msg, mMsg.hwnd, WM_KEYFIRST, WM_KEYLAST,
-                                   PM_NOREMOVE | PM_NOYIELD);
+    // If the window handle is changed, focused window must be changed.
+    // So, plugin shouldn't handle it anymore.
+    if (msg.hwnd != mMsg.hwnd) {
+      break;
+    }
+    MOZ_RELEASE_ASSERT(!mWidget->Destroyed(),
+      "NativeKey tries to dispatch a plugin event on destroyed widget");
+    mWidget->DispatchPluginEvent(msg);
+    if (mWidget->Destroyed()) {
+      return true;
+    }
   }
 
-  if (!anyCharMessagesRemoved &&
-      mDOMKeyCode == NS_VK_BACK && IsIMEDoingKakuteiUndo() &&
-      RemoveMessageAndDispatchPluginEvent(WM_CHAR, WM_CHAR)) {
-    return true;
+  if (!mFakeCharMsgs && !anyCharMessagesRemoved &&
+      mDOMKeyCode == NS_VK_BACK && IsIMEDoingKakuteiUndo()) {
+    // This is for a hack for ATOK and WXG.  So, PeekMessage() must scceed!
+    while (WinUtils::PeekMessage(&msg, mMsg.hwnd, WM_CHAR, WM_CHAR,
+                                 PM_REMOVE | PM_NOYIELD)) {
+      if (msg.message != WM_CHAR) {
+        MOZ_RELEASE_ASSERT(msg.message == WM_NULL,
+                           "Unexpected message was removed");
+        continue;
+      }
+      MOZ_RELEASE_ASSERT(!mWidget->Destroyed(),
+        "NativeKey tries to dispatch a plugin event on destroyed widget");
+      mWidget->DispatchPluginEvent(msg);
+      return mWidget->Destroyed();
+    }
+    MOZ_CRASH("NativeKey failed to get WM_CHAR for ATOK or WXG");
   }
 
   return false;
@@ -1527,13 +1743,13 @@ NativeKey::DispatchKeyPressEventsWithKeyboardLayout() const
 }
 
 bool
-NativeKey::DispatchKeyPressEventForFollowingCharMessage() const
+NativeKey::DispatchKeyPressEventForFollowingCharMessage(
+             const MSG& aCharMsg) const
 {
   MOZ_ASSERT(IsKeyDownMessage());
 
-  MSG msg = RemoveFollowingCharMessage();
   if (mFakeCharMsgs) {
-    if (IsDeadCharMessage(msg)) {
+    if (IsDeadCharMessage(aCharMsg)) {
       return false;
     }
 #ifdef DEBUG
@@ -1547,33 +1763,34 @@ NativeKey::DispatchKeyPressEventForFollowingCharMessage() const
         mCommittedCharsAndModifiers.mChars[2],
         mCommittedCharsAndModifiers.mChars[3],
         mCommittedCharsAndModifiers.mChars[4],
-        mCommittedCharsAndModifiers.mLength, msg.wParam);
+        mCommittedCharsAndModifiers.mLength, aCharMsg.wParam);
       if (mCommittedCharsAndModifiers.IsEmpty()) {
         log.Insert("length is zero: ", 0);
         NS_ERROR(log.get());
         NS_ABORT();
-      } else if (mCommittedCharsAndModifiers.mChars[0] != msg.wParam) {
+      } else if (mCommittedCharsAndModifiers.mChars[0] != aCharMsg.wParam) {
         log.Insert("character mismatch: ", 0);
         NS_ERROR(log.get());
         NS_ABORT();
       }
     }
 #endif // #ifdef DEBUG
-    return HandleCharMessage(msg);
+    return HandleCharMessage(aCharMsg);
   }
 
-  if (IsDeadCharMessage(msg)) {
+  if (IsDeadCharMessage(aCharMsg)) {
     if (!mWidget->PluginHasFocus()) {
       return false;
     }
-    return (mWidget->DispatchPluginEvent(msg) || mWidget->Destroyed());
+    return (mWidget->DispatchPluginEvent(aCharMsg) || mWidget->Destroyed());
   }
 
-  bool defaultPrevented = HandleCharMessage(msg);
+  bool defaultPrevented = HandleCharMessage(aCharMsg);
   // If a syschar keypress wasn't processed, Windows may want to
   // handle it to activate a native menu.
-  if (!defaultPrevented && IsSysCharMessage(msg)) {
-    ::DefWindowProcW(msg.hwnd, msg.message, msg.wParam, msg.lParam);
+  if (!defaultPrevented && IsSysCharMessage(aCharMsg)) {
+    ::DefWindowProcW(aCharMsg.hwnd, aCharMsg.message,
+                     aCharMsg.wParam, aCharMsg.lParam);
   }
   return defaultPrevented;
 }
@@ -1593,8 +1810,8 @@ KeyboardLayout::GetInstance()
     sInstance = new KeyboardLayout();
     nsCOMPtr<nsIIdleServiceInternal> idleService =
       do_GetService("@mozilla.org/widget/idleservice;1");
-    // The refcount will be decreased at shutting down.
-    sIdleService = idleService.forget().get();
+    // The refcount will be decreased at shut down.
+    sIdleService = idleService.forget().take();
   }
   return sInstance;
 }

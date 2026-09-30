@@ -10,7 +10,7 @@ const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
 
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource:///modules/devtools/shared/event-emitter.js");
+Cu.import("resource://gre/modules/devtools/event-emitter.js");
 let promise = Cu.import("resource://gre/modules/commonjs/sdk/core/promise.js").Promise;
 Cu.import("resource://gre/modules/devtools/Loader.jsm");
 
@@ -32,6 +32,8 @@ this.DevTools = function DevTools() {
   this.destroy = this.destroy.bind(this);
   this._teardown = this._teardown.bind(this);
 
+  this._testing = false;
+
   EventEmitter.decorate(this);
 
   Services.obs.addObserver(this._teardown, "devtools-unloaded", false);
@@ -39,6 +41,29 @@ this.DevTools = function DevTools() {
 }
 
 DevTools.prototype = {
+  /**
+   * When the testing flag is set we take appropriate action to prevent race
+   * conditions in our testing environment. This means setting
+   * dom.send_after_paint_to_content to false to prevent infinite MozAfterPaint
+   * loops and not autohiding the highlighter.
+   */
+  get testing() {
+    return this._testing;
+  },
+
+  set testing(state) {
+    this._testing = state;
+
+    if (state) {
+      // dom.send_after_paint_to_content is set to true (non-default) in
+      // testing/profiles/prefs_general.js so lets set it to the same as it is
+      // in a default browser profile for the duration of the test.
+      Services.prefs.setBoolPref("dom.send_after_paint_to_content", false);
+    } else {
+      Services.prefs.setBoolPref("dom.send_after_paint_to_content", true);
+    }
+  },
+
   /**
    * Register a new developer tool.
    *
@@ -55,6 +80,11 @@ DevTools.prototype = {
    *                     A falsy value indicates that it cannot be hidden.
    * - icon: URL pointing to a graphic which will be used as the src for an
    *         16x16 img tag (string|required)
+   * - invertIconForLightTheme: The icon can automatically have an inversion
+   *         filter applied (default is false).  All builtin tools are true, but
+   *         addons may omit this to prevent unwanted changes to the `icon`
+   *         image. See browser/themes/shared/devtools/filters.svg#invert for
+   *         the filter being applied to the images (boolean|optional)
    * - url: URL pointing to a XUL/XHTML document containing the user interface
    *        (string|required)
    * - label: Localized name for the tool to be displayed to the user
@@ -457,7 +487,10 @@ let gDevToolsBrowser = {
     let toolbox = gDevTools.getToolbox(target);
     let toolDefinition = gDevTools.getToolDefinition(toolId);
 
-    if (toolbox && toolbox.currentToolId == toolId) {
+    if (toolbox &&
+        (toolbox.currentToolId == toolId ||
+          (toolId == "webconsole" && toolbox.splitConsole)))
+    {
       toolbox.fireCustomKey(toolId);
 
       if (toolDefinition.preventClosingOnKey || toolbox.hostType == devtools.Toolbox.HostType.WINDOW) {

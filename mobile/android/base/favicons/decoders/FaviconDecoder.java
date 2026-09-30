@@ -89,14 +89,14 @@ public class FaviconDecoder {
         LoadFaviconResult result;
         if (isDecodableByAndroid(buffer, offset)) {
             result = new LoadFaviconResult();
-            result.mOffset = offset;
-            result.mLength = length;
-            result.mIsICO = false;
+            result.offset = offset;
+            result.length = length;
+            result.isICO = false;
 
             // We assume here that decodeByteArray doesn't hold on to the entire supplied
             // buffer -- worst case, each of our buffers will be twice the necessary size.
-            result.mBitmapsDecoded = new SingleBitmapIterator(BitmapUtils.decodeByteArray(buffer, offset, length));
-            result.mFaviconBytes = buffer;
+            result.bitmapsDecoded = new SingleBitmapIterator(BitmapUtils.decodeByteArray(buffer, offset, length));
+            result.faviconBytes = buffer;
 
             return result;
         }
@@ -146,13 +146,57 @@ public class FaviconDecoder {
     }
 
     /**
+     * Returns the smallest bitmap in the icon represented by the provided
+     * data: URI that's larger than the desired width, or the largest if
+     * there is no larger icon.
+     *
+     * Returns null if no bitmap could be extracted.
+     *
+     * Bug 961600: we shouldn't be doing all of this work. The favicon cache
+     * should be used, and will give us the right size icon.
+     */
+    public static Bitmap getMostSuitableBitmapFromDataURI(String iconURI, int desiredWidth) {
+        LoadFaviconResult result = FaviconDecoder.decodeDataURI(iconURI);
+        if (result == null) {
+            // Nothing we can do.
+            Log.w(LOG_TAG, "Unable to decode icon URI.");
+            return null;
+        }
+
+        final Iterator<Bitmap> bitmaps = result.getBitmaps();
+        if (!bitmaps.hasNext()) {
+            Log.w(LOG_TAG, "No bitmaps in decoded icon.");
+            return null;
+        }
+
+        Bitmap bitmap = bitmaps.next();
+        if (!bitmaps.hasNext()) {
+            // We're done! There was only one, so this is as big as it gets.
+            return bitmap;
+        }
+
+        // Find a bitmap of the most suitable size.
+        int currentWidth = bitmap.getWidth();
+        while ((currentWidth < desiredWidth) &&
+               bitmaps.hasNext()) {
+            final Bitmap b = bitmaps.next();
+            if (b.getWidth() > currentWidth) {
+                currentWidth = b.getWidth();
+                bitmap = b;
+            }
+        }
+
+        return bitmap;
+    }
+
+    /**
      * Iterator to hold a single bitmap.
      */
     static class SingleBitmapIterator implements Iterator<Bitmap> {
-        private Bitmap mBitmap;
+        private Bitmap bitmap;
 
         public SingleBitmapIterator(Bitmap b) {
-            mBitmap = b;
+            bitmap = b;
         }
 
         /**
@@ -163,22 +207,22 @@ public class FaviconDecoder {
          * @return The bitmap carried by this SingleBitmapIterator.
          */
         public Bitmap peek() {
-            return mBitmap;
+            return bitmap;
         }
 
         @Override
         public boolean hasNext() {
-            return mBitmap != null;
+            return bitmap != null;
         }
 
         @Override
         public Bitmap next() {
-            if (mBitmap == null) {
+            if (bitmap == null) {
                 throw new NoSuchElementException("Element already returned from SingleBitmapIterator.");
             }
 
-            Bitmap ret = mBitmap;
-            mBitmap = null;
+            Bitmap ret = bitmap;
+            bitmap = null;
             return ret;
         }
 

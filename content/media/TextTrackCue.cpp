@@ -5,18 +5,20 @@
 
 #include "mozilla/dom/HTMLTrackElement.h"
 #include "mozilla/dom/TextTrackCue.h"
+#include "mozilla/dom/TextTrackRegion.h"
 #include "nsComponentManagerUtils.h"
 #include "mozilla/ClearOnShutdown.h"
 
 namespace mozilla {
 namespace dom {
 
-NS_IMPL_CYCLE_COLLECTION_INHERITED_4(TextTrackCue,
+NS_IMPL_CYCLE_COLLECTION_INHERITED_5(TextTrackCue,
                                      nsDOMEventTargetHelper,
                                      mDocument,
                                      mTrack,
                                      mTrackElement,
-                                     mDisplayState)
+                                     mDisplayState,
+                                     mRegion)
 
 NS_IMPL_ADDREF_INHERITED(TextTrackCue, nsDOMEventTargetHelper)
 NS_IMPL_RELEASE_INHERITED(TextTrackCue, nsDOMEventTargetHelper)
@@ -79,8 +81,8 @@ TextTrackCue::TextTrackCue(nsISupports* aGlobal,
   }
 }
 
-/** Save a reference to our creating document so it's available
- *  even when unlinked during discard/teardown.
+/** Save a reference to our creating document so we don't have to
+ *  keep getting it from our window.
  */
 nsresult
 TextTrackCue::StashDocument(nsISupports* aGlobal)
@@ -99,7 +101,11 @@ TextTrackCue::StashDocument(nsISupports* aGlobal)
 already_AddRefed<DocumentFragment>
 TextTrackCue::GetCueAsHTML()
 {
-  MOZ_ASSERT(mDocument);
+  // mDocument may be null during cycle collector shutdown.
+  // See bug 941701.
+  if (!mDocument) {
+    return nullptr;
+  }
 
   if (!sParserWrapper) {
     nsresult rv;
@@ -140,6 +146,23 @@ JSObject*
 TextTrackCue::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope)
 {
   return VTTCueBinding::Wrap(aCx, aScope, this);
+}
+
+TextTrackRegion*
+TextTrackCue::GetRegion()
+{
+  return mRegion;
+}
+
+void
+TextTrackCue::SetRegion(TextTrackRegion* aRegion)
+{
+  if (mRegion == aRegion) {
+    return;
+  }
+  mRegion = aRegion;
+  mReset = true;
+  CueChanged();
 }
 
 void

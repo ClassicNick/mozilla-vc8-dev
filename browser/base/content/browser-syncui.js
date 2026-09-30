@@ -88,30 +88,65 @@ let gSyncUI = {
   _wasDelayed: false,
 
   _needsSetup: function SUI__needsSetup() {
+    // We want to treat "account needs verification" as "needs setup". So
+    // "reach in" to Weave.Status._authManager to check whether we the signed-in
+    // user is verified.
+    // Referencing Weave.Status spins a nested event loop to initialize the
+    // authManager, so this should always return a value directly.
+    // This only applies to fxAccounts-based Sync.
+    if (Weave.Status._authManager._signedInUser) {
+      // If we have a signed in user already, and that user is not verified,
+      // revert to the "needs setup" state.
+      if (!Weave.Status._authManager._signedInUser.verified) {
+        return true;
+      }
+    }
+
     let firstSync = "";
     try {
       firstSync = Services.prefs.getCharPref("services.sync.firstSync");
     } catch (e) { }
+
     return Weave.Status.checkSetup() == Weave.CLIENT_NOT_CONFIGURED ||
            firstSync == "notReady";
   },
 
+  _loginFailed: function () {
+    return Weave.Status.login == Weave.LOGIN_FAILED_LOGIN_REJECTED;
+  },
+
   updateUI: function SUI_updateUI() {
     let needsSetup = this._needsSetup();
-    document.getElementById("sync-setup-state").hidden = !needsSetup;
-    document.getElementById("sync-syncnow-state").hidden = needsSetup;
+    let loginFailed = this._loginFailed();
+
+    // Start off with a clean slate
+    document.getElementById("sync-reauth-state").hidden = true;
+    document.getElementById("sync-setup-state").hidden = true;
+    document.getElementById("sync-syncnow-state").hidden = true;
+
+    if (loginFailed) {
+      document.getElementById("sync-reauth-state").hidden = false;
+    } else if (needsSetup) {
+      document.getElementById("sync-setup-state").hidden = false;
+    } else {
+      document.getElementById("sync-syncnow-state").hidden = false;
+    }
 
     if (!gBrowser)
       return;
 
-    let button = document.getElementById("sync-button");
-    if (!button)
-      return;
+    let syncButton = document.getElementById("sync-button");
+    let panelHorizontalButton = document.getElementById("PanelUI-fxa-status");
+    [syncButton, panelHorizontalButton].forEach(function(button) {
+      if (!button)
+        return;
+      button.removeAttribute("status");
+    });
 
-    button.removeAttribute("status");
+    if (needsSetup && syncButton)
+      syncButton.removeAttribute("tooltiptext");
+
     this._updateLastSyncTime();
-    if (needsSetup)
-      button.removeAttribute("tooltiptext");
   },
 
 
@@ -120,11 +155,12 @@ let gSyncUI = {
     if (!gBrowser)
       return;
 
-    let button = document.getElementById("sync-button");
-    if (!button)
-      return;
-
-    button.setAttribute("status", "active");
+    ["sync-button", "PanelUI-fxa-status"].forEach(function(id) {
+      let button = document.getElementById(id);
+      if (!button)
+        return;
+      button.setAttribute("status", "active");
+    });
   },
 
   onSyncDelay: function SUI_onSyncDelay() {
@@ -158,6 +194,11 @@ let gSyncUI = {
 
     // if we haven't set up the client, don't show errors
     if (this._needsSetup()) {
+      this.updateUI();
+      return;
+    }
+    // if we are still waiting for the identity manager to initialize, don't show errors
+    if (Weave.Status.login == Weave.LOGIN_FAILED_NOT_READY) {
       this.updateUI();
       return;
     }
@@ -328,6 +369,9 @@ let gSyncUI = {
     openPreferences("paneSync");
   },
 
+  openSignInAgainPage: function () {
+    switchToTabHavingURI("about:accounts?action=reauth", true);
+  },
 
   // Helpers
   _updateLastSyncTime: function SUI__updateLastSyncTime() {

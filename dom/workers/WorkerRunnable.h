@@ -144,7 +144,7 @@ protected:
                      nsIEventTarget* aSyncLoopTarget);
 
   WorkerSyncRunnable(WorkerPrivate* aWorkerPrivate,
-                     already_AddRefed<nsIEventTarget> aSyncLoopTarget);
+                     already_AddRefed<nsIEventTarget>&& aSyncLoopTarget);
 
   virtual ~WorkerSyncRunnable();
 
@@ -168,8 +168,8 @@ protected:
   }
 
   MainThreadWorkerSyncRunnable(WorkerPrivate* aWorkerPrivate,
-                               already_AddRefed<nsIEventTarget> aSyncLoopTarget)
-  : WorkerSyncRunnable(aWorkerPrivate, aSyncLoopTarget)
+                               already_AddRefed<nsIEventTarget>&& aSyncLoopTarget)
+  : WorkerSyncRunnable(aWorkerPrivate, Move(aSyncLoopTarget))
   {
     AssertIsOnMainThread();
   }
@@ -200,7 +200,7 @@ class StopSyncLoopRunnable : public WorkerSyncRunnable
 public:
   // Passing null for aSyncLoopTarget is not allowed.
   StopSyncLoopRunnable(WorkerPrivate* aWorkerPrivate,
-                       already_AddRefed<nsIEventTarget> aSyncLoopTarget,
+                       already_AddRefed<nsIEventTarget>&& aSyncLoopTarget,
                        bool aResult);
 
   // By default StopSyncLoopRunnables cannot be canceled since they could leave
@@ -233,9 +233,9 @@ public:
   // Passing null for aSyncLoopTarget is not allowed.
   MainThreadStopSyncLoopRunnable(
                                WorkerPrivate* aWorkerPrivate,
-                               already_AddRefed<nsIEventTarget> aSyncLoopTarget,
+                               already_AddRefed<nsIEventTarget>&& aSyncLoopTarget,
                                bool aResult)
-  : StopSyncLoopRunnable(aWorkerPrivate, aSyncLoopTarget, aResult)
+  : StopSyncLoopRunnable(aWorkerPrivate, Move(aSyncLoopTarget), aResult)
   {
     AssertIsOnMainThread();
   }
@@ -312,6 +312,34 @@ protected:
   virtual void
   PostDispatch(JSContext* aCx, WorkerPrivate* aWorkerPrivate,
                bool aDispatchResult) MOZ_OVERRIDE;
+};
+
+// A WorkerRunnable that should be dispatched from the worker to itself for
+// async tasks. This will increment the busy count PostDispatch() (only if
+// dispatch was successful) and decrement it in PostRun().
+//
+// Async tasks will almost always want to use this since
+// a WorkerSameThreadRunnable keeps the Worker from being GCed.
+class WorkerSameThreadRunnable : public WorkerRunnable
+{
+protected:
+  WorkerSameThreadRunnable(WorkerPrivate* aWorkerPrivate)
+  : WorkerRunnable(aWorkerPrivate, WorkerThreadModifyBusyCount)
+  { }
+
+  virtual ~WorkerSameThreadRunnable()
+  { }
+
+  virtual bool
+  PreDispatch(JSContext* aCx, WorkerPrivate* aWorkerPrivate) MOZ_OVERRIDE;
+
+  virtual void
+  PostDispatch(JSContext* aCx, WorkerPrivate* aWorkerPrivate,
+               bool aDispatchResult) MOZ_OVERRIDE;
+
+  virtual void
+  PostRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate,
+          bool aRunResult) MOZ_OVERRIDE;
 };
 
 END_WORKERS_NAMESPACE
