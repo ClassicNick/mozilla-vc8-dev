@@ -175,6 +175,7 @@ typedef HRESULT (WINAPI*D3D10CreateDevice1Func)(
   UINT SDKVersion,
   ID3D10Device1 **ppDevice
 );
+#endif
 
 typedef HRESULT(WINAPI*CreateDXGIFactory1Func)(
   REFIID riid,
@@ -455,7 +456,7 @@ gfxWindowsPlatform::UpdateRenderMode()
     // we're going to use D2D.
     if (!mDWriteFactory && (mUseDirectWrite && isVistaOrHigher)) {
         mozilla::ScopedGfxFeatureReporter reporter("DWrite");
-        decltype(DWriteCreateFactory)* createDWriteFactory = (decltype(DWriteCreateFactory)*)
+        DWriteCreateFactoryFunc createDWriteFactory = (DWriteCreateFactoryFunc)
             GetProcAddress(LoadLibraryW(L"dwrite.dll"), "DWriteCreateFactory");
 
         if (createDWriteFactory) {
@@ -507,8 +508,8 @@ gfxWindowsPlatform::CreateDevice(nsRefPtr<IDXGIAdapter1> &adapter1,
   nsModuleHandle d3d10module(LoadLibrarySystem32(L"d3d10_1.dll"));
   if (!d3d10module)
     return E_FAIL;
-  decltype(D3D10CreateDevice1)* createD3DDevice =
-    (decltype(D3D10CreateDevice1)*) GetProcAddress(d3d10module, "D3D10CreateDevice1");
+  D3D10CreateDevice1Func createD3DDevice =
+    (D3D10CreateDevice1Func)GetProcAddress(d3d10module, "D3D10CreateDevice1");
   if (!createD3DDevice)
     return E_FAIL;
 
@@ -1452,7 +1453,7 @@ gfxWindowsPlatform::GetD3D11Device()
   mD3D11DeviceInitialized = true;
 
   nsModuleHandle d3d11Module(LoadLibrarySystem32(L"d3d11.dll"));
-  decltype(D3D11CreateDevice)* d3d11CreateDevice = (decltype(D3D11CreateDevice)*)
+  D3D11CreateDeviceFunc d3d11CreateDevice = (D3D11CreateDeviceFunc)
     GetProcAddress(d3d11Module, "D3D11CreateDevice");
 
   if (!d3d11CreateDevice) {
@@ -1522,7 +1523,7 @@ gfxWindowsPlatform::GetDXGIAdapter()
   }
 
   nsModuleHandle dxgiModule(LoadLibrarySystem32(L"dxgi.dll"));
-  decltype(CreateDXGIFactory1)* createDXGIFactory1 = (decltype(CreateDXGIFactory1)*)
+  CreateDXGIFactory1Func createDXGIFactory1 = (CreateDXGIFactory1Func)
     GetProcAddress(dxgiModule, "CreateDXGIFactory1");
 
   // Try to use a DXGI 1.1 adapter in order to share resources

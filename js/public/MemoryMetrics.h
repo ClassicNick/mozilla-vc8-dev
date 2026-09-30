@@ -98,6 +98,7 @@ struct CStringHashPolicy
 #define DECL_SIZE(kind, gc, mSize)                      size_t mSize;
 #define ZERO_SIZE(kind, gc, mSize)                      mSize(0),
 #define COPY_OTHER_SIZE(kind, gc, mSize)                mSize(other.mSize),
+#define MOVE_OTHER_SIZE(kind, gc, mSize)                mSize(other->mSize),
 #define ADD_OTHER_SIZE(kind, gc, mSize)                 mSize += other.mSize;
 #define SUB_OTHER_SIZE(kind, gc, mSize)                 MOZ_ASSERT(mSize >= other.mSize); \
                                                         mSize -= other.mSize;
@@ -417,24 +418,16 @@ struct ZoneStats
         isTotals(true)
     {}
 
-<<<<<<< HEAD
     ZoneStats(mozilla::MoveRef<ZoneStats> other)
-      : ZoneStatsPod(other),
-        strings(other->strings),
-        notableStrings(mozilla::OldMove(other->notableStrings))
+      : FOR_EACH_SIZE(MOVE_OTHER_SIZE)
+        stringInfo(mozilla::OldMove(other->stringInfo)),
+        extra(other->extra),
+        allStrings(other->allStrings),
+        notableStrings(mozilla::OldMove(other->notableStrings)),
+        isTotals(other->isTotals)
     {
-        other->strings = nullptr;
-=======
-    ZoneStats(ZoneStats &&other)
-      : FOR_EACH_SIZE(COPY_OTHER_SIZE)
-        stringInfo(mozilla::Move(other.stringInfo)),
-        extra(other.extra),
-        allStrings(other.allStrings),
-        notableStrings(mozilla::Move(other.notableStrings)),
-        isTotals(other.isTotals)
-    {
-        other.allStrings = nullptr;
-        MOZ_ASSERT(!other.isTotals);
+        other->allStrings = nullptr;
+        MOZ_ASSERT(!other->isTotals);
     }
 
     ~ZoneStats() {
@@ -442,7 +435,6 @@ struct ZoneStats
         // destructor runs. But there are failure cases due to OOMs that may
         // prevent that, so it doesn't hurt to try again here.
         js_delete(allStrings);
->>>>>>> b564544
     }
 
     bool initStrings(JSRuntime *rt);

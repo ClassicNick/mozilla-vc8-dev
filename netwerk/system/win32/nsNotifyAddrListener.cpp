@@ -67,7 +67,7 @@ static void InitNetshellLibrary(void)
     if (!sNetshell) {
         sNetshell = LoadLibraryW(L"Netshell.dll");
         if (sNetshell) {
-            sNcFreeNetconProperties = (decltype(NcFreeNetconProperties)*)
+            sNcFreeNetconProperties = (NcFreeNetconPropertiesFunc)
                 GetProcAddress(sNetshell, "NcFreeNetconProperties");
         }
     }
