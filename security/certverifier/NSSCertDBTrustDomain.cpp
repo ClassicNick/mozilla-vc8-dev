@@ -6,7 +6,7 @@
 
 #include "NSSCertDBTrustDomain.h"
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 #include "insanity/ScopedPtr.h"
 #include "certdb.h"

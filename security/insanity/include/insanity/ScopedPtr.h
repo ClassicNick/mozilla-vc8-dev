@@ -23,6 +23,14 @@
 #if __GNUC__ * 100 + __GNUC_MINOR__ < 406
   #define nullptr __null
 #endif
+#elif defined (_MSC_VER) && _MSC_VER <= 1500
+#if defined (_WIN64)
+#define nullptr 0LL
+#elif defined (_WIN32)
+#define nullptr 0L
+#else
+#error "nullptr is incompatible with your platform
+#endif
 #endif
 
 namespace insanity { namespace pkix {

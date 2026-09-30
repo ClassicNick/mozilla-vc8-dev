@@ -9136,7 +9136,7 @@ fi
 # Run the SpiderMonkey 'configure' script.
 dist=$MOZ_BUILD_ROOT/dist
 ac_configure_args="$_SUBDIR_CONFIG_ARGS"
-ac_configure_args="$ac_configure_args --disable-threadsafe"
+ac_configure_args="$ac_configure_args --enable-threadsafe"
 
 ac_configure_args="$ac_configure_args $WITH_INTL"
 

@@ -8,6 +8,7 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/Move.h"
 
 #include "nsCycleCollectionNoteChild.h"
 #include "nsTArray.h"
@@ -232,12 +233,12 @@ class nsCOMArray : public nsCOMArray_base
     explicit
     nsCOMArray(const nsCOMArray<T>& aOther) : nsCOMArray_base(aOther) { }
 
-    nsCOMArray(nsCOMArray<T>&& aOther) { SwapElements(aOther); }
+    nsCOMArray(mozilla::MoveRef<nsCOMArray<T> > aOther) { SwapElements(aOther); }
 
     ~nsCOMArray() {}
 
     // We have a move assignment operator, but no copy assignment operator.
-    nsCOMArray<T>& operator=(nsCOMArray<T>&& aOther) {
+    nsCOMArray<T>& operator=(mozilla::MoveRef<nsCOMArray<T> > aOther) {
         SwapElements(aOther);
         return *this;
     }

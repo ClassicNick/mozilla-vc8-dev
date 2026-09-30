@@ -6,7 +6,7 @@
 
 #include "CertVerifier.h"
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 #include "insanity/pkixtypes.h"
 #include "ExtendedValidation.h"

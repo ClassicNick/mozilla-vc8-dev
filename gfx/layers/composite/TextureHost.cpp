@@ -180,9 +180,10 @@ TextureHost::Create(const SurfaceDescriptor& aDesc,
       // See Bug 944420.
       return CreateTextureHostOGL(aDesc, aDeallocator, aFlags);
 #endif
-#ifdef XP_WIN
+#if defined XP_WIN && MOZ_ENABLE_D3D10_LAYER
     case LayersBackend::LAYERS_D3D11:
       return CreateTextureHostD3D11(aDesc, aDeallocator, aFlags);
+#elif defined XP_WIN
     case LayersBackend::LAYERS_D3D9:
       return CreateTextureHostD3D9(aDesc, aDeallocator, aFlags);
 #endif
