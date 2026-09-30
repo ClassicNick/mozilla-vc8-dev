@@ -87,11 +87,11 @@ using namespace mozilla::dom;
 //----------------------------------------------------------------------
 
 typedef nsGenericHTMLElement*
-  (*contentCreatorCallback)(already_AddRefed<nsINodeInfo>&&,
+  (*contentCreatorCallback)(already_AddRefed<nsINodeInfo>,
                             FromParser aFromParser);
 
 nsGenericHTMLElement*
-NS_NewHTMLNOTUSEDElement(already_AddRefed<nsINodeInfo>&& aNodeInfo,
+NS_NewHTMLNOTUSEDElement(already_AddRefed<nsINodeInfo> aNodeInfo,
                          FromParser aFromParser)
 {
   NS_NOTREACHED("The element ctor should never be called");
@@ -242,7 +242,7 @@ public:
 };
 
 nsresult
-NS_NewHTMLElement(Element** aResult, already_AddRefed<nsINodeInfo>&& aNodeInfo,
+NS_NewHTMLElement(Element** aResult, already_AddRefed<nsINodeInfo> aNodeInfo,
                   FromParser aFromParser)
 {
   *aResult = nullptr;
@@ -287,8 +287,7 @@ NS_NewHTMLElement(Element** aResult, already_AddRefed<nsINodeInfo>&& aNodeInfo,
 }
 
 already_AddRefed<nsGenericHTMLElement>
-CreateHTMLElement(uint32_t aNodeType,
-                  already_AddRefed<nsINodeInfo>&& aNodeInfo,
+CreateHTMLElement(uint32_t aNodeType, already_AddRefed<nsINodeInfo> aNodeInfo,
                   FromParser aFromParser)
 {
   NS_ASSERTION(aNodeType <= NS_HTML_TAG_MAX ||
@@ -300,7 +299,7 @@ CreateHTMLElement(uint32_t aNodeType,
   NS_ASSERTION(cb != NS_NewHTMLNOTUSEDElement,
                "Don't know how to construct tag element!");
 
-  nsRefPtr<nsGenericHTMLElement> result = cb(Move(aNodeInfo), aFromParser);
+  nsRefPtr<nsGenericHTMLElement> result = cb(aNodeInfo, aFromParser);
 
   return result.forget();
 }
