@@ -183,18 +183,17 @@ NotableScriptSourceInfo::NotableScriptSourceInfo(const char *filename, const Scr
     PodCopy(filename_, filename, bytes);
 }
 
-NotableScriptSourceInfo::NotableScriptSourceInfo(NotableScriptSourceInfo &&info)
-  : ScriptSourceInfo(Move(info))
+NotableScriptSourceInfo::NotableScriptSourceInfo(mozilla::MoveRef<NotableScriptSourceInfo> info)
+  : ScriptSourceInfo(info)
 {
-    filename_ = info.filename_;
-    info.filename_ = nullptr;
+    filename_ = info->filename_;
+    info->filename_ = nullptr;
 }
 
-NotableScriptSourceInfo &NotableScriptSourceInfo::operator=(NotableScriptSourceInfo &&info)
+NotableScriptSourceInfo &NotableScriptSourceInfo::operator=(mozilla::MoveRef<NotableScriptSourceInfo> info)
 {
-    MOZ_ASSERT(this != &info, "self-move assignment is prohibited");
     this->~NotableScriptSourceInfo();
-    new (this) NotableScriptSourceInfo(Move(info));
+    new (this) NotableScriptSourceInfo(info);
     return *this;
 }
 

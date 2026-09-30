@@ -2317,6 +2317,17 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
             segment = segment->getNext();                                      \
         }                                                                      \
     }
+	
+#define NS_TRACE_SEGMENTED_ARRAY3(_field)                                       \
+    {                                                                          \
+        SegmentedArrayElement<JS::TenuredHeap<JSObject*> >* segment = tmp->_field.GetFirstSegment();                          \
+        while (segment) {                                                      \
+            for (uint32_t i = segment->Length(); i > 0;) {                     \
+                aCallbacks.Trace(&segment->ElementAt(--i), #_field, aClosure); \
+            }                                                                  \
+            segment = segment->getNext();                                      \
+        }                                                                      \
+    }
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(JSPurpleBuffer)
     NS_TRACE_SEGMENTED_ARRAY1(mValues)

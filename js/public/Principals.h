@@ -11,7 +11,7 @@
 
 #include "mozilla/Atomics.h"
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 #include "jspubtd.h"
 

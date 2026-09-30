@@ -619,7 +619,7 @@ bool
 NeckoParent::RecvPChannelDiverterConstructor(PChannelDiverterParent* actor,
                                              const ChannelDiverterArgs& channel)
 {
-  auto parent = static_cast<ChannelDiverterParent*>(actor);
+  ChannelDiverterParent* parent = static_cast<ChannelDiverterParent*>(actor);
   parent->Init(channel);
   return true;
 }

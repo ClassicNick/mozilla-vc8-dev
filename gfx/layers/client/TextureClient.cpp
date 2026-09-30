@@ -28,7 +28,9 @@
 
 #ifdef XP_WIN
 #include "mozilla/layers/TextureD3D9.h"
+#ifdef MOZ_ENABLE_D3D10_LAYER
 #include "mozilla/layers/TextureD3D11.h"
+#endif
 #include "gfxWindowsPlatform.h"
 #include "gfx2DGlue.h"
 #endif
@@ -285,10 +287,12 @@ TextureClient::CreateTextureClientForDrawing(ISurfaceAllocator* aAllocator,
 
 #ifdef XP_WIN
   LayersBackend parentBackend = aAllocator->GetCompositorBackendType();
+#ifdef MOZ_ENABLE_D3D10_LAYER
   if (parentBackend == LayersBackend::LAYERS_D3D11 && gfxWindowsPlatform::GetPlatform()->GetD2DDevice() &&
       !(aTextureFlags & TEXTURE_ALLOC_FALLBACK)) {
     result = new TextureClientD3D11(aFormat, aTextureFlags);
   }
+#endif
   if (parentBackend == LayersBackend::LAYERS_D3D9 &&
       aAllocator->IsSameProcess() &&
       !(aTextureFlags & TEXTURE_ALLOC_FALLBACK)) {

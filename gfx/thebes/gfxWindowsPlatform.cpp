@@ -181,7 +181,6 @@ typedef HRESULT(WINAPI*CreateDXGIFactory1Func)(
   REFIID riid,
   void **ppFactory
 );
-#endif
 
 #ifdef MOZ_ENABLE_D3D10_LAYER
 typedef HRESULT (WINAPI*D3D11CreateDeviceFunc)(

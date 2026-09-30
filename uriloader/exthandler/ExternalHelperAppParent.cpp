@@ -150,7 +150,7 @@ bool
 ExternalHelperAppParent::RecvDivertToParentUsing(PChannelDiverterParent* diverter)
 {
   MOZ_ASSERT(diverter);
-  auto p = static_cast<mozilla::net::ChannelDiverterParent*>(diverter);
+  mozilla::net::ChannelDiverterParent* p = static_cast<mozilla::net::ChannelDiverterParent*>(diverter);
   p->DivertTo(this);
   mDiverted = true;
   unused << p->Send__delete__(p);

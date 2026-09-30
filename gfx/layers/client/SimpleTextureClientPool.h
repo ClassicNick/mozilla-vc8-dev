@@ -29,7 +29,7 @@ public:
 
   ~SimpleTextureClientPool()
   {
-    for (auto it = mOutstandingTextureClients.begin(); it != mOutstandingTextureClients.end(); ++it) {
+    for (std::list<RefPtr<TextureClient> >::iterator it = mOutstandingTextureClients.begin(); it != mOutstandingTextureClients.end(); ++it) {
       (*it)->ClearRecycleCallback();
     }
   }

@@ -8,8 +8,7 @@
 
 #include "mozilla/StandardInteger.h"
 
-template <class T>
-class nsTArray;
+#include "nsTArrayForwardDeclare.h"
 
 namespace mozilla {
 

@@ -11,7 +11,7 @@
 #include "SkPreConfig.h"
 #include "SkUserConfig.h"
 #include "SkPostConfig.h"
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 /** \file SkTypes.h
 */

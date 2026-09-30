@@ -367,7 +367,7 @@ private:
   static void
   ThreadLocalDestructor(void* aThreadLocal)
   {
-    auto threadLocalInfo = static_cast<ThreadLocalInfo*>(aThreadLocal);
+    ThreadLocalInfo* threadLocalInfo = static_cast<ThreadLocalInfo*>(aThreadLocal);
 
     if (threadLocalInfo) {
       if (threadLocalInfo->mActor) {
@@ -1058,7 +1058,7 @@ ParentImpl::ShutdownTimerCallback(nsITimer* aTimer, void* aClosure)
   MOZ_ASSERT(sShutdownHasStarted);
   MOZ_ASSERT(sLiveActorCount);
 
-  auto closure = static_cast<TimerCallbackClosure*>(aClosure);
+  TimerCallbackClosure* closure = static_cast<TimerCallbackClosure*>(aClosure);
   MOZ_ASSERT(closure);
 
   // Don't let the stack unwind until the ForceCloseBackgroundActorsRunnable has
@@ -1463,7 +1463,7 @@ ChildImpl::GetForCurrentThread()
 {
   MOZ_ASSERT(sThreadLocalIndex != kBadThreadLocalIndex);
 
-  auto threadLocalInfo =
+  ThreadLocalInfo* threadLocalInfo =
     static_cast<ThreadLocalInfo*>(PR_GetThreadPrivate(sThreadLocalIndex));
 
   return threadLocalInfo ? threadLocalInfo->mActor : nullptr;
@@ -1480,7 +1480,7 @@ ChildImpl::GetOrCreateForCurrentThread(
 
   bool created = false;
 
-  auto threadLocalInfo =
+  ThreadLocalInfo* threadLocalInfo =
     static_cast<ThreadLocalInfo*>(PR_GetThreadPrivate(sThreadLocalIndex));
 
   if (threadLocalInfo) {
@@ -1544,7 +1544,7 @@ ChildImpl::CreateCallbackRunnable::GetNextCallback()
 {
   // May run on any thread!
 
-  auto threadLocalInfo =
+  ThreadLocalInfo* threadLocalInfo =
     static_cast<ThreadLocalInfo*>(PR_GetThreadPrivate(sThreadLocalIndex));
   MOZ_ASSERT(threadLocalInfo);
 
@@ -1617,7 +1617,7 @@ ChildImpl::OpenChildProcessActorRunnable::Run()
   }
 
   // Now that Open() has succeeded transfer the ownership of the actor to IPDL.
-  auto threadLocalInfo =
+  ThreadLocalInfo* threadLocalInfo =
     static_cast<ThreadLocalInfo*>(PR_GetThreadPrivate(sThreadLocalIndex));
 
   MOZ_ASSERT(threadLocalInfo);
@@ -1679,7 +1679,7 @@ ChildImpl::OpenMainProcessActorRunnable::Run()
   // Now that Open() has succeeded transfer the ownership of the actors to IPDL.
   unused << parentActor.forget();
 
-  auto threadLocalInfo =
+  ThreadLocalInfo* threadLocalInfo =
     static_cast<ThreadLocalInfo*>(PR_GetThreadPrivate(sThreadLocalIndex));
 
   MOZ_ASSERT(threadLocalInfo);

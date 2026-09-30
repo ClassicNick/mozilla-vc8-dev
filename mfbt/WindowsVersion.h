@@ -6,7 +6,7 @@
 #define mozilla_WindowsVersion_h
 
 #include "mozilla/Attributes.h"
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 #include <windows.h>
 
 namespace mozilla

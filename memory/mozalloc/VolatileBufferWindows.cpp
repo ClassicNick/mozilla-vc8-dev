@@ -10,6 +10,7 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/mozalloc.h"
 #include "mozilla/WindowsVersion.h"
+#include "mozilla/NullPtr.h"
 
 #include <windows.h>
 

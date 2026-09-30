@@ -325,8 +325,8 @@ struct NotableScriptSourceInfo : public ScriptSourceInfo
 {
     NotableScriptSourceInfo();
     NotableScriptSourceInfo(const char *filename, const ScriptSourceInfo &info);
-    NotableScriptSourceInfo(NotableScriptSourceInfo &&info);
-    NotableScriptSourceInfo &operator=(NotableScriptSourceInfo &&info);
+    NotableScriptSourceInfo(mozilla::MoveRef<NotableScriptSourceInfo> info);
+    NotableScriptSourceInfo &operator=(mozilla::MoveRef<NotableScriptSourceInfo> info);
 
     ~NotableScriptSourceInfo() {
         js_free(filename_);

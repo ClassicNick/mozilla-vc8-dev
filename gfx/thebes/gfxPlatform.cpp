@@ -85,6 +85,7 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Mutex.h"
+#include "mozilla/Hal.h"
 
 #include "nsIGfxInfo.h"
 #include "nsIXULRuntime.h"
