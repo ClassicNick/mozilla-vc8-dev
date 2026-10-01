@@ -772,7 +772,7 @@ static SourceSet *
     result->MoveElementsFrom(candidateSet);
     return result.forget();
   }
-  auto& constraints = aConstraints.GetAsMediaTrackConstraintsInternal();
+  MediaTrackConstraintsInternal& constraints = aConstraints.GetAsMediaTrackConstraintsInternal();
 
   // Then apply mandatory constraints
 
@@ -801,7 +801,7 @@ static SourceSet *
   SourceSet tailSet;
 
   if (constraints.mOptional.WasPassed()) {
-    const auto &array = constraints.mOptional.Value();
+    const Sequence<MediaTrackConstraintSet> &array = constraints.mOptional.Value();
     for (int i = 0; i < int(array.Length()); i++) {
       SourceSet rejects;
       // Note: Iterator must be signed as it can dip below zero

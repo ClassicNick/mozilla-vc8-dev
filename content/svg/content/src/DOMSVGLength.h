@@ -175,7 +175,7 @@ public:
   void ConvertToSpecifiedUnits(uint16_t aUnit, ErrorResult& aRv);
 
   nsISupports* GetParentObject() const {
-    auto svgElement = mList ? Element() : mSVGElement.get();
+    nsSVGElement* svgElement = mList ? Element() : mSVGElement.get();
     return static_cast<nsIDOMSVGElement*> (svgElement);
   }
 

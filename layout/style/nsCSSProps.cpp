@@ -96,7 +96,7 @@ static nsCSSProperty gAliases[eCSSAliasCount != 0 ? eCSSAliasCount : 1] = {
 nsStaticCaseInsensitiveNameTable*
 CreateStaticTable(const char* const aRawTable[], int32_t aSize)
 {
-  auto table = new nsStaticCaseInsensitiveNameTable();
+  nsStaticCaseInsensitiveNameTable* table = new nsStaticCaseInsensitiveNameTable();
   if (table) {
 #ifdef DEBUG
     // let's verify the table...

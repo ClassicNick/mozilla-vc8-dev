@@ -101,7 +101,6 @@
 #ifdef USE_SKIA_GPU
 #undef free // apparently defined by some windows header, clashing with a free()
             // method in SkTypes.h
-#ifdef USE_SKIA
 #include "SkiaGLGlue.h"
 #include "SurfaceStream.h"
 #include "SurfaceTypes.h"

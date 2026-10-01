@@ -248,7 +248,7 @@ UnpackClonedMessageData(const ClonedMessageData& aData)
     uint32_t length = blobs.Length();
     cloneData.mClosure.mBlobs.SetCapacity(length);
     for (uint32_t i = 0; i < length; ++i) {
-      auto* blob =
+      typename BlobTraits<Flavor>::BlobType* blob =
         static_cast<typename BlobTraits<Flavor>::BlobType*>(blobs[i]);
       MOZ_ASSERT(blob);
       nsCOMPtr<nsIDOMBlob> domBlob = blob->GetBlob();

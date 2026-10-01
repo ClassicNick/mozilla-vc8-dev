@@ -653,7 +653,7 @@ private:
       PFileDescriptorSetParent* fdSet = nullptr;
 
       if (!fds.IsEmpty()) {
-        auto* manager = static_cast<ContentParent*>(mBlobActor->Manager());
+        ContentParent* manager = static_cast<ContentParent*>(mBlobActor->Manager());
         MOZ_ASSERT(manager);
 
         fdSet = manager->SendPFileDescriptorSetConstructor(fds[0]);
@@ -953,7 +953,7 @@ private:
     normalParams.contentType() = mContentType;
     normalParams.length() = mLength;
 
-    auto* manager = static_cast<ContentChild*>(mActor->Manager());
+    ContentChild* manager = static_cast<ContentChild*>(mActor->Manager());
     MOZ_ASSERT(manager);
 
     BlobChild* newActor = BlobChild::Create(manager, normalParams);
@@ -1117,7 +1117,7 @@ BlobChild::Create(ContentChild* aManager,
       const SlicedBlobConstructorParams& params =
         aParams.get_SlicedBlobConstructorParams();
 
-      auto* actor =
+      BlobChild* actor =
         const_cast<BlobChild*>(
           static_cast<const BlobChild*>(params.sourceChild()));
       MOZ_ASSERT(actor);
@@ -1648,7 +1648,7 @@ private:
     params.blobParams() = normalParams;
     params.optionalInputStreamParams() = void_t();
 
-    auto* manager = static_cast<ContentParent*>(mActor->Manager());
+    ContentParent* manager = static_cast<ContentParent*>(mActor->Manager());
     MOZ_ASSERT(manager);
 
     BlobParent* newActor = BlobParent::Create(manager, params);
@@ -1828,7 +1828,7 @@ BlobParent::Create(ContentParent* aManager,
       const SlicedBlobConstructorParams& params =
         blobParams.get_SlicedBlobConstructorParams();
 
-      auto* actor =
+      BlobParent* actor =
         const_cast<BlobParent*>(
           static_cast<const BlobParent*>(params.sourceParent()));
       MOZ_ASSERT(actor);

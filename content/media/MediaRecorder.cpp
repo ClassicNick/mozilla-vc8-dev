@@ -612,7 +612,7 @@ MediaRecorder::RequestData(ErrorResult& aResult)
 
   NS_DispatchToMainThread(
     NS_NewRunnableMethodWithArg<const already_AddRefed<nsIDOMBlob> >(this,
-      &MediaRecorder::CreateAndDispatchBlobEvent, mSession.LastElement()->GetEncodedData()),
+      &MediaRecorder::CreateAndDispatchBlobEvent, mSessions.LastElement()->GetEncodedData()),
     NS_DISPATCH_NORMAL);
 }
 

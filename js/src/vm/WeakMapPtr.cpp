@@ -98,7 +98,7 @@ template <typename K, typename V>
 /* static */ void
 JS::WeakMapPtr<K, V>::keyMarkCallback(JSTracer *trc, K key, void *data)
 {
-    auto map = static_cast< JS::WeakMapPtr<K, V>* >(data);
+    JS::WeakMapPtr<K, V>* map = static_cast< JS::WeakMapPtr<K, V>* >(data);
     K prior = key;
     JS_CallObjectTracer(trc, &key, "WeakMapPtr key");
     return Utils<K, V>::cast(map->ptr)->rekeyIfMoved(prior, key);

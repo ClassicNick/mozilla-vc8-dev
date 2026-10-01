@@ -151,7 +151,7 @@ DOMSVGLength::~DOMSVGLength()
   }
 
   if (mVal) {
-    auto& table = mIsAnimValItem ? sAnimSVGLengthTearOffTable : sBaseSVGLengthTearOffTable;
+    nsSVGAttrTearoffTable<nsSVGLength2, DOMSVGLength>& table = mIsAnimValItem ? sAnimSVGLengthTearOffTable : sBaseSVGLengthTearOffTable;
     table.RemoveTearoff(mVal);
   }
 }
@@ -160,7 +160,7 @@ already_AddRefed<DOMSVGLength>
 DOMSVGLength::GetTearOff(nsSVGLength2* aVal, nsSVGElement* aSVGElement,
                          bool aAnimVal)
 {
-  auto& table = aAnimVal ? sAnimSVGLengthTearOffTable : sBaseSVGLengthTearOffTable;
+  nsSVGAttrTearoffTable<nsSVGLength2, DOMSVGLength>& table = aAnimVal ? sAnimSVGLengthTearOffTable : sBaseSVGLengthTearOffTable;
   nsRefPtr<DOMSVGLength> domLength = table.GetTearoff(aVal);
   if (!domLength) {
     domLength = new DOMSVGLength(aVal, aSVGElement, aAnimVal);
