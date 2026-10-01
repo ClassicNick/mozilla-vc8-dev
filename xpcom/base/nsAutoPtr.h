@@ -896,7 +896,7 @@ class nsRefPtr
         {
         }
 
-      nsRefPtr( const nsRefPtr<T>& aSmartPtr )
+      nsRefPtr(const nsRefPtr<T>& aSmartPtr)
             : mRawPtr(aSmartPtr.mRawPtr)
           // copy-constructor
         {
@@ -904,9 +904,10 @@ class nsRefPtr
             mRawPtr->AddRef();
         }
 
-      nsRefPtr( T* aRawPtr )
-            : mRawPtr(aRawPtr)
-          // construct from a raw pointer (of the right type)
+      // construct from a raw pointer (of the right type)
+
+      nsRefPtr(T* aRawPtr)
+        : mRawPtr(aRawPtr)
         {
           if ( mRawPtr )
             mRawPtr->AddRef();
@@ -930,7 +931,7 @@ class nsRefPtr
         // Assignment operators
 
       nsRefPtr<T>&
-      operator=( const nsRefPtr<T>& rhs )
+      operator=(const nsRefPtr<T>& rhs)
           // copy assignment operator
         {
           assign_with_AddRef(rhs.mRawPtr);
