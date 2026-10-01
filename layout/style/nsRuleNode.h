@@ -14,8 +14,6 @@
 #include "nsPresContext.h"
 #include "nsStyleStruct.h"
 
-#include "mozilla/StandardInteger.h"
-
 class nsStyleContext;
 struct nsRuleData;
 class nsIStyleRule;

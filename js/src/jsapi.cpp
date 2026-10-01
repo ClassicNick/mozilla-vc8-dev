@@ -1385,6 +1385,14 @@ JS_GetArrayPrototype(JSContext *cx, HandleObject forObj)
 }
 
 JS_PUBLIC_API(JSObject *)
+JS_GetErrorPrototype(JSContext *cx)
+{
+    CHECK_REQUEST(cx);
+    Rooted<GlobalObject*> global(cx, cx->global());
+    return GlobalObject::getOrCreateCustomErrorPrototype(cx, global, JSEXN_ERR);
+}
+
+JS_PUBLIC_API(JSObject *)
 JS_GetGlobalForObject(JSContext *cx, JSObject *obj)
 {
     AssertHeapIsIdle(cx);
@@ -1899,8 +1907,8 @@ JS_PUBLIC_API(void)
 JS_SetGCCallback(JSRuntime *rt, JSGCCallback cb, void *data)
 {
     AssertHeapIsIdle(rt);
-    rt->gc.callback = cb;
-    rt->gc.callbackData = data;
+    rt->gc.gcCallback = cb;
+    rt->gc.gcCallbackData = data;
 }
 
 JS_PUBLIC_API(void)

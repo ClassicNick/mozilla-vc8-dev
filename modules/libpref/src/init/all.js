@@ -449,6 +449,8 @@ pref("gfx.content.azure.backends", "cairo");
 pref("gfx.work-around-driver-bugs", true);
 pref("gfx.prefer-mesa-llvmpipe", false);
 
+pref("gfx.draw-color-bars", false);
+
 pref("accessibility.browsewithcaret", false);
 pref("accessibility.warn_on_browsewithcaret", true);
 
@@ -473,7 +475,7 @@ pref("accessibility.tabfocus_applies_to_xul", true);
 #endif
 
 // provide ability to turn on support for canvas focus rings
-pref("canvas.focusring.enabled", false);
+pref("canvas.focusring.enabled", true);
 pref("canvas.customfocusring.enabled", false);
 pref("canvas.hitregions.enabled", false);
 // Add support for canvas path objects
@@ -523,7 +525,11 @@ pref("accessibility.typeaheadfind.timeout", 4000);
 pref("accessibility.typeaheadfind.enabletimeout", true);
 pref("accessibility.typeaheadfind.soundURL", "beep");
 pref("accessibility.typeaheadfind.enablesound", true);
+#ifdef XP_MACOSX
+pref("accessibility.typeaheadfind.prefillwithselection", false);
+#else
 pref("accessibility.typeaheadfind.prefillwithselection", true);
+#endif
 pref("accessibility.typeaheadfind.matchesCountTimeout", 250);
 pref("accessibility.typeaheadfind.matchesCountLimit", 100);
 
@@ -1416,9 +1422,6 @@ pref("network.cookie.cookieBehavior",       3); // 0-Accept, 1-dontAcceptForeign
 #ifdef ANDROID
 pref("network.cookie.cookieBehavior",       0); // Keep the old default of accepting all cookies
 #endif
-#ifdef MOZ_WIDGET_GONK
-pref("network.cookie.cookieBehavior",       0); // Keep the old default of accepting all cookies
-#endif
 pref("network.cookie.thirdparty.sessionOnly", false);
 pref("network.cookie.lifetimePolicy",       0); // accept normally, 1-askBeforeAccepting, 2-acceptForSession,3-acceptForNDays
 pref("network.cookie.alwaysAcceptSessionCookies", false);
@@ -1810,11 +1813,7 @@ pref("layout.css.supports-rule.enabled", true);
 pref("layout.css.filters.enabled", false);
 
 // Is support for CSS sticky positioning enabled?
-#ifdef RELEASE_BUILD
-pref("layout.css.sticky.enabled", false);
-#else
 pref("layout.css.sticky.enabled", true);
-#endif
 
 // Is support for CSS "will-change" enabled?
 pref("layout.css.will-change.enabled", false);
@@ -1941,6 +1940,13 @@ pref("layout.display-list.dump", false);
 // heavily loaded.
 pref("layout.frame_rate.precise", false);
 
+// Is support for the Web Animations API enabled?
+#ifdef RELEASE_BUILD
+pref("dom.animations-api.core.enabled", false);
+#else
+pref("dom.animations-api.core.enabled", true);
+#endif
+
 // pref to permit users to make verified SOAP calls by default
 pref("capability.policy.default.SOAPCall.invokeVerifySourceHeader", "allAccess");
 
@@ -1984,11 +1990,7 @@ pref("plugins.click_to_play", false);
 // Player ("Shockwave for Director"). To hide all plugins from enumeration, use
 // the empty string "" to match no plugin names. To allow all plugins to be
 // enumerated, use the string "*" to match all plugin names.
-#ifdef EARLY_BETA_OR_EARLIER
-pref("plugins.enumerable_names", "Java,Nexus Personal,QuickTime,Shockwave");
-#else
 pref("plugins.enumerable_names", "*");
-#endif
 
 // The default value for nsIPluginTag.enabledState (STATE_ENABLED = 2)
 pref("plugin.default.state", 2);
@@ -2063,6 +2065,12 @@ pref("svg.paint-order.enabled", true);
 pref("svg.marker-improvements.enabled", false);
 #else
 pref("svg.marker-improvements.enabled", true);
+#endif
+
+#ifdef RELEASE_BUILD
+pref("svg.svg-iframe.enabled", false);
+#else
+pref("svg.svg-iframe.enabled", false);
 #endif
 
 
@@ -4123,4 +4131,4 @@ pref("beacon.enabled", true);
 
 // Camera prefs
 pref("camera.control.autofocus_moving_callback.enabled", false);
-pref("camera.control.face_detection.enabled", false);
+pref("camera.control.face_detection.enabled", true);
