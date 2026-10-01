@@ -54,6 +54,7 @@
 #include "mozilla/ipc/InputStreamUtils.h"
 #include "mozilla/layers/CompositorParent.h"
 #include "mozilla/layers/ImageBridgeParent.h"
+#include "mozilla/layers/SharedBufferManagerParent.h"
 #include "mozilla/net/NeckoParent.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
@@ -308,6 +309,8 @@ public:
     MemoryReportRequestParent();
     virtual ~MemoryReportRequestParent();
 
+    virtual void ActorDestroy(ActorDestroyReason aWhy) MOZ_OVERRIDE;
+
     virtual bool Recv__delete__(const uint32_t& generation, const InfallibleTArray<MemoryReport>& report);
 private:
     ContentParent* Owner()
@@ -319,6 +322,12 @@ private:
 MemoryReportRequestParent::MemoryReportRequestParent()
 {
     MOZ_COUNT_CTOR(MemoryReportRequestParent);
+}
+
+void
+MemoryReportRequestParent::ActorDestroy(ActorDestroyReason aWhy)
+{
+  // Implement me! Bug 1005154
 }
 
 bool
@@ -598,9 +607,9 @@ ContentParent::GetNewOrUsed(bool aForBrowserElement)
                               aForBrowserElement,
                               /* isForPreallocated = */ false,
                               PROCESS_PRIORITY_FOREGROUND);
+        p->Init();
     }
 
-    p->Init();
     sNonAppContentParents->AppendElement(p);
     return p.forget();
 }
@@ -1148,10 +1157,6 @@ ContentParent::OnChannelConnected(int32_t pid)
         }
 #endif
     }
-
-    // Set a reply timeout. The only time the parent process will actually
-    // timeout is through urgent messages (which are used by CPOWs).
-    SetReplyTimeoutMs(Preferences::GetInt("dom.ipc.cpow.timeout", 3000));
 }
 
 void
@@ -1595,6 +1600,10 @@ ContentParent::InitInternal(ProcessPriority aInitialPriority,
             }
         }
     }
+#ifdef MOZ_WIDGET_GONK
+    DebugOnly<bool> opened = PSharedBufferManager::Open(this);
+    MOZ_ASSERT(opened);
+#endif
 
     if (aSendRegisteredChrome) {
         nsCOMPtr<nsIChromeRegistry> registrySvc = nsChromeRegistry::GetService();
@@ -1705,7 +1714,7 @@ ContentParent::RecvReadPermissions(InfallibleTArray<IPC::Permission>* aPermissio
 {
 #ifdef MOZ_PERMISSIONS
     nsCOMPtr<nsIPermissionManager> permissionManagerIface =
-        do_GetService(NS_PERMISSIONMANAGER_CONTRACTID);
+        services::GetPermissionManager();
     nsPermissionManager* permissionManager =
         static_cast<nsPermissionManager*>(permissionManagerIface.get());
     NS_ABORT_IF_FALSE(permissionManager,
@@ -2190,6 +2199,13 @@ ContentParent::AllocPBackgroundParent(Transport* aTransport,
                                       ProcessId aOtherProcess)
 {
     return BackgroundParent::Alloc(this, aTransport, aOtherProcess);
+}
+
+PSharedBufferManagerParent*
+ContentParent::AllocPSharedBufferManagerParent(mozilla::ipc::Transport* aTransport,
+                                                base::ProcessId aOtherProcess)
+{
+    return SharedBufferManagerParent::Create(aTransport, aOtherProcess);
 }
 
 bool

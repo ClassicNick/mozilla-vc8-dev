@@ -8875,12 +8875,14 @@ nsDocument::OnPageHide(bool aPersisted,
 
   // Dispatch observer notification to notify observers page is hidden.
   nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
-  nsIPrincipal *principal = GetPrincipal();
-  os->NotifyObservers(static_cast<nsIDocument*>(this),
-                      nsContentUtils::IsSystemPrincipal(principal) ?
-                        "chrome-page-hidden" :
-                        "content-page-hidden",
-                      nullptr);
+  if (os) {
+    nsIPrincipal* principal = GetPrincipal();
+    os->NotifyObservers(static_cast<nsIDocument*>(this),
+                        nsContentUtils::IsSystemPrincipal(principal) ?
+                          "chrome-page-hidden" :
+                          "content-page-hidden",
+                        nullptr);
+  }
 
   DispatchPageTransition(target, NS_LITERAL_STRING("pagehide"), aPersisted);
 
@@ -11895,7 +11897,7 @@ nsIDocument::DocAddSizeOfExcludingThis(nsWindowSizes* aWindowSizes) const
   for (uint32_t i = 0, count = mExtraPropertyTables.Length();
        i < count; ++i) {
     aWindowSizes->mPropertyTablesSize +=
-      mExtraPropertyTables[i]->SizeOfExcludingThis(aWindowSizes->mMallocSizeOf);
+      mExtraPropertyTables[i]->SizeOfIncludingThis(aWindowSizes->mMallocSizeOf);
   }
 
   if (EventListenerManager* elm = GetExistingListenerManager()) {
@@ -12152,10 +12154,11 @@ nsIDocument::WrapObject(JSContext *aCx)
 
   NS_NAMED_LITERAL_STRING(doc_str, "document");
 
-  if (!JS_DefineUCProperty(aCx, JSVAL_TO_OBJECT(winVal), doc_str.get(),
-                           doc_str.Length(), JS::ObjectValue(*obj),
-                           JS_PropertyStub, JS_StrictPropertyStub,
-                           JSPROP_READONLY | JSPROP_ENUMERATE)) {
+  JS::Rooted<JSObject*> winObj(aCx, &winVal.toObject());
+  if (!JS_DefineUCProperty(aCx, winObj, doc_str.get(),
+                           doc_str.Length(), obj,
+                           JSPROP_READONLY | JSPROP_ENUMERATE,
+                           JS_PropertyStub, JS_StrictPropertyStub)) {
     return nullptr;
   }
 

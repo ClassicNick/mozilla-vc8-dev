@@ -2821,7 +2821,7 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
 
             self.cls.addstmt(StmtDecl(MethodDecl(
                 _deallocMethod(managed, self.side).name,
-                params=[ Decl(actortype, 'actor') ],
+                params=[ Decl(actortype, 'aActor') ],
                 ret=Type.BOOL,
                 virtual=1, pure=1)))
 
@@ -2831,18 +2831,19 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
             actortype = _cxxBareType(actor.asType(), actor.side)
             self.cls.addstmt(StmtDecl(MethodDecl(
                 _allocMethod(actor.ptype, actor.side).name,
-                params=[ Decl(Type('Transport', ptr=1), 'transport'),
-                         Decl(Type('ProcessId'), 'otherProcess') ],
+                params=[ Decl(Type('Transport', ptr=1), 'aTransport'),
+                         Decl(Type('ProcessId'), 'aOtherProcess') ],
                 ret=actortype,
                 virtual=1, pure=1)))
 
-        # optional ActorDestroy() method; default is no-op
+        # ActorDestroy() method; default is no-op
         self.cls.addstmts([
             Whitespace.NL,
             MethodDefn(MethodDecl(
                 _destroyMethod().name,
-                params=[ Decl(_DestroyReason.Type(), 'why') ],
-                virtual=1)),
+                params=[ Decl(_DestroyReason.Type(), 'aWhy') ],
+                ret=Type.VOID,
+                virtual=1, pure=(self.side == 'parent'))),
             Whitespace.NL
         ])
 
@@ -2850,7 +2851,7 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
             # void ProcessingError(code); default to no-op
             processingerror = MethodDefn(
                 MethodDecl(p.processingErrorVar().name,
-                           params=[ Param(_Result.Type(), 'code') ],
+                           params=[ Param(_Result.Type(), 'aCode') ],
                            virtual=1))
 
             # bool ShouldContinueFromReplyTimeout(); default to |true|
@@ -3168,7 +3169,7 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
         deallocshmemvar = ExprVar('DeallocShmems')
 
         # OnProcesingError(code)
-        codevar = ExprVar('code')
+        codevar = ExprVar('aCode')
         onprocessingerror = MethodDefn(
             MethodDecl('OnProcessingError',
                        params=[ Param(_Result.Type(), codevar.name) ]))
@@ -3265,7 +3266,7 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
 
         # OnChannelConnected()
         onconnected = MethodDefn(MethodDecl('OnChannelConnected',
-                                            params=[ Decl(Type.INT32, 'pid') ]))
+                                            params=[ Decl(Type.INT32, 'aPid') ]))
         if not ptype.isToplevel():
             onconnected.addstmt(
                 _runtimeAbort("'OnConnected' called on non-toplevel actor"))
@@ -5466,6 +5467,7 @@ def _splitMethodDefn(md, clsname):
     md.decl.static = 0
     md.decl.warn_unused = 0
     md.decl.never_inline = 0
+    md.decl.pure = 0
     md.decl.only_for_definition = True
     for param in md.decl.params:
         if isinstance(param, Param):
@@ -5522,7 +5524,7 @@ class _GenerateSkeletonImpl(Visitor):
                                              ret=md.ret))
         if md.ret.ptr:
             impl.addstmt(StmtReturn(ExprLiteral.ZERO))
-        else:
+        elif md.ret == Type.BOOL:
             impl.addstmt(StmtReturn(ExprVar('false')))
 
         self.cls.addstmts([ StmtDecl(decl), Whitespace.NL ])

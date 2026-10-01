@@ -187,7 +187,7 @@ DenseRangeWriteBarrierPost(JSRuntime *rt, JSObject *obj, uint32_t start, uint32_
 #ifdef JSGC_GENERATIONAL
     if (count > 0) {
         JS::shadow::Runtime *shadowRuntime = JS::shadow::Runtime::asShadowRuntime(rt);
-        shadowRuntime->gcStoreBufferPtr()->putSlot(obj, HeapSlot::Element, start, count);
+        shadowRuntime->gcStoreBufferPtr()->putSlotFromAnyThread(obj, HeapSlot::Element, start, count);
     }
 #endif
 }
@@ -438,7 +438,7 @@ class JSObject : public js::ObjectImpl
     inline js::types::TypeObject* getType(JSContext *cx);
     js::types::TypeObject* uninlinedGetType(JSContext *cx);
 
-    const js::HeapPtr<js::types::TypeObject> &typeFromGC() const {
+    const js::HeapPtrTypeObject &typeFromGC() const {
         /* Direct field access for use by GC. */
         return type_;
     }

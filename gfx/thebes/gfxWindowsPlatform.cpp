@@ -328,12 +328,8 @@ public:
     }
 };
 
-<<<<<<< HEAD
-NS_IMPL_ISUPPORTS1(GPUAdapterReporter, nsIMemoryReporter)
-#endif
-=======
 NS_IMPL_ISUPPORTS(GPUAdapterReporter, nsIMemoryReporter)
->>>>>>> 876943a
+#endif
 
 static __inline void
 BuildKeyNameFromFontName(nsAString &aName)
@@ -368,7 +364,9 @@ gfxWindowsPlatform::gfxWindowsPlatform()
 
     UpdateRenderMode();
 
+#ifdef CAIRO_HAS_D2D_SURFACE
     RegisterStrongMemoryReporter(new GPUAdapterReporter());
+#endif
 }
 
 gfxWindowsPlatform::~gfxWindowsPlatform()

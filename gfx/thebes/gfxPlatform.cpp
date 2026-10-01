@@ -7,9 +7,11 @@
 #define FORCE_PR_LOG /* Allow logging in the release build */
 #endif
 
+#include "mozilla/layers/AsyncTransactionTracker.h" // for AsyncTransactionTracker
 #include "mozilla/layers/CompositorChild.h"
 #include "mozilla/layers/CompositorParent.h"
 #include "mozilla/layers/ImageBridgeChild.h"
+#include "mozilla/layers/SharedBufferManagerChild.h"
 #include "mozilla/layers/ISurfaceAllocator.h"     // for GfxMemoryImageReporter
 
 #include "prlog.h"
@@ -335,6 +337,8 @@ gfxPlatform::Init()
 
     gGfxPlatformPrefsLock = new Mutex("gfxPlatform::gGfxPlatformPrefsLock");
 
+    AsyncTransactionTracker::Initialize();
+
     /* Initialize the GfxInfo service.
      * Note: we can't call functions on GfxInfo that depend
      * on gPlatform until after it has been initialized
@@ -376,6 +380,9 @@ gfxPlatform::Init()
         if (gfxPrefs::AsyncVideoEnabled()) {
             ImageBridgeChild::StartUp();
         }
+#ifdef MOZ_WIDGET_GONK
+        SharedBufferManagerChild::StartUp();
+#endif
     }
 
     nsresult rv;
@@ -497,8 +504,12 @@ gfxPlatform::Shutdown()
     // This will block this thread untill the ImageBridge protocol is completely
     // deleted.
     ImageBridgeChild::ShutDown();
-
+#ifdef MOZ_WIDGET_GONK
+    SharedBufferManagerChild::ShutDown();
+#endif
     CompositorParent::ShutDown();
+
+    AsyncTransactionTracker::Finalize();
 
     delete gGfxPlatformPrefsLock;
 
@@ -1347,18 +1358,18 @@ gfxPlatform::IsLangCJK(eFontPrefLang aLang)
 mozilla::layers::DiagnosticTypes
 gfxPlatform::GetLayerDiagnosticTypes()
 {
-  mozilla::layers::DiagnosticTypes type = DIAGNOSTIC_NONE;
+  mozilla::layers::DiagnosticTypes type = DiagnosticTypes::NO_DIAGNOSTIC;
   if (gfxPrefs::DrawLayerBorders()) {
-    type |= mozilla::layers::DIAGNOSTIC_LAYER_BORDERS;
+    type |= mozilla::layers::DiagnosticTypes::LAYER_BORDERS;
   }
   if (gfxPrefs::DrawTileBorders()) {
-    type |= mozilla::layers::DIAGNOSTIC_TILE_BORDERS;
+    type |= mozilla::layers::DiagnosticTypes::TILE_BORDERS;
   }
   if (gfxPrefs::DrawBigImageBorders()) {
-    type |= mozilla::layers::DIAGNOSTIC_BIGIMAGE_BORDERS;
+    type |= mozilla::layers::DiagnosticTypes::BIGIMAGE_BORDERS;
   }
   if (gfxPrefs::FlashLayerBorders()) {
-    type |= mozilla::layers::DIAGNOSTIC_FLASH_BORDERS;
+    type |= mozilla::layers::DiagnosticTypes::FLASH_BORDERS;
   }
   return type;
 }
