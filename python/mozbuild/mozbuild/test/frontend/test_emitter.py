@@ -164,7 +164,6 @@ class TestEmitterBasic(unittest.TestCase):
             HOST_LIBRARY_NAME='host_fans',
             IS_COMPONENT=True,
             LIBS=['fans.lib', 'tans.lib'],
-            LIBXUL_LIBRARY=True,
             MSVC_ENABLE_PGO=True,
             NO_DIST_INSTALL=True,
             OS_LIBS=['foo.so', '-l123', 'aaa.a'],
@@ -361,6 +360,24 @@ class TestEmitterBasic(unittest.TestCase):
         expected = [
             mozpath.normpath(mozpath.join(o.install_prefix, "subdir/subdir.ini")),
             mozpath.normpath(mozpath.join(o.install_prefix, "subdir/support.txt")),
+            mozpath.normpath(mozpath.join(o.install_prefix, "subdir/test_foo.html")),
+        ]
+        paths = sorted([v[0] for v in o.installs.values()])
+        self.assertEqual(paths, expected)
+
+    def test_test_manifest_install_includes(self):
+        """Ensure that any [include:foo.ini] are copied to the objdir."""
+        reader = self.reader('test-manifest-install-includes')
+
+        objs = self.read_topsrcdir(reader)
+        self.assertEqual(len(objs), 1)
+        o = objs[0]
+        self.assertEqual(len(o.installs), 3)
+        self.assertEqual(o.manifest_relpath, "mochitest.ini")
+        self.assertEqual(o.manifest_obj_relpath, "subdir/mochitest.ini")
+        expected = [
+            mozpath.normpath(mozpath.join(o.install_prefix, "subdir/common.ini")),
+            mozpath.normpath(mozpath.join(o.install_prefix, "subdir/mochitest.ini")),
             mozpath.normpath(mozpath.join(o.install_prefix, "subdir/test_foo.html")),
         ]
         paths = sorted([v[0] for v in o.installs.values()])

@@ -61,9 +61,9 @@ NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(SVGTransform, AddRef)
 NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(SVGTransform, Release)
 
 JSObject*
-SVGTransform::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope)
+SVGTransform::WrapObject(JSContext* aCx)
 {
-  return SVGTransformBinding::Wrap(aCx, aScope, this);
+  return SVGTransformBinding::Wrap(aCx, this);
 }
 
 //----------------------------------------------------------------------
@@ -170,7 +170,7 @@ SVGTransform::Type() const
 }
 
 SVGMatrix*
-SVGTransform::Matrix()
+SVGTransform::GetMatrix()
 {
   SVGMatrix* wrapper =
     SVGMatrixTearoffTable().GetTearoff(this);
@@ -194,7 +194,7 @@ SVGTransform::SetMatrix(SVGMatrix& aMatrix, ErrorResult& rv)
     rv.Throw(NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR);
     return;
   }
-  SetMatrix(aMatrix.Matrix());
+  SetMatrix(aMatrix.GetMatrix());
 }
 
 void

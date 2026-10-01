@@ -24,7 +24,6 @@ using namespace js::gc;
 JS::Zone::Zone(JSRuntime *rt)
   : JS::shadow::Zone(rt, &rt->gcMarker),
     allocator(this),
-    hold(false),
     ionUsingBarriers_(false),
     active(false),
     gcScheduled(false),
@@ -61,13 +60,6 @@ Zone::~Zone()
 #ifdef JS_ION
     js_delete(jitZone_);
 #endif
-}
-
-bool
-Zone::init(JSContext *cx)
-{
-    types.init(cx);
-    return true;
 }
 
 void
@@ -113,7 +105,7 @@ Zone::onTooMuchMalloc()
 }
 
 void
-Zone::sweep(FreeOp *fop, bool releaseTypes)
+Zone::sweep(FreeOp *fop, bool releaseTypes, bool *oom)
 {
     /*
      * Periodically release observed types for all scripts. This is safe to
@@ -124,7 +116,7 @@ Zone::sweep(FreeOp *fop, bool releaseTypes)
 
     {
         gcstats::AutoPhase ap(fop->runtime()->gcStats, gcstats::PHASE_DISCARD_ANALYSIS);
-        types.sweep(fop, releaseTypes);
+        types.sweep(fop, releaseTypes, oom);
     }
 
     if (!fop->runtime()->debuggerList.isEmpty())
@@ -199,7 +191,19 @@ Zone::discardJitCode(FreeOp *fop)
 
         for (CellIterUnderGC i(this, FINALIZE_SCRIPT); !i.done(); i.next()) {
             JSScript *script = i.get<JSScript>();
-            jit::FinishInvalidation(fop, script);
+            jit::FinishInvalidation<SequentialExecution>(fop, script);
+
+            // Preserve JIT code that have been recently used in
+            // parallel. Note that we mark their baseline scripts as active as
+            // well to preserve them.
+            if (script->hasParallelIonScript()) {
+                if (jit::ShouldPreserveParallelJITCode(runtimeFromMainThread(), script)) {
+                    script->parallelIonScript()->purgeCaches(this);
+                    script->baselineScript()->setActive();
+                } else {
+                    jit::FinishInvalidation<ParallelExecution>(fop, script);
+                }
+            }
 
             /*
              * Discard baseline script if it's not marked as active. Note that
@@ -254,4 +258,12 @@ js::ZoneOfObjectFromAnyThread(const JSObject &obj)
     return obj.zoneFromAnyThread();
 }
 
-
+bool
+Zone::hasMarkedCompartments()
+{
+    for (CompartmentsInZoneIter comp(this); !comp.done(); comp.next()) {
+        if (comp->marked)
+            return true;
+    }
+    return false;
+}

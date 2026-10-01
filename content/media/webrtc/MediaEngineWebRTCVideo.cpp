@@ -6,6 +6,7 @@
 #include "Layers.h"
 #include "ImageTypes.h"
 #include "ImageContainer.h"
+#include "mozilla/layers/GrallocTextureClient.h"
 #include "nsMemory.h"
 #include "mtransport/runnable_utils.h"
 
@@ -583,7 +584,7 @@ MediaEngineWebRTCVideoSource::StartImpl(webrtc::CaptureCapability aCapability) {
   config.mPreviewSize.width = aCapability.width;
   config.mPreviewSize.height = aCapability.height;
   mCameraControl->Start(&config);
-  mCameraControl->Set(CAMERA_PARAM_PICTURESIZE, config.mPreviewSize);
+  mCameraControl->Set(CAMERA_PARAM_PICTURE_SIZE, config.mPreviewSize);
 
   hal::RegisterScreenConfigurationObserver(this);
 }
@@ -646,7 +647,6 @@ MediaEngineWebRTCVideoSource::OnError(CameraErrorContext aContext, CameraError a
 void
 MediaEngineWebRTCVideoSource::OnTakePictureComplete(uint8_t* aData, uint32_t aLength, const nsAString& aMimeType)
 {
-  ReentrantMonitorAutoEnter sync(mCallbackMonitor);
   mLastCapture =
     static_cast<nsIDOMFile*>(new nsDOMMemoryFile(static_cast<void*>(aData),
                                                  static_cast<uint64_t>(aLength),
@@ -657,9 +657,7 @@ MediaEngineWebRTCVideoSource::OnTakePictureComplete(uint8_t* aData, uint32_t aLe
 void
 MediaEngineWebRTCVideoSource::RotateImage(layers::Image* aImage, uint32_t aWidth, uint32_t aHeight) {
   layers::GrallocImage *nativeImage = static_cast<layers::GrallocImage*>(aImage);
-  layers::SurfaceDescriptor handle = nativeImage->GetSurfaceDescriptor();
-  layers::SurfaceDescriptorGralloc grallocHandle = handle.get_SurfaceDescriptorGralloc();
-  android::sp<android::GraphicBuffer> graphicBuffer = layers::GrallocBufferActor::GetFrom(grallocHandle);
+  android::sp<android::GraphicBuffer> graphicBuffer = nativeImage->GetGraphicBuffer();
   void *pMem = nullptr;
   uint32_t size = aWidth * aHeight * 3 / 2;
 
@@ -718,10 +716,14 @@ MediaEngineWebRTCVideoSource::RotateImage(layers::Image* aImage, uint32_t aWidth
 
 bool
 MediaEngineWebRTCVideoSource::OnNewPreviewFrame(layers::Image* aImage, uint32_t aWidth, uint32_t aHeight) {
-  MonitorAutoLock enter(mMonitor);
-  if (mState == kStopped) {
-    return false;
+  {
+    ReentrantMonitorAutoEnter sync(mCallbackMonitor);
+    if (mState == kStopped) {
+      return false;
+    }
   }
+
+  MonitorAutoLock enter(mMonitor);
   // Bug XXX we'd prefer to avoid converting if mRotation == 0, but that causes problems in UpdateImage()
   RotateImage(aImage, aWidth, aHeight);
   if (mRotation != 0 && mRotation != 180) {

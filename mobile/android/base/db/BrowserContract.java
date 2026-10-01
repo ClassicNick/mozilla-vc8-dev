@@ -27,6 +27,9 @@ public class BrowserContract {
     public static final String HOME_AUTHORITY = AppConstants.ANDROID_PACKAGE_NAME + ".db.home";
     public static final Uri HOME_AUTHORITY_URI = Uri.parse("content://" + HOME_AUTHORITY);
 
+    public static final String PROFILES_AUTHORITY = AppConstants.ANDROID_PACKAGE_NAME + ".profiles";
+    public static final Uri PROFILES_AUTHORITY_URI = Uri.parse("content://" + PROFILES_AUTHORITY);
+
     public static final String READING_LIST_AUTHORITY = AppConstants.ANDROID_PACKAGE_NAME + ".db.readinglist";
     public static final Uri READING_LIST_AUTHORITY_URI = Uri.parse("content://" + READING_LIST_AUTHORITY);
 
@@ -39,6 +42,7 @@ public class BrowserContract {
     public static final String PARAM_INSERT_IF_NEEDED = "insert_if_needed";
     public static final String PARAM_INCREMENT_VISITS = "increment_visits";
     public static final String PARAM_EXPIRE_PRIORITY = "priority";
+    public static final String PARAM_DATASET_ID = "dataset_id";
 
     static public enum ExpirePriority {
         NORMAL,
@@ -123,6 +127,12 @@ public class BrowserContract {
 
         public static final String URL = "url";
         public static final String DATA = "data";
+    }
+
+    public static final class Profiles {
+        private Profiles() {}
+        public static final String NAME = "name";
+        public static final String PATH = "path";
     }
 
     @RobocopTarget
@@ -393,7 +403,7 @@ public class BrowserContract {
         public static final String EXCERPT = "excerpt";
         public static final String READ = "read";
         public static final String LENGTH = "length";
-        public static final String DEFAULT_SORT_ORDER = _ID + " DESC";
+        public static final String DEFAULT_SORT_ORDER = DATE_MODIFIED + " DESC";
         public static final String[] DEFAULT_PROJECTION = new String[] { _ID, URL, TITLE, EXCERPT, LENGTH };
 
         // Minimum fields required to create a reading list item.

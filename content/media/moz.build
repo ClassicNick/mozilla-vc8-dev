@@ -11,6 +11,8 @@ PARALLEL_DIRS += [
   'webvtt'
 ]
 
+TEST_TOOL_DIRS += ['compiledtest']
+
 if CONFIG['MOZ_RAW']:
     PARALLEL_DIRS += ['raw']
 
@@ -53,10 +55,10 @@ TEST_DIRS += [
 
 EXPORTS += [
     'AbstractMediaDecoder.h',
-    'AudioAvailableEventManager.h',
     'AudioChannelFormat.h',
     'AudioCompactor.h',
     'AudioEventTimeline.h',
+    'AudioMixer.h',
     'AudioNodeEngine.h',
     'AudioNodeExternalInputStream.h',
     'AudioNodeStream.h',
@@ -110,7 +112,6 @@ EXPORTS.mozilla.dom += [
 ]
 
 UNIFIED_SOURCES += [
-    'AudioAvailableEventManager.cpp',
     'AudioChannelFormat.cpp',
     'AudioCompactor.cpp',
     'AudioNodeEngine.cpp',
@@ -173,6 +174,7 @@ LOCAL_INCLUDES += [
     '/content/base/src',
     '/layout/generic',
     '/layout/xul',
+    '/netwerk/base/src',
 ]
 
 if CONFIG['MOZ_DIRECTSHOW']:

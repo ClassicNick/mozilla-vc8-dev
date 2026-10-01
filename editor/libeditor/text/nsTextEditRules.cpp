@@ -3,11 +3,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "TextComposition.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/Selection.h"
+#include "mozilla/dom/Selection.h"
+#include "mozilla/TextComposition.h"
 #include "mozilla/dom/Element.h"
 #include "nsAString.h"
 #include "nsAutoPtr.h"
@@ -43,6 +43,7 @@
 #include "nsUnicharUtils.h"
 
 using namespace mozilla;
+using namespace mozilla::dom;
 
 #define CANCEL_OPERATION_IF_READONLY_OR_DISABLED \
   if (IsReadonly() || IsDisabled()) \
@@ -133,6 +134,15 @@ nsTextEditRules::Init(nsPlaintextEditor *aEditor)
     Preferences::GetBool("bidi.edit.delete_immediately", false);
 
   return res;
+}
+
+NS_IMETHODIMP
+nsTextEditRules::SetInitialValue(const nsAString& aValue)
+{
+  if (IsPasswordEditor()) {
+    mPasswordText = aValue;
+  }
+  return NS_OK;
 }
 
 NS_IMETHODIMP

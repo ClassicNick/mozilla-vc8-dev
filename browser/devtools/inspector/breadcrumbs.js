@@ -16,7 +16,7 @@ Cu.import("resource:///modules/devtools/ViewHelpers.jsm");
 const ELLIPSIS = Services.prefs.getComplexValue("intl.ellipsis", Ci.nsIPrefLocalizedString).data;
 const MAX_LABEL_LENGTH = 40;
 
-let promise = require("sdk/core/promise");
+let promise = require("devtools/toolkit/deprecated-sync-thenables");
 
 const LOW_PRIORITY_ELEMENTS = {
   "HEAD": true,
@@ -692,8 +692,10 @@ HTMLBreadcrumbs.prototype = {
 
       // Make sure the selected node and its neighbours are visible.
       this.scroll();
-      this.inspector.emit("breadcrumbs-updated", this.selection.nodeFront);
-      doneUpdating();
+      return resolveNextTick().then(() => {
+        this.inspector.emit("breadcrumbs-updated", this.selection.nodeFront);
+        doneUpdating();
+      });
     }).then(null, err => {
       doneUpdating(this.selection.nodeFront);
       this.selectionGuardEnd(err);

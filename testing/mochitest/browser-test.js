@@ -1,6 +1,6 @@
 /* -*- js-indent-level: 2; tab-width: 2; indent-tabs-mode: nil -*- */
 // Test timeout (seconds)
-var gTimeoutSeconds = 30;
+var gTimeoutSeconds = 45;
 var gConfig;
 
 if (Cc === undefined) {
@@ -19,6 +19,9 @@ XPCOMUtils.defineLazyModuleGetter(this, "BrowserNewTabPreloader",
 
 XPCOMUtils.defineLazyModuleGetter(this, "CustomizationTabPreloader",
   "resource:///modules/CustomizationTabPreloader.jsm", "CustomizationTabPreloader");
+
+const SIMPLETEST_OVERRIDES =
+  ["ok", "is", "isnot", "ise", "todo", "todo_is", "todo_isnot", "info", "expectAssertions"];
 
 window.addEventListener("load", testOnLoad, false);
 
@@ -58,7 +61,7 @@ function testOnLoad() {
       webNav.loadURI(url, null, null, null, null);
     };
 
-    var listener = 'data:,function doLoad(e) { var data=e.getData("data");removeEventListener("contentEvent", function (e) { doLoad(e); }, false, true);sendAsyncMessage("chromeEvent", {"data":data}); };addEventListener("contentEvent", function (e) { doLoad(e); }, false, true);';
+    var listener = 'data:,function doLoad(e) { var data=e.detail&&e.detail.data;removeEventListener("contentEvent", function (e) { doLoad(e); }, false, true);sendAsyncMessage("chromeEvent", {"data":data}); };addEventListener("contentEvent", function (e) { doLoad(e); }, false, true);';
     messageManager.loadFrameScript(listener, true);
     messageManager.addMessageListener("chromeEvent", messageHandler);
   }
@@ -86,8 +89,35 @@ function Tester(aTests, aDumper, aCallback) {
   this.SimpleTest = simpleTestScope.SimpleTest;
   this.MemoryStats = simpleTestScope.MemoryStats;
   this.Task = Components.utils.import("resource://gre/modules/Task.jsm", null).Task;
-  this.Promise = Components.utils.import("resource://gre/modules/commonjs/sdk/core/promise.js", null).Promise;
+  this.Promise = Components.utils.import("resource://gre/modules/Promise.jsm", null).Promise;
   this.Assert = Components.utils.import("resource://testing-common/Assert.jsm", null).Assert;
+
+  this.SimpleTestOriginal = {};
+  SIMPLETEST_OVERRIDES.forEach(m => {
+    this.SimpleTestOriginal[m] = this.SimpleTest[m];
+  });
+
+  this._uncaughtErrorObserver = function({message, date, fileName, stack, lineNumber}) {
+    let text = "Once bug 991040 has landed, THIS ERROR WILL CAUSE A TEST FAILURE.\n" + message;
+    let error = text;
+    if (fileName || lineNumber) {
+      error = {
+        fileName: fileName,
+        lineNumber: lineNumber,
+        message: text,
+        toString: function() {
+          return text;
+        }
+      };
+    }
+    this.currentTest.addResult(
+      new testResult(
+	/*success*/ true,
+        /*name*/"A promise chain failed to handle a rejection",
+        /*error*/error,
+        /*known*/true,
+        /*stack*/stack));
+    }.bind(this);
 }
 Tester.prototype = {
   EventUtils: {},
@@ -143,6 +173,9 @@ Tester.prototype = {
       "webConsoleCommandController",
     ];
 
+    this.Promise.Debugging.clearUncaughtErrorObservers();
+    this.Promise.Debugging.addUncaughtErrorObserver(this._uncaughtErrorObserver);
+
     if (this.tests.length)
       this.nextTest();
     else
@@ -195,6 +228,8 @@ Tester.prototype = {
   },
 
   finish: function Tester_finish(aSkipSummary) {
+    this.Promise.Debugging.flushUncaughtErrors();
+
     var passCount = this.tests.reduce(function(a, f) a + f.passCount, 0);
     var failCount = this.tests.reduce(function(a, f) a + f.failCount, 0);
     var todoCount = this.tests.reduce(function(a, f) a + f.todoCount, 0);
@@ -208,8 +243,9 @@ Tester.prototype = {
       Services.console.unregisterListener(this);
       Services.obs.removeObserver(this, "chrome-document-global-created");
       Services.obs.removeObserver(this, "content-document-global-created");
-  
+      this.Promise.Debugging.clearUncaughtErrorObservers();
       this.dumper.dump("\nINFO TEST-START | Shutdown\n");
+
       if (this.tests.length) {
         this.dumper.dump("Browser Chrome Test Summary\n");
   
@@ -220,7 +256,6 @@ Tester.prototype = {
         this.dumper.dump("TEST-UNEXPECTED-FAIL | (browser-test.js) | " +
                          "No tests to run. Did you pass an invalid --test-path?\n");
       }
-  
       this.dumper.dump("\n*** End BrowserChrome Test Results ***\n");
   
       this.dumper.done();
@@ -279,7 +314,7 @@ Tester.prototype = {
     }
   },
 
-  nextTest: function Tester_nextTest() {
+  nextTest: this.Task.async(function*() {
     if (this.currentTest) {
       // Run cleanup functions for the current test before moving on to the
       // next one.
@@ -287,12 +322,14 @@ Tester.prototype = {
       while (testScope.__cleanupFunctions.length > 0) {
         let func = testScope.__cleanupFunctions.shift();
         try {
-          func.apply(testScope);
+          yield func.apply(testScope);
         }
         catch (ex) {
           this.currentTest.addResult(new testResult(false, "Cleanup function threw an exception", ex, false));
         }
       };
+
+      this.Promise.Debugging.flushUncaughtErrors();
 
       let winUtils = window.QueryInterface(Ci.nsIInterfaceRequestor)
                            .getInterface(Ci.nsIDOMWindowUtils);
@@ -387,6 +424,11 @@ Tester.prototype = {
       if (this.runUntilFailure && this.currentTest.failCount > 0) {
         this.haltTests();
       }
+
+      // Restore original SimpleTest methods to avoid leaks.
+      SIMPLETEST_OVERRIDES.forEach(m => {
+        this.SimpleTest[m] = this.SimpleTestOriginal[m];
+      });
 
       testScope.destroy();
       this.currentTest.scope = null;
@@ -489,7 +531,7 @@ Tester.prototype = {
       this.currentTestIndex++;
       this.execTest();
     }).bind(this));
-  },
+  }),
 
   execTest: function Tester_execTest() {
     this.dumper.dump("TEST-START | " + this.currentTest.path + "\n");
@@ -525,7 +567,7 @@ Tester.prototype = {
     };
 
     // Override SimpleTest methods with ours.
-    ["ok", "is", "isnot", "ise", "todo", "todo_is", "todo_isnot", "info", "expectAssertions"].forEach(function(m) {
+    SIMPLETEST_OVERRIDES.forEach(function(m) {
       this.SimpleTest[m] = this[m];
     }, this.currentTest.scope);
 
@@ -553,7 +595,7 @@ Tester.prototype = {
     try {
       this._scriptLoader.loadSubScript(this.currentTest.path,
                                        this.currentTest.scope);
-
+      this.Promise.Debugging.flushUncaughtErrors();
       // Run the test
       this.lastStartTime = Date.now();
       if (this.currentTest.scope.__tasks) {
@@ -574,6 +616,7 @@ Tester.prototype = {
               let result = new testResult(isExpected, name, ex, false, stack);
               currentTest.addResult(result);
             }
+            this.Promise.Debugging.flushUncaughtErrors();
             this.SimpleTest.info("Leaving test " + task.name);
           }
           this.finish();

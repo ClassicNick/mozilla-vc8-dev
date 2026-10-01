@@ -48,6 +48,11 @@ public:
     segment->AppendAndConsumeChunk(aOutput);
   }
 
+  virtual size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const MOZ_OVERRIDE
+  {
+    return aMallocSizeOf(this) + SizeOfExcludingThis(aMallocSizeOf);
+  }
+
 private:
   ProcessedMediaStream* mOutputStream;
 };
@@ -81,6 +86,22 @@ MediaStreamAudioDestinationNode::MediaStreamAudioDestinationNode(AudioContext* a
   }
 }
 
+size_t
+MediaStreamAudioDestinationNode::SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const
+{
+  // Future:
+  // - mDOMStream
+  size_t amount = AudioNode::SizeOfExcludingThis(aMallocSizeOf);
+  amount += mPort->SizeOfIncludingThis(aMallocSizeOf);
+  return amount;
+}
+
+size_t
+MediaStreamAudioDestinationNode::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const
+{
+  return aMallocSizeOf(this) + SizeOfExcludingThis(aMallocSizeOf);
+}
+
 void
 MediaStreamAudioDestinationNode::DestroyMediaStream()
 {
@@ -92,9 +113,9 @@ MediaStreamAudioDestinationNode::DestroyMediaStream()
 }
 
 JSObject*
-MediaStreamAudioDestinationNode::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope)
+MediaStreamAudioDestinationNode::WrapObject(JSContext* aCx)
 {
-  return MediaStreamAudioDestinationNodeBinding::Wrap(aCx, aScope, this);
+  return MediaStreamAudioDestinationNodeBinding::Wrap(aCx, this);
 }
 
 }

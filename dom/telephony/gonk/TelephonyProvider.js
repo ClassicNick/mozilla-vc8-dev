@@ -35,6 +35,12 @@ const CALL_WAKELOCK_TIMEOUT = 5000;
 // Index of the CDMA second call which isn't held in RIL but only in TelephoyProvider.
 const CDMA_SECOND_CALL_INDEX = 2;
 
+const DIAL_ERROR_INVALID_STATE_ERROR = "InvalidStateError";
+const DIAL_ERROR_OTHER_CONNECTION_IN_USE = "OtherConnectionInUse";
+
+// Should match the value we set in dom/telephony/TelephonyCommon.h
+const OUTGOING_PLACEHOLDER_CALL_INDEX = 0xffffffff;
+
 let DEBUG;
 function debug(s) {
   dump("TelephonyProvider: " + s + "\n");
@@ -420,7 +426,50 @@ TelephonyProvider.prototype = {
 
     if (this.isDialing) {
       if (DEBUG) debug("Already has a dialing call. Drop.");
-      aTelephonyCallback.notifyDialError("InvalidStateError");
+      aTelephonyCallback.notifyDialError(DIAL_ERROR_INVALID_STATE_ERROR);
+      return;
+    }
+
+    function hasCallsOnOtherClient(aClientId) {
+      for (let cid = 0; cid < this._numClients; ++cid) {
+        if (cid === aClientId) {
+          continue;
+        }
+        if (Object.keys(this._currentCalls[cid]).length !== 0) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    // For DSDS, if there is aleady a call on SIM 'aClientId', we cannot place
+    // any new call on other SIM.
+    if (hasCallsOnOtherClient.call(this, aClientId)) {
+      if (DEBUG) debug("Already has a call on other sim. Drop.");
+      aTelephonyCallback.notifyDialError(DIAL_ERROR_OTHER_CONNECTION_IN_USE);
+      return;
+    }
+
+    // All calls in the conference is regarded as one conference call.
+    function numCallsOnLine(aClientId) {
+      let numCalls = 0;
+      let hasConference = false;
+
+      for (let cid in this._currentCalls[aClientId]) {
+        let call = this._currentCalls[aClientId][cid];
+        if (call.isConference) {
+          hasConference = true;
+        } else {
+          numCalls++;
+        }
+      }
+
+      return hasConference ? numCalls + 1 : numCalls;
+    }
+
+    if (numCallsOnLine.call(this, aClientId) >= 2) {
+      if (DEBUG) debug("Has more than 2 calls on line. Drop.");
+      aTelephonyCallback.notifyDialError(DIAL_ERROR_INVALID_STATE_ERROR);
       return;
     }
 
@@ -529,42 +578,7 @@ TelephonyProvider.prototype = {
       return;
     }
 
-    let parentId = this._currentCalls[aClientId][aCallIndex].parentId;
-    if (parentId) {
-      this.resumeCall(aClientId, parentId);
-      return;
-    }
-
-    function onCdmaHoldCallSuccess() {
-      let call = this._currentCalls[aClientId][aCallIndex];
-      if (!call) {
-        return;
-      }
-
-      call.state = RIL.CALL_STATE_HOLDING;
-      this.notifyCallStateChanged(aClientId, call);
-
-      if (!call.childId) {
-        return;
-      }
-
-      let childCall = this._currentCalls[aClientId][call.childId];
-      childCall.state = RIL.CALL_STATE_ACTIVE;
-      this.notifyCallStateChanged(aClientId, childCall);
-    };
-
-    this._getClient(aClientId).sendWorkerMessage("holdCall", {
-      callIndex: aCallIndex
-    },(function(response) {
-        if (!response.success) {
-          return false;
-        }
-
-        if (response.isCdma) {
-          onCdmaHoldCallSuccess.call(this);
-        }
-        return false;
-    }).bind(this));
+    this._getClient(aClientId).sendWorkerMessage("holdCall", { callIndex: aCallIndex });
   },
 
   resumeCall: function(aClientId, aCallIndex) {
@@ -575,43 +589,7 @@ TelephonyProvider.prototype = {
       return;
     }
 
-    let parentId = this._currentCalls[aClientId][aCallIndex].parentId;
-    if (parentId) {
-      this.holdCall(aClientId, parentId);
-      return;
-    }
-
-    function onCdmaResumeCallSuccess() {
-      let call = this._currentCalls[aClientId][aCallIndex];
-      if (!call) {
-        return;
-      }
-
-      call.state = RIL.CALL_STATE_ACTIVE;
-      this.notifyCallStateChanged(aClientId, call);
-
-      let childId = call.childId;
-      if (!childId) {
-        return;
-      }
-
-      let childCall = this._currentCalls[aClientId][childId];
-      childCall.state = RIL.CALL_STATE_HOLDING;
-      this.notifyCallStateChanged(aClientId, childCall);
-    };
-
-    this._getClient(aClientId).sendWorkerMessage("resumeCall", {
-      callIndex: aCallIndex
-    },(function(response) {
-      if (!response.success) {
-        return false;
-      }
-
-      if (response.isCdma) {
-        onCdmaResumeCallSuccess.call(this);
-      }
-      return false;
-    }).bind(this));
+    this._getClient(aClientId).sendWorkerMessage("resumeCall", { callIndex: aCallIndex });
   },
 
   conferenceCall: function(aClientId) {
@@ -761,6 +739,8 @@ TelephonyProvider.prototype = {
       new Date().getTime() - aCall.started : 0;
     let data = {
       number: aCall.number,
+      serviceId: aClientId,
+      emergency: aCall.isEmergency,
       duration: duration,
       direction: aCall.isOutgoing ? "outgoing" : "incoming"
     };
@@ -807,20 +787,14 @@ TelephonyProvider.prototype = {
                                                     aCall.isSwitchable,
                                                     aCall.isMergeable]);
     } else {
-      this.notifyCallError(aClientId, aCall.callIndex, aCall.failCause);
+      this._notifyAllListeners("notifyError",
+                               [aClientId, aCall.callIndex, aCall.failCause]);
     }
     delete this._currentCalls[aClientId][aCall.callIndex];
 
     if (manualConfStateChange) {
       this.notifyConferenceCallStateChanged(RIL.CALL_STATE_UNKNOWN);
     }
-  },
-
-  /**
-   * Handle call error.
-   */
-  notifyCallError: function(aClientId, aCallIndex, aErrorMsg) {
-    this._notifyAllListeners("notifyError", [aClientId, aCallIndex, aErrorMsg]);
   },
 
   /**
@@ -871,6 +845,14 @@ TelephonyProvider.prototype = {
                           aCall.isSwitchable : true;
       call.isMergeable = aCall.isMergeable != null ?
                          aCall.isMergeable : true;
+
+      // Get the actual call for pending outgoing call. Remove the original one.
+      if (this._currentCalls[aClientId][OUTGOING_PLACEHOLDER_CALL_INDEX] &&
+          call.callIndex != OUTGOING_PLACEHOLDER_CALL_INDEX &&
+          call.isOutgoing) {
+        delete this._currentCalls[aClientId][OUTGOING_PLACEHOLDER_CALL_INDEX];
+      }
+
       this._currentCalls[aClientId][aCall.callIndex] = call;
     }
 

@@ -55,10 +55,108 @@ class TextureSource;
 struct Effect;
 struct EffectChain;
 
+/**
+ * Interface for pools of temporary gl textures for the compositor.
+ * The textures are fully owned by the pool, so the latter is responsible
+ * calling fDeleteTextures accordingly.
+ * Users of GetTexture receive a texture that is only valid for the duration
+ * of the current frame.
+ * This is primarily intended for direct texturing APIs that need to attach
+ * shared objects (such as an EGLImage) to a gl texture.
+ */
+class CompositorTexturePoolOGL
+{
+protected:
+  virtual ~CompositorTexturePoolOGL() {}
+
+public:
+  NS_INLINE_DECL_REFCOUNTING(CompositorTexturePoolOGL)
+
+  virtual void Clear() = 0;
+
+  virtual GLuint GetTexture(GLenum aTarget, GLenum aEnum) = 0;
+
+  virtual void EndFrame() = 0;
+};
+
+/**
+ * Agressively reuses textures. One gl texture per texture unit in total.
+ * So far this hasn't shown the best results on b2g.
+ */
+class PerUnitTexturePoolOGL : public CompositorTexturePoolOGL
+{
+public:
+  PerUnitTexturePoolOGL(gl::GLContext* aGL)
+  : mTextureTarget(0) // zero is never a valid texture target
+  , mGL(aGL)
+  {}
+
+  virtual ~PerUnitTexturePoolOGL()
+  {
+    DestroyTextures();
+  }
+
+  virtual void Clear() MOZ_OVERRIDE
+  {
+    DestroyTextures();
+  }
+
+  virtual GLuint GetTexture(GLenum aTarget, GLenum aUnit) MOZ_OVERRIDE;
+
+  virtual void EndFrame() MOZ_OVERRIDE {}
+
+protected:
+  void DestroyTextures();
+
+  GLenum mTextureTarget;
+  nsTArray<GLuint> mTextures;
+  RefPtr<gl::GLContext> mGL;
+};
+
+/**
+ * Reuse gl textures from a pool of textures that haven't yet been
+ * used during the current frame.
+ * All the textures that are not used at the end of a frame are
+ * deleted.
+ * This strategy seems to work well with gralloc textures because destroying
+ * unused textures which are bound to gralloc buffers let drivers know that it
+ * can unlock the gralloc buffers.
+ */
+class PerFrameTexturePoolOGL : public CompositorTexturePoolOGL
+{
+public:
+  PerFrameTexturePoolOGL(gl::GLContext* aGL)
+  : mTextureTarget(0) // zero is never a valid texture target
+  , mGL(aGL)
+  {}
+
+  virtual ~PerFrameTexturePoolOGL()
+  {
+    DestroyTextures();
+  }
+
+  virtual void Clear() MOZ_OVERRIDE
+  {
+    DestroyTextures();
+  }
+
+  virtual GLuint GetTexture(GLenum aTarget, GLenum aUnit) MOZ_OVERRIDE;
+
+  virtual void EndFrame() MOZ_OVERRIDE;
+
+protected:
+  void DestroyTextures();
+
+  GLenum mTextureTarget;
+  RefPtr<gl::GLContext> mGL;
+  nsTArray<GLuint> mCreatedTextures;
+  nsTArray<GLuint> mUnusedTextures;
+};
+
 class CompositorOGL : public Compositor
 {
   typedef mozilla::gl::GLContext GLContext;
-  
+
   friend class GLManagerCompositor;
 
   std::map<ShaderConfigOGL, ShaderProgramOGL*> mPrograms;
@@ -84,7 +182,7 @@ public:
                                     SupportsPartialTextureUpdate());
   }
 
-  virtual TemporaryRef<CompositingRenderTarget> 
+  virtual TemporaryRef<CompositingRenderTarget>
   CreateRenderTarget(const gfx::IntRect &aRect, SurfaceInitMode aInit) MOZ_OVERRIDE;
 
   virtual TemporaryRef<CompositingRenderTarget>
@@ -93,7 +191,7 @@ public:
                                const gfx::IntPoint &aSourcePoint) MOZ_OVERRIDE;
 
   virtual void SetRenderTarget(CompositingRenderTarget *aSurface) MOZ_OVERRIDE;
-  virtual CompositingRenderTarget* GetCurrentRenderTarget() MOZ_OVERRIDE;
+  virtual CompositingRenderTarget* GetCurrentRenderTarget() const MOZ_OVERRIDE;
 
   virtual void DrawQuad(const gfx::Rect& aRect,
                         const gfx::Rect& aClipRect,
@@ -113,6 +211,7 @@ public:
 
 
   virtual void EndFrame() MOZ_OVERRIDE;
+  virtual void SetFBAcquireFence(Layer* aLayer) MOZ_OVERRIDE;
   virtual void EndFrameForExternalComposition(const gfx::Matrix& aTransform) MOZ_OVERRIDE;
   virtual void AbortFrame() MOZ_OVERRIDE;
 
@@ -162,10 +261,6 @@ public:
 
   virtual nsIWidget* GetWidget() const MOZ_OVERRIDE { return mWidget; }
 
-#ifdef MOZ_WIDGET_GONK
-  virtual CompositorBackendSpecificData* GetCompositorBackendSpecificData() MOZ_OVERRIDE;
-#endif
-
   GLContext* gl() const { return mGLContext; }
   gfx::SurfaceFormat GetFBOFormat() const {
     return gfx::SurfaceFormat::R8G8B8A8;
@@ -177,7 +272,7 @@ public:
    * Doing so lets us use gralloc the way it has been designed to be used
    * (see https://wiki.mozilla.org/Platform/GFX/Gralloc)
    */
-  GLuint GetTemporaryTexture(GLenum aUnit);
+  GLuint GetTemporaryTexture(GLenum aTarget, GLenum aUnit);
 
   const gfx::Matrix4x4& GetProjMatrix() const {
     return mProjMatrix;
@@ -190,7 +285,7 @@ private:
                                 const gfx::Matrix4x4 &aTransformi,
                                 GLuint aDrawMode);
 
-  /** 
+  /**
    * Context target, nullptr when drawing directly to our swap chain.
    */
   RefPtr<gfx::DrawTarget> mTarget;
@@ -217,9 +312,10 @@ private:
   CompositingRenderTargetOGL* mWindowRenderTarget;
 #endif
 
-  /** VBO that has some basics in it for a textured quad,
-   *  including vertex coords and texcoords for both
-   *  flipped and unflipped textures */
+  /**
+   * VBO that has some basics in it for a textured quad, including vertex
+   * coords and texcoords.
+   */
   GLuint mQuadVBO;
 
   /**
@@ -242,9 +338,9 @@ private:
   bool mFrameInProgress;
 
   /*
-   * Clear aRect on FrameBuffer.
+   * Clear aRect on current render target.
    */
-  virtual void clearFBRect(const gfx::Rect* aRect);
+  virtual void ClearRect(const gfx::Rect& aRect) MOZ_OVERRIDE;
 
   /* Start a new frame. If aClipRectIn is null and aClipRectOut is non-null,
    * sets *aClipRectOut to the screen dimensions.
@@ -272,18 +368,14 @@ private:
 
   GLintptr QuadVBOVertexOffset() { return 0; }
   GLintptr QuadVBOTexCoordOffset() { return sizeof(float)*4*2; }
-  GLintptr QuadVBOFlippedTexCoordOffset() { return sizeof(float)*8*2; }
 
   void BindQuadVBO();
   void QuadVBOVerticesAttrib(GLuint aAttribIndex);
   void QuadVBOTexCoordsAttrib(GLuint aAttribIndex);
-  void QuadVBOFlippedTexCoordsAttrib(GLuint aAttribIndex);
   void BindAndDrawQuad(GLuint aVertAttribIndex,
                        GLuint aTexCoordAttribIndex,
-                       bool aFlipped = false,
                        GLuint aDrawMode = LOCAL_GL_TRIANGLE_STRIP);
   void BindAndDrawQuad(ShaderProgramOGL *aProg,
-                       bool aFlipped = false,
                        GLuint aDrawMode = LOCAL_GL_TRIANGLE_STRIP);
   void BindAndDrawQuadWithTextureRect(ShaderProgramOGL *aProg,
                                       const gfx3DMatrix& aTextureTransform,
@@ -309,42 +401,16 @@ private:
    */
   GLint FlipY(GLint y) const { return mHeight - y; }
 
-  bool mDestroyed;
+  RefPtr<CompositorTexturePoolOGL> mTexturePool;
 
-  // Textures used for direct texturing of buffers like gralloc.
-  // The index of the texture in this array must correspond to the texture unit.
-  nsTArray<GLuint> mTextures;
+  bool mDestroyed;
 
   /**
    * Height of the OpenGL context's primary framebuffer in pixels. Used by
    * FlipY for the y-flipping calculation.
    */
   GLint mHeight;
-
-#ifdef MOZ_WIDGET_GONK
-  RefPtr<CompositorBackendSpecificData> mCompositorBackendSpecificData;
-#endif
 };
-
-#ifdef MOZ_WIDGET_GONK
-class CompositorOGLGonkBackendSpecificData : public CompositorBackendSpecificData
-{
-public:
-  CompositorOGLGonkBackendSpecificData(CompositorOGL* aCompositor);
-  virtual ~CompositorOGLGonkBackendSpecificData();
-
-  GLuint GetTexture();
-  void EndFrame();
-
-private:
-  gl::GLContext* gl() const;
-
-  RefPtr<CompositorOGL> mCompositor;
-
-  nsTArray<GLuint> mCreatedTextures;
-  nsTArray<GLuint> mUnusedTextures;
-};
-#endif
 
 }
 }

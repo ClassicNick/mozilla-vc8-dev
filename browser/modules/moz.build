@@ -15,8 +15,8 @@ EXTRA_JS_MODULES += [
     'Feeds.jsm',
     'NetworkPrioritizer.jsm',
     'offlineAppCache.jsm',
+    'RemotePrompt.jsm',
     'SharedFrame.jsm',
-    'SignInToWebsite.jsm',
     'SitePermissions.jsm',
     'Social.jsm',
     'TabCrashReporter.jsm',
@@ -26,8 +26,14 @@ EXTRA_JS_MODULES += [
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
     EXTRA_JS_MODULES += [
+        'Windows8WindowFrameColor.jsm',
         'WindowsJumpLists.jsm',
         'WindowsPreviewPerTab.jsm',
+    ]
+
+if CONFIG['NIGHTLY_BUILD']:
+    EXTRA_JS_MODULES += [
+        'SignInToWebsite.jsm',
     ]
 
 EXTRA_PP_JS_MODULES += [

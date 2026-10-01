@@ -401,6 +401,11 @@ WebConsoleFrame.prototype = {
    */
   setSaveRequestAndResponseBodies:
   function WCF_setSaveRequestAndResponseBodies(aValue) {
+    if (!this.webConsoleClient) {
+      // Don't continue if the webconsole disconnected.
+      return promise.resolve(null);
+    }
+
     let deferred = promise.defer();
     let newValue = !!aValue;
     let toSet = {
@@ -843,6 +848,16 @@ WebConsoleFrame.prototype = {
         // main part of the button. Go through all the severities and toggle
         // their associated filters.
         this._setMenuState(target, state);
+
+        // CSS reflow logging can decrease web page performance.
+        // Make sure the option is always unchecked when the CSS filter button is selected.
+        // See bug 971798.
+        if (target.getAttribute("category") == "css" && state) {
+          let csslogMenuItem = target.querySelector("menuitem[prefKey=csslog]");
+          csslogMenuItem.setAttribute("checked", false);
+          this.setFilterState("csslog", false);
+        }
+
         break;
       }
 
@@ -1358,7 +1373,7 @@ WebConsoleFrame.prototype = {
                                       aScriptError.timeStamp);
 
     // Select the body of the message node that is displayed in the console
-    let msgBody = node.getElementsByClassName("body")[0];
+    let msgBody = node.getElementsByClassName("message-body")[0];
     // Add the more info link node to messages that belong to certain categories
     this.addMoreInfoLink(msgBody, aScriptError);
 
@@ -2446,7 +2461,7 @@ WebConsoleFrame.prototype = {
 
     // Create the message body, which contains the actual text of the message.
     let bodyNode = this.document.createElementNS(XHTML_NS, "span");
-    bodyNode.className = "body devtools-monospace";
+    bodyNode.className = "message-body-wrapper message-body devtools-monospace";
 
     // Store the body text, since it is needed later for the variables view.
     let body = aBody;
@@ -2593,7 +2608,9 @@ WebConsoleFrame.prototype = {
 
     locationNode.href = isScratchpad || !fullURL ? "#" : fullURL;
     locationNode.draggable = false;
-    locationNode.target = aTarget;
+    if (aTarget) {
+      locationNode.target = aTarget;
+    }
     locationNode.setAttribute("title", aSourceURL);
     locationNode.className = "message-location theme-link devtools-monospace";
 
@@ -3474,6 +3491,7 @@ JSTerm.prototype = {
 
     this._sidebarDestroy();
     this.inputNode.focus();
+    aEvent.stopPropagation();
   },
 
   /**
@@ -3907,10 +3925,12 @@ JSTerm.prototype = {
         if (this.autocompletePopup.isOpen) {
           this.clearCompletion();
           aEvent.preventDefault();
+          aEvent.stopPropagation();
         }
         else if (this.sidebar) {
           this._sidebarDestroy();
           aEvent.preventDefault();
+          aEvent.stopPropagation();
         }
         break;
 

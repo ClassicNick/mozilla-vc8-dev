@@ -1,3 +1,4 @@
+/* vim: set ts=2 sw=2 et tw=80: */
 /* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -31,8 +32,8 @@
 #include "nsTArrayForwardDeclare.h"     // for InfallibleTArray
 #include "nsXULAppAPI.h"                // for XRE_GetIOMessageLoop
 #include "mozilla/layers/TextureHost.h"
+#include "nsThreadUtils.h"
 
-using namespace base;
 using namespace mozilla::ipc;
 using namespace mozilla::gfx;
 
@@ -116,7 +117,7 @@ ImageBridgeParent::RecvUpdateNoSwap(const EditArray& aEdits)
 static void
 ConnectImageBridgeInParentProcess(ImageBridgeParent* aBridge,
                                   Transport* aTransport,
-                                  ProcessHandle aOtherProcess)
+                                  base::ProcessHandle aOtherProcess)
 {
   aBridge->Open(aTransport, aOtherProcess, XRE_GetIOMessageLoop(), ipc::ParentSide);
 }
@@ -124,7 +125,7 @@ ConnectImageBridgeInParentProcess(ImageBridgeParent* aBridge,
 /*static*/ PImageBridgeParent*
 ImageBridgeParent::Create(Transport* aTransport, ProcessId aOtherProcess)
 {
-  ProcessHandle processHandle;
+  base::ProcessHandle processHandle;
   if (!base::OpenProcessHandle(aOtherProcess, &processHandle)) {
     return nullptr;
   }
@@ -218,11 +219,32 @@ MessageLoop * ImageBridgeParent::GetMessageLoop() {
   return mMessageLoop;
 }
 
+class ReleaseRunnable : public nsRunnable
+{
+public:
+  ReleaseRunnable(ImageBridgeParent* aRef)
+    : mRef(aRef)
+  {
+  }
+
+  NS_IMETHOD Run()
+  {
+    mRef->Release();
+    return NS_OK;
+  }
+
+private:
+  ImageBridgeParent* mRef;
+};
+
 void
 ImageBridgeParent::DeferredDestroy()
 {
-  mSelfRef = nullptr;
-  // |this| was just destroyed, hands off
+  ImageBridgeParent* self;
+  mSelfRef.forget(&self);
+
+  nsCOMPtr<nsIRunnable> runnable = new ReleaseRunnable(self);
+  MOZ_ALWAYS_TRUE(NS_SUCCEEDED(NS_DispatchToMainThread(runnable)));
 }
 
 IToplevelProtocol*

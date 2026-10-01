@@ -1894,7 +1894,7 @@ nsresult nsTableFrame::Reflow(nsPresContext*           aPresContext,
 
   // If there are any relatively-positioned table parts, we need to reflow their
   // absolutely-positioned descendants now that their dimensions are final.
-  FixupPositionedTableParts(aPresContext, aReflowState);
+  FixupPositionedTableParts(aPresContext, aDesiredSize, aReflowState);
 
   // make sure the table overflow area does include the table rect.
   nsRect tableRect(0, 0, aDesiredSize.Width(), aDesiredSize.Height()) ;
@@ -1917,7 +1917,8 @@ nsresult nsTableFrame::Reflow(nsPresContext*           aPresContext,
 }
 
 void
-nsTableFrame::FixupPositionedTableParts(nsPresContext* aPresContext,
+nsTableFrame::FixupPositionedTableParts(nsPresContext*           aPresContext,
+                                        nsHTMLReflowMetrics&     aDesiredSize,
                                         const nsHTMLReflowState& aReflowState)
 {
   FrameTArray* positionedParts =
@@ -1954,7 +1955,8 @@ nsTableFrame::FixupPositionedTableParts(nsPresContext* aPresContext,
     // FIXME: Unconditionally using NS_UNCONSTRAINEDSIZE for the height and
     // ignoring any change to the reflow status aren't correct. We'll never
     // paginate absolutely positioned frames.
-    overflowTracker.AddFrame(positionedPart);
+    overflowTracker.AddFrame(positionedPart,
+      OverflowChangedTracker::CHILDREN_AND_PARENT_CHANGED);
     nsFrame* positionedFrame = static_cast<nsFrame*>(positionedPart);
     positionedFrame->FinishReflowWithAbsoluteFrames(PresContext(),
                                                     desiredSize,
@@ -1965,6 +1967,11 @@ nsTableFrame::FixupPositionedTableParts(nsPresContext* aPresContext,
 
   // Propagate updated overflow areas up the tree.
   overflowTracker.Flush();
+
+  // Update our own overflow areas. (OverflowChangedTracker doesn't update the
+  // subtree root itself.)
+  aDesiredSize.SetOverflowAreasToDesiredBounds();
+  nsLayoutUtils::UnionChildOverflow(this, aDesiredSize.mOverflowAreas);
 }
 
 bool

@@ -13,6 +13,7 @@ let Cr = Components.results;
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/AddonManager.jsm");
+Cu.import("resource://gre/modules/DownloadNotifications.jsm");
 Cu.import("resource://gre/modules/FileUtils.jsm");
 Cu.import("resource://gre/modules/JNI.jsm");
 Cu.import('resource://gre/modules/Payment.jsm');
@@ -82,6 +83,9 @@ XPCOMUtils.defineLazyModuleGetter(this, "WebappManager",
                                   "resource://gre/modules/WebappManager.jsm");
 #endif
 
+XPCOMUtils.defineLazyModuleGetter(this, "CharsetMenu",
+                                  "resource://gre/modules/CharsetMenu.jsm");
+
 // Lazily-loaded browser scripts:
 [
   ["SelectHelper", "chrome://browser/content/SelectHelper.js"],
@@ -128,7 +132,8 @@ XPCOMUtils.defineLazyModuleGetter(this, "WebappManager",
 
 // Lazily-loaded JS modules that use observer notifications
 [
-  ["Home", ["HomePanels:Get"], "resource://gre/modules/Home.jsm"],
+  ["Home", ["HomeBanner:Get", "HomePanels:Get", "HomePanels:Authenticate", "HomePanels:RefreshView",
+            "HomePanels:Installed", "HomePanels:Uninstalled"], "resource://gre/modules/Home.jsm"],
 ].forEach(module => {
   let [name, notifications, resource] = module;
   XPCOMUtils.defineLazyModuleGetter(this, name, resource);
@@ -241,20 +246,13 @@ function resolveGeckoURI(aURI) {
   return aURI;
 }
 
-function shouldShowProgress(url) {
-  return (url != "about:home" &&
-          url != "about:privatebrowsing" &&
-          !url.startsWith("about:reader"));
-}
-
 /**
  * Cache of commonly used string bundles.
  */
 var Strings = {};
 [
   ["brand",      "chrome://branding/locale/brand.properties"],
-  ["browser",    "chrome://browser/locale/browser.properties"],
-  ["charset",    "chrome://global/locale/charsetTitles.properties"]
+  ["browser",    "chrome://browser/locale/browser.properties"]
 ].forEach(function (aStringBundle) {
   let [name, bundle] = aStringBundle;
   XPCOMUtils.defineLazyGetter(Strings, name, function() {
@@ -363,7 +361,7 @@ var BrowserApp = {
 
     NativeWindow.init();
     LightWeightThemeWebInstaller.init();
-    Downloads.init();
+    DownloadNotifications.init();
     FormAssistant.init();
     IndexedDB.init();
     HealthReportStatusListener.init();
@@ -524,31 +522,53 @@ var BrowserApp = {
         NativeWindow.contextmenus._copyStringToDefaultClipboard(phoneNumber);
       });
 
-    NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.shareLink"),
-      NativeWindow.contextmenus._disableInGuest(NativeWindow.contextmenus.linkShareableContext),
-      function(aTarget) {
-        let url = NativeWindow.contextmenus._getLinkURL(aTarget);
-        let title = aTarget.textContent || aTarget.title;
-        NativeWindow.contextmenus._shareStringWithDefault(url, title);
-      });
+    NativeWindow.contextmenus.add({
+      label: Strings.browser.GetStringFromName("contextmenu.shareLink"),
+      order: NativeWindow.contextmenus.DEFAULT_HTML5_ORDER - 1, // Show above HTML5 menu items
+      selector: NativeWindow.contextmenus._disableInGuest(NativeWindow.contextmenus.linkShareableContext),
+      showAsActions: function(aElement) {
+        return {
+          title: aElement.textContent.trim() || aElement.title.trim(),
+          uri: NativeWindow.contextmenus._getLinkURL(aElement),
+        };
+      },
+      icon: "drawable://ic_menu_share",
+      callback: function(aTarget) { }
+    });
 
-    NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.shareEmailAddress"),
-      NativeWindow.contextmenus._disableInGuest(NativeWindow.contextmenus.emailLinkContext),
-      function(aTarget) {
-        let url = NativeWindow.contextmenus._getLinkURL(aTarget);
+    NativeWindow.contextmenus.add({
+      label: Strings.browser.GetStringFromName("contextmenu.shareEmailAddress"),
+      order: NativeWindow.contextmenus.DEFAULT_HTML5_ORDER - 1,
+      selector: NativeWindow.contextmenus._disableInGuest(NativeWindow.contextmenus.emailLinkContext),
+      showAsActions: function(aElement) {
+        let url = NativeWindow.contextmenus._getLinkURL(aElement);
         let emailAddr = NativeWindow.contextmenus._stripScheme(url);
-        let title = aTarget.textContent || aTarget.title;
-        NativeWindow.contextmenus._shareStringWithDefault(emailAddr, title);
-      });
+        let title = aElement.textContent || aElement.title;
+        return {
+          title: title,
+          uri: emailAddr,
+        };
+      },
+      icon: "drawable://ic_menu_share",
+      callback: function(aTarget) { }
+    });
 
-    NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.sharePhoneNumber"),
-      NativeWindow.contextmenus._disableInGuest(NativeWindow.contextmenus.phoneNumberLinkContext),
-      function(aTarget) {
-        let url = NativeWindow.contextmenus._getLinkURL(aTarget);
+    NativeWindow.contextmenus.add({
+      label: Strings.browser.GetStringFromName("contextmenu.sharePhoneNumber"),
+      order: NativeWindow.contextmenus.DEFAULT_HTML5_ORDER - 1,
+      selector: NativeWindow.contextmenus._disableInGuest(NativeWindow.contextmenus.phoneNumberLinkContext),
+      showAsActions: function(aElement) {
+        let url = NativeWindow.contextmenus._getLinkURL(aElement);
         let phoneNumber = NativeWindow.contextmenus._stripScheme(url);
-        let title = aTarget.textContent || aTarget.title;
-        NativeWindow.contextmenus._shareStringWithDefault(phoneNumber, title);
-      });
+        let title = aElement.textContent || aElement.title;
+        return {
+          title: title,
+          uri: phoneNumber,
+        };
+      },
+      icon: "drawable://ic_menu_share",
+      callback: function(aTarget) { }
+    });
 
     NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.addToContacts"),
       NativeWindow.contextmenus._disableInGuest(NativeWindow.contextmenus.emailLinkContext),
@@ -600,13 +620,23 @@ var BrowserApp = {
         aTarget.setAttribute("controls", true);
       });
 
-    NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.shareMedia"),
-      NativeWindow.contextmenus._disableInGuest(NativeWindow.contextmenus.SelectorContext("video")),
-      function(aTarget) {
-        let url = (aTarget.currentSrc || aTarget.src);
-        let title = aTarget.textContent || aTarget.title;
-        NativeWindow.contextmenus._shareStringWithDefault(url, title);
-      });
+    NativeWindow.contextmenus.add({
+      label: Strings.browser.GetStringFromName("contextmenu.shareMedia"),
+      order: NativeWindow.contextmenus.DEFAULT_HTML5_ORDER - 1,
+      selector: NativeWindow.contextmenus._disableInGuest(NativeWindow.contextmenus.SelectorContext("video")),
+      showAsActions: function(aElement) {
+        let url = (aElement.currentSrc || aElement.src);
+        let title = aElement.textContent || aElement.title;
+        return {
+          title: title,
+          uri: url,
+          type: "video/*",
+        };
+      },
+      icon: "drawable://ic_menu_share",
+      callback: function(aTarget) {
+      }
+    });
 
     NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.fullScreen"),
       NativeWindow.contextmenus.SelectorContext("video:not(:-moz-full-screen)"),
@@ -619,7 +649,7 @@ var BrowserApp = {
       function(aTarget) {
         aTarget.muted = true;
       });
-  
+
     NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.unmute"),
       NativeWindow.contextmenus.mediaContext("media-muted"),
       function(aTarget) {
@@ -633,26 +663,26 @@ var BrowserApp = {
         NativeWindow.contextmenus._copyStringToDefaultClipboard(url);
       });
 
-    NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.shareImage"),
-      NativeWindow.contextmenus._disableInGuest(NativeWindow.contextmenus.imageSaveableContext),
-      function(aTarget) {
+    NativeWindow.contextmenus.add({
+      label: Strings.browser.GetStringFromName("contextmenu.shareImage"),
+      selector: NativeWindow.contextmenus._disableInGuest(NativeWindow.contextmenus.imageSaveableContext),
+      order: NativeWindow.contextmenus.DEFAULT_HTML5_ORDER - 1, // Show above HTML5 menu items
+      showAsActions: function(aTarget) {
         let doc = aTarget.ownerDocument;
         let imageCache = Cc["@mozilla.org/image/tools;1"].getService(Ci.imgITools)
                                                          .getImgCacheForDocument(doc);
         let props = imageCache.findEntryProperties(aTarget.currentURI, doc.characterSet);
         let src = aTarget.src;
-        let type = "";
-        try {
-           type = String(props.get("type", Ci.nsISupportsCString));
-        } catch(ex) {
-           type = "";
-        }
-        sendMessageToJava({
-          type: "Share:Image",
-          url: src,
-          mime: type,
-        });
-      });
+        return {
+          title: src,
+          uri: src,
+          type: "image/*",
+        };
+      },
+      icon: "drawable://ic_menu_share",
+      menu: true,
+      callback: function(aTarget) { }
+    });
 
     NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.saveImage"),
       NativeWindow.contextmenus.imageSaveableContext,
@@ -712,6 +742,7 @@ var BrowserApp = {
 
   shutdown: function shutdown() {
     NativeWindow.uninit();
+    DownloadNotifications.uninit();
     LightWeightThemeWebInstaller.uninit();
     FormAssistant.uninit();
     IndexedDB.uninit();
@@ -1136,20 +1167,6 @@ var BrowserApp = {
 #endif
       }
 
-      // Pref name translation.
-      switch (prefName) {
-#ifdef MOZ_TELEMETRY_REPORTING
-        // Telemetry pref differs based on build.
-        case Telemetry.SHARED_PREF_TELEMETRY_ENABLED:
-#ifdef MOZ_TELEMETRY_ON_BY_DEFAULT
-          prefName = "toolkit.telemetry.enabledPreRelease";
-#else
-          prefName = "toolkit.telemetry.enabled";
-#endif
-          break;
-#endif
-      }
-
       try {
         switch (Services.prefs.getPrefType(prefName)) {
           case Ci.nsIPrefBranch.PREF_BOOL:
@@ -1265,20 +1282,6 @@ var BrowserApp = {
         break;
     }
 
-    // Pref name translation.
-    switch (json.name) {
-#ifdef MOZ_TELEMETRY_REPORTING
-      // Telemetry pref differs based on build.
-      case Telemetry.SHARED_PREF_TELEMETRY_ENABLED:
-#ifdef MOZ_TELEMETRY_ON_BY_DEFAULT
-        json.name = "toolkit.telemetry.enabledPreRelease";
-#else
-        json.name = "toolkit.telemetry.enabled";
-#endif
-        break;
-#endif
-    }
-
     switch (json.type) {
       case "bool":
         Services.prefs.setBoolPref(json.name, json.value);
@@ -1305,16 +1308,6 @@ var BrowserApp = {
 
       try {
         switch (key) {
-          case "history_downloads":
-            Sanitizer.clearItem("history");
-
-            // If we're also removing downloaded files, don't clear the
-            // download history yet since it will be handled when the files are
-            // removed.
-            if (!json["downloadFiles"]) {
-              Sanitizer.clearItem("downloads");
-            }
-            break;
           case "cookies_sessions":
             Sanitizer.clearItem("cookies");
             Sanitizer.clearItem("sessions");
@@ -1819,7 +1812,7 @@ var NativeWindow = {
         return;
 
       sendMessageToJava({
-        type: "Menu:Update", 
+        type: "Menu:Update",
         id: aId,
         options: aOptions
       });
@@ -1845,7 +1838,7 @@ var NativeWindow = {
    *                     automatically dismiss before this time.
    *        checkbox:    A string to appear next to a checkbox under the notification
    *                     message. The button callback functions will be called with
-   *                     the checked state as an argument.                   
+   *                     the checked state as an argument.
    */
     show: function(aMessage, aValue, aButtons, aTabID, aOptions) {
       if (aButtons == null) {
@@ -1961,7 +1954,7 @@ var NativeWindow = {
             return aElt.mozMatchesSelector(aSelector);
           return false;
         }
-      }
+      };
     },
 
     linkOpenableNonPrivateContext: {
@@ -2041,13 +2034,6 @@ var NativeWindow = {
       }
     },
 
-    textContext: {
-      matches: function textContext(aElement) {
-        return ((aElement instanceof Ci.nsIDOMHTMLInputElement && aElement.mozIsTextField(false))
-                || aElement instanceof Ci.nsIDOMHTMLTextAreaElement);
-      }
-    },
-
     imageLocationCopyableContext: {
       matches: function imageLinkCopyableContextMatches(aElement) {
         return (aElement instanceof Ci.nsIImageLoadingContent && aElement.currentURI);
@@ -2097,72 +2083,133 @@ var NativeWindow = {
           }
           return false;
         }
-      }
+      };
     },
 
+    /* Holds a WeakRef to the original target element this context menu was shown for.
+     * Most API's will have to walk up the tree from this node to find the correct element
+     * to act on
+     */
     get _target() {
       if (this._targetRef)
         return this._targetRef.get();
       return null;
     },
-  
+
     set _target(aTarget) {
       if (aTarget)
         this._targetRef = Cu.getWeakReference(aTarget);
       else this._targetRef = null;
     },
 
-    _addHTMLContextMenuItemsForElement: function(element) {
+    get defaultContext() {
+      delete this.defaultContext;
+      return this.defaultContext = Strings.browser.GetStringFromName("browser.menu.context.default");
+    },
+
+    /* Gets menuitems for an arbitrary node
+     * Parameters:
+     *   element - The element to look at. If this element has a contextmenu attribute, the
+     *             corresponding contextmenu will be used.
+     */
+    _getHTMLContextMenuItemsForElement: function(element) {
       let htmlMenu = element.contextMenu;
-      if (!htmlMenu)
-        return;
+      if (!htmlMenu) {
+        return [];
+      }
 
       htmlMenu.QueryInterface(Components.interfaces.nsIHTMLMenu);
       htmlMenu.sendShowEvent();
 
-      this._addHTMLContextMenuItemsForMenu(htmlMenu, element);
+      return this._getHTMLContextMenuItemsForMenu(htmlMenu, element);
     },
 
-    _addHTMLContextMenuItemsForMenu: function(menu, target) {
+    /* Add a menuitem for an HTML <menu> node
+     * Parameters:
+     *   menu - The <menu> element to iterate through for menuitems
+     *   target - The target element these context menu items are attached to
+     */
+    _getHTMLContextMenuItemsForMenu: function(menu, target) {
+      let items = [];
       for (let i = 0; i < menu.childNodes.length; i++) {
         let elt = menu.childNodes[i];
         if (!elt.label)
           continue;
 
-        this.menuitems.push(new HTMLContextMenuItem(elt, target));
+        items.push(new HTMLContextMenuItem(elt, target));
       }
+
+      return items;
     },
 
-    _containsItem: function(aId) {
-      if (!this.menuitems)
+    // Searches the current list of menuitems to show for any that match this id
+    _findMenuItem: function(aId) {
+      if (!this.menus) {
         return null;
-
-      let menu = this.menuitems;
-      for (let i = 0; i < menu.length; i++) {
-        if (menu[i].id == aId)
-          return menu[i];
       }
 
+      for (let context in this.menus) {
+        let menu = this.menus[context];
+        for (let i = 0; i < menu.length; i++) {
+          if (menu[i].id === aId) {
+            return menu[i];
+          }
+        }
+      }
       return null;
     },
 
+    // Returns true if there are any context menu items to show
     shouldShow: function() {
-      return this.menuitems.length > 0;
+      for (let context in this.menus) {
+        let menu = this.menus[context];
+        if (menu.length > 0) {
+          return true;
+        }
+      }
+      return false;
     },
 
-    _addNativeContextMenuItems: function(element, x, y) {
+    /* Returns a label to be shown in a tabbed ui if there are multiple "contexts". For instance, if this
+     * is an image inside an <a> tag, we may have a "link" context and an "image" one.
+     */
+    _getContextType: function(element) {
+      // For anchor nodes, we try to use the scheme to pick a string
+      if (element instanceof Ci.nsIDOMHTMLAnchorElement) {
+        let uri = this.makeURI(this._getLinkURL(element));
+        try {
+          return Strings.browser.GetStringFromName("browser.menu.context." + uri.scheme);
+        } catch(ex) { }
+      }
+
+      // Otherwise we try the nodeName
+      try {
+        return Strings.browser.GetStringFromName("browser.menu.context." + element.nodeName.toLowerCase());
+      } catch(ex) { }
+
+      // Fallback to the default
+      return this.defaultContext;
+    },
+
+    // Adds context menu items added through the add-on api
+    _getNativeContextMenuItems: function(element, x, y) {
+      let res = [];
       for (let itemId of Object.keys(this.items)) {
         let item = this.items[itemId];
 
-        if (!this._containsItem(item.id) && item.matches(element, x, y)) {
-          this.menuitems.push(item);
+        if (!this._findMenuItem(item.id) && item.matches(element, x, y)) {
+          res.push(item);
         }
       }
+
+      return res;
     },
 
-    // Checks if there are context menu items to show, and if it finds them
-    // sends a contextmenu event to content. We also send showing events to
-    // any html5 context menus we are about to show
+    /* Checks if there are context menu items to show, and if it finds them
+     * sends a contextmenu event to content. We also send showing events to
+     * any html5 context menus we are about to show, and fire some local notifications
+     * for chrome consumers to do lazy menuitem construction
+     */
     _sendToContent: function(x, y) {
       let target = BrowserEventHandler._highlightElement || ElementTouchHelper.elementFromPoint(x, y);
       if (!target)
@@ -2185,7 +2232,7 @@ var NativeWindow = {
         target.ownerDocument.defaultView.addEventListener("contextmenu", this, false);
         target.dispatchEvent(event);
       } else {
-        this.menuitems = null;
+        this.menus = null;
         Services.obs.notifyObservers({target: target, x: x, y: y}, "context-menu-not-shown", "");
 
         if (SelectionHandler.canSelect(target)) {
@@ -2193,13 +2240,14 @@ var NativeWindow = {
             mode: SelectionHandler.SELECT_AT_POINT,
             x: x,
             y: y
-          })) { 
+          })) {
             SelectionHandler.attachCaret(target);
           }
         }
       }
     },
 
+    // Returns a title for a context menu. If no title attribute exists, will fall back to looking for a url
     _getTitle: function(node) {
       if (node.hasAttribute && node.hasAttribute("title")) {
         return node.getAttribute("title");
@@ -2207,28 +2255,57 @@ var NativeWindow = {
       return this._getUrl(node);
     },
 
+    // Returns a url associated with a node
     _getUrl: function(node) {
       if ((node instanceof Ci.nsIDOMHTMLAnchorElement && node.href) ||
-                 (node instanceof Ci.nsIDOMHTMLAreaElement && node.href)) {
+          (node instanceof Ci.nsIDOMHTMLAreaElement && node.href)) {
         return this._getLinkURL(node);
       } else if (node instanceof Ci.nsIImageLoadingContent && node.currentURI) {
         return node.currentURI.spec;
       } else if (node instanceof Ci.nsIDOMHTMLMediaElement) {
         return (node.currentSrc || node.src);
       }
+
       return "";
     },
 
+    // Adds an array of menuitems to the current list of items to show, in the correct context
+    _addMenuItems: function(items, context) {
+        if (!this.menus[context]) {
+          this.menus[context] = [];
+        }
+        this.menus[context] = this.menus[context].concat(items);
+    },
+
+    /* Does the basic work of building a context menu to show. Will combine HTML and Native
+     * context menus items, as well as sorting menuitems into different menus based on context.
+     */
     _buildMenu: function(x, y) {
       // now walk up the tree and for each node look for any context menu items that apply
       let element = this._target;
-      this.menuitems = [];
+
+      // this.menus holds a hashmap of "contexts" to menuitems associated with that context
+      // For instance, if the user taps an image inside a link, we'll have something like:
+      // {
+      //   link:  [ ContextMenuItem, ContextMenuItem ]
+      //   image: [ ContextMenuItem, ContextMenuItem ]
+      // }
+      this.menus = {};
 
       while (element) {
+        let context = this._getContextType(element);
+
         // First check for any html5 context menus that might exist...
-        this._addHTMLContextMenuItemsForElement(element);
+        var items = this._getHTMLContextMenuItemsForElement(element);
+        if (items.length > 0) {
+          this._addMenuItems(items, context);
+        }
+
         // then check for any context menu items registered in the ui.
-        this._addNativeContextMenuItems(element, x, y);
+        items = this._getNativeContextMenuItems(element, x, y);
+        if (items.length > 0) {
+          this._addMenuItems(items, context);
+        }
 
         // walk up the tree and find more items to show
         element = element.parentNode;
@@ -2246,6 +2323,7 @@ var NativeWindow = {
       this._innerShow(popupNode, aEvent.clientX, aEvent.clientY);
     },
 
+    // Walks the DOM tree to find a title from a node
     _findTitle: function(node) {
       let title = "";
       while(node && !title) {
@@ -2255,17 +2333,70 @@ var NativeWindow = {
       return title;
     },
 
-    _getItems: function(target) {
-      return this._getItemsInList(target, this.menuitems);
+    /* Reformats the list of menus to show into an object that can be sent to Prompt.jsm
+     * If there is one menu, will return a flat array of menuitems. If there are multiple
+     * menus, will return an array with appropriate tabs/items inside it. i.e. :
+     * [
+     *    { label: "link", items: [...] },
+     *    { label: "image", items: [...] }
+     * ]
+     */
+    _reformatList: function(target) {
+      let contexts = Object.keys(this.menus);
+
+      if (contexts.length === 1) {
+        // If there's only one context, we'll only show a single flat single select list
+        return this._reformatMenuItems(target, this.menus[contexts[0]]);
+      }
+
+      // If there are multiple contexts, we'll only show a tabbed ui with multiple lists
+      return this._reformatListAsTabs(target, this.menus);
     },
 
-    _getItemsInList: function(target, list) {
+    /* Reformats the list of menus to show into an object that can be sent to Prompt.jsm's
+     * addTabs method. i.e. :
+     * { link: [...], image: [...] } becomes
+     * [ { label: "link", items: [...] } ]
+     *
+     * Also reformats items and resolves any parmaeters that aren't known until display time
+     * (for instance Helper app menu items adjust their title to reflect what Helper App can be used for this link).
+     */
+    _reformatListAsTabs: function(target, menus) {
       let itemArray = [];
-      for (let i = 0; i < list.length; i++) {
+
+      // Sort the keys so that "link" is always first
+      let contexts = Object.keys(this.menus);
+      contexts.sort((context1, context2) => {
+        if (context1 === this.defaultContext) {
+          return -1;
+        } else if (context2 === this.defaultContext) {
+          return 1;
+        }
+        return 0;
+      });
+
+      contexts.forEach(context => {
+        itemArray.push({
+          label: context,
+          items: this._reformatMenuItems(target, menus[context])
+        });
+      });
+
+      return itemArray;
+    },
+
+    /* Reformats an array of ContextMenuItems into an array that can be handled by Prompt.jsm. Also reformats items
+     * and resolves any parmaeters that aren't known until display time
+     * (for instance Helper app menu items adjust their title to reflect what Helper App can be used for this link).
+     */
+    _reformatMenuItems: function(target, menuitems) {
+      let itemArray = [];
+
+      for (let i = 0; i < menuitems.length; i++) {
         let t = target;
         while(t) {
-          if (list[i].matches(t)) {
-            let val = list[i].getValue(t);
+          if (menuitems[i].matches(t)) {
+            let val = menuitems[i].getValue(t);
 
             // hidden menu items will return null from getValue
             if (val) {
@@ -2277,39 +2408,63 @@ var NativeWindow = {
           t = t.parentNode;
         }
       }
+
       return itemArray;
     },
 
+    // Called where we're finally ready to actually show the contextmenu. Sorts the items and shows a prompt.
     _innerShow: function(target, x, y) {
       Haptic.performSimpleAction(Haptic.LongPress);
 
       // spin through the tree looking for a title for this context menu
       let title = this._findTitle(target);
 
-      this.menuitems.sort((a,b) => {
-        if (a.order == b.order) return 0;
-        return (a.order > b.order) ? 1 : -1;
-      });
+      for (let context in this.menus) {
+        let menu = this.menus[context];
+        menu.sort((a,b) => {
+          if (a.order === b.order) {
+            return 0;
+          }
+          return (a.order > b.order) ? 1 : -1;
+        });
+      }
 
+      let useTabs = Object.keys(this.menus).length > 1;
       let prompt = new Prompt({
         window: target.ownerDocument.defaultView,
-        title: title
+        title: useTabs ? undefined : title
       });
 
-      let items = this._getItems(target);
-      prompt.setSingleChoiceItems(items);
+      let items = this._reformatList(target);
+      if (useTabs) {
+        prompt.addTabs({
+          id: "tabs",
+          items: items
+        });
+      } else {
+        prompt.setSingleChoiceItems(items);
+      }
+
       prompt.show(this._promptDone.bind(this, target, x, y, items));
     },
 
+    // Called when the contextmenu prompt is closed
     _promptDone: function(target, x, y, items, data) {
       if (data.button == -1) {
-        // prompt was cancelled
+        // Prompt was cancelled, or an ActionView was used.
         return;
       }
 
-      let selectedItemId = items[data.list[0]].id;
-      let selectedItem = this._containsItem(selectedItemId);
-      this.menuitems = null;
+      let selectedItemId;
+      if (data.tabs) {
+        let menu = items[data.tabs.tab];
+        selectedItemId = menu.items[data.tabs.item].id;
+      } else {
+        selectedItemId = items[data.list[0]].id
+      }
+
+      let selectedItem = this._findMenuItem(selectedItemId);
+      this.menus = null;
 
       if (!selectedItem || !selectedItem.matches || !selectedItem.callback) {
         return;
@@ -2325,12 +2480,14 @@ var NativeWindow = {
       }
     },
 
+    // Called when the contextmenu is done propagating to content. If the event wasn't cancelled, will show a contextmenu.
     handleEvent: function(aEvent) {
       BrowserEventHandler._cancelTapHighlight();
       aEvent.target.ownerDocument.defaultView.removeEventListener("contextmenu", this, false);
       this._show(aEvent);
     },
 
+    // Called when a long press is observed in the native Java frontend. Will start the process of generating/showing a contextmenu.
     observe: function(aSubject, aTopic, aData) {
       let data = JSON.parse(aData);
       // content gets first crack at cancelling context menus
@@ -2368,7 +2525,7 @@ var NativeWindow = {
             return false;
           return selector.matches(aElement, aX, aY);
         }
-      }
+      };
     },
 
     _getLinkURL: function ch_getLinkURL(aLink) {
@@ -2397,7 +2554,8 @@ var NativeWindow = {
     },
 
     _stripScheme: function(aString) {
-      return aString.slice(aString.indexOf(":") + 1);
+      let index = aString.indexOf(":");
+      return aString.slice(index + 1);
     }
   }
 };
@@ -2724,6 +2882,7 @@ function Tab(aURL, aParams) {
   this.lastTouchedAt = Date.now();
   this._zoom = 1.0;
   this._drawZoom = 1.0;
+  this._restoreZoom = false;
   this._fixedMarginLeft = 0;
   this._fixedMarginTop = 0;
   this._fixedMarginRight = 0;
@@ -2852,10 +3011,13 @@ Tab.prototype = {
     this.browser.addEventListener("blur", this, true);
     this.browser.addEventListener("scroll", this, true);
     this.browser.addEventListener("MozScrolledAreaChanged", this, true);
-    // Note that the XBL binding is untrusted
-    this.browser.addEventListener("PluginBindingAttached", this, true, true);
     this.browser.addEventListener("pageshow", this, true);
     this.browser.addEventListener("MozApplicationManifest", this, true);
+
+    // Note that the XBL binding is untrusted
+    this.browser.addEventListener("PluginBindingAttached", this, true, true);
+    this.browser.addEventListener("VideoBindingAttached", this, true, true);
+    this.browser.addEventListener("VideoBindingCast", this, true, true);
 
     Services.obs.addObserver(this, "before-first-paint", false);
     Services.obs.addObserver(this, "after-viewport-change", false);
@@ -2972,7 +3134,7 @@ Tab.prototype = {
                                 viewportWidth - 15);
   },
 
-  /** 
+  /**
    * Reloads the tab with the desktop mode setting.
    */
   reloadWithMode: function (aDesktopMode) {
@@ -3021,9 +3183,12 @@ Tab.prototype = {
     this.browser.removeEventListener("blur", this, true);
     this.browser.removeEventListener("scroll", this, true);
     this.browser.removeEventListener("MozScrolledAreaChanged", this, true);
-    this.browser.removeEventListener("PluginBindingAttached", this, true);
     this.browser.removeEventListener("pageshow", this, true);
     this.browser.removeEventListener("MozApplicationManifest", this, true);
+
+    this.browser.removeEventListener("PluginBindingAttached", this, true, true);
+    this.browser.removeEventListener("VideoBindingAttached", this, true, true);
+    this.browser.removeEventListener("VideoBindingCast", this, true, true);
 
     Services.obs.removeObserver(this, "before-first-paint");
     Services.obs.removeObserver(this, "after-viewport-change");
@@ -3322,6 +3487,7 @@ Tab.prototype = {
 
     let win = this.browser.contentWindow;
     win.scrollTo(x, y);
+    this.saveSessionZoom(aViewport.zoom);
 
     this.userScrollPos.x = win.scrollX;
     this.userScrollPos.y = win.scrollY;
@@ -3371,12 +3537,13 @@ Tab.prototype = {
   getViewport: function() {
     let screenW = gScreenWidth - gViewportMargins.left - gViewportMargins.right;
     let screenH = gScreenHeight - gViewportMargins.top - gViewportMargins.bottom;
+    let zoom = this.restoredSessionZoom() || this._zoom;
 
     let viewport = {
       width: screenW,
       height: screenH,
-      cssWidth: screenW / this._zoom,
-      cssHeight: screenH / this._zoom,
+      cssWidth: screenW / zoom,
+      cssHeight: screenH / zoom,
       pageLeft: 0,
       pageTop: 0,
       pageRight: screenW,
@@ -3384,13 +3551,13 @@ Tab.prototype = {
       // We make up matching css page dimensions
       cssPageLeft: 0,
       cssPageTop: 0,
-      cssPageRight: screenW / this._zoom,
-      cssPageBottom: screenH / this._zoom,
+      cssPageRight: screenW / zoom,
+      cssPageBottom: screenH / zoom,
       fixedMarginLeft: this._fixedMarginLeft,
       fixedMarginTop: this._fixedMarginTop,
       fixedMarginRight: this._fixedMarginRight,
       fixedMarginBottom: this._fixedMarginBottom,
-      zoom: this._zoom,
+      zoom: zoom,
     };
 
     // Set the viewport offset to current scroll offset
@@ -3602,7 +3769,7 @@ Tab.prototype = {
 
             if (sizes == "any") {
               // Since Java expects an integer, use -1 to represent icons with sizes="any"
-              maxSize = -1; 
+              maxSize = -1;
             } else {
               let tokens = sizes.split(" ");
               tokens.forEach(function(token) {
@@ -3776,6 +3943,16 @@ Tab.prototype = {
         break;
       }
 
+      case "VideoBindingAttached": {
+        CastingApps.handleVideoBindingAttached(this, aEvent);
+        break;
+      }
+
+      case "VideoBindingCast": {
+        CastingApps.handleVideoBindingCast(this, aEvent);
+        break;
+      }
+
       case "MozApplicationManifest": {
         OfflineApps.offlineAppRequested(aEvent.originalTarget.defaultView);
         break;
@@ -3884,15 +4061,14 @@ Tab.prototype = {
 
       // Check to see if we restoring the content from a previous presentation (session)
       // since there should be no real network activity
-      let restoring = aStateFlags & Ci.nsIWebProgressListener.STATE_RESTORING;
-      let showProgress = restoring ? false : shouldShowProgress(uri);
+      let restoring = (aStateFlags & Ci.nsIWebProgressListener.STATE_RESTORING) > 0;
 
       let message = {
         type: "Content:StateChange",
         tabID: this.id,
         uri: uri,
         state: aStateFlags,
-        showProgress: showProgress,
+        restoring: restoring,
         success: success
       };
       sendMessageToJava(message);
@@ -4013,6 +4189,9 @@ Tab.prototype = {
       tabID: this.id,
     };
 
+    // Restore zoom only when moving in session history, not for new page loads.
+    this._restoreZoom = aMessage != "New";
+
     if (aParams) {
       if ("url" in aParams)
         message.url = aParams.url;
@@ -4023,6 +4202,22 @@ Tab.prototype = {
     }
 
     sendMessageToJava(message);
+  },
+
+  saveSessionZoom: function(aZoom) {
+    let cwu = this.browser.contentWindow.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowUtils);
+    cwu.setResolution(aZoom / window.devicePixelRatio, aZoom / window.devicePixelRatio);
+  },
+
+  restoredSessionZoom: function() {
+    if (!this._restoreZoom) {
+      return null;
+    }
+
+    let cwu = this.browser.contentWindow.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowUtils);
+    let res = {x: {}, y: {}};
+    cwu.getResolution(res.x, res.y);
+    return res.x.value * window.devicePixelRatio;
   },
 
   OnHistoryNewEntry: function(aUri) {
@@ -4053,6 +4248,11 @@ Tab.prototype = {
   OnHistoryPurge: function(aNumEntries) {
     this._sendHistoryEvent("Purge", { numEntries: aNumEntries });
     return true;
+  },
+
+  OnHistoryReplaceEntry: function(aIndex) {
+    // we don't do anything with this, so don't propogate it
+    // for now anyway.
   },
 
   get metadata() {
@@ -4149,8 +4349,11 @@ Tab.prototype = {
     // In all of these cases, we maintain how much actual content is visible
     // within the screen width. Note that "actual content" may be different
     // with respect to CSS pixels because of the CSS viewport size changing.
-    let zoomScale = (screenW * oldBrowserWidth) / (aOldScreenWidth * viewportW);
-    let zoom = (aInitialLoad && metadata.defaultZoom) ? metadata.defaultZoom : this.clampZoom(this._zoom * zoomScale);
+    let zoom = this.restoredSessionZoom() || metadata.defaultZoom;
+    if (!zoom || !aInitialLoad) {
+      let zoomScale = (screenW * oldBrowserWidth) / (aOldScreenWidth * viewportW);
+      zoom = this.clampZoom(this._zoom * zoomScale);
+    }
     this.setResolution(zoom, false);
     this.setScrollClampingSize(zoom);
 
@@ -4286,7 +4489,8 @@ Tab.prototype = {
           // and zoom when calculating the new ones, so we need to reset these
           // things here before calling updateMetadata.
           this.setBrowserSize(kDefaultCSSViewportWidth, kDefaultCSSViewportHeight);
-          this.setResolution(gScreenWidth / this.browserWidth, false);
+          let zoom = this.restoredSessionZoom() || gScreenWidth / this.browserWidth;
+          this.setResolution(zoom, true);
           ViewportHandler.updateMetadata(this, true);
 
           // Note that if we draw without a display-port, things can go wrong. By the
@@ -4295,7 +4499,7 @@ Tab.prototype = {
           // call above does so at the end of the updateViewportSize function. As long
           // as that is happening, we don't need to do it again here.
 
-          if (contentDocument.mozSyntheticDocument) {
+          if (!this.restoredSessionZoom() && contentDocument.mozSyntheticDocument) {
             // for images, scale to fit width. this needs to happen *after* the call
             // to updateMetadata above, because that call sets the CSS viewport which
             // will affect the page size (i.e. contentDocument.body.scroll*) that we
@@ -4438,9 +4642,13 @@ var BrowserEventHandler = {
 
       if (this._scrollableElement != null) {
         // Discard if it's the top-level scrollable, we let Java handle this
+        // The top-level scrollable is the body in quirks mode and the html element
+        // in standards mode
         let doc = BrowserApp.selectedBrowser.contentDocument;
-        if (this._scrollableElement != doc.body && this._scrollableElement != doc.documentElement)
+        let rootScrollable = (doc.compatMode === "BackCompat" ? doc.body : doc.documentElement);
+        if (this._scrollableElement != rootScrollable) {
           sendMessageToJava({ type: "Panning:Override" });
+        }
       }
     }
 
@@ -4528,7 +4736,6 @@ var BrowserEventHandler = {
 
           let doc = BrowserApp.selectedBrowser.contentDocument;
           if (this._scrollableElement == null ||
-              this._scrollableElement == doc.body ||
               this._scrollableElement == doc.documentElement) {
             sendMessageToJava({ type: "Panning:CancelOverride" });
             return;
@@ -4744,8 +4951,8 @@ var BrowserEventHandler = {
         let rect = rects[0];
         // if either width or height is zero, we don't want to move the click to the edge of the element. See bug 757208
         if (rect.width != 0 && rect.height != 0) {
-          aX = Math.min(Math.floor(rect.left + rect.width), Math.max(Math.ceil(rect.left), aX));
-          aY = Math.min(Math.floor(rect.top + rect.height), Math.max(Math.ceil(rect.top),  aY));
+          aX = Math.min(Math.ceil(rect.left + rect.width) - 1, Math.max(Math.ceil(rect.left), aX));
+          aY = Math.min(Math.ceil(rect.top + rect.height) - 1, Math.max(Math.ceil(rect.top),  aY));
         }
       }
     }
@@ -4769,8 +4976,10 @@ var BrowserEventHandler = {
     var computedStyle = win.getComputedStyle(elem);
     if (!computedStyle)
       return false;
-    return computedStyle.overflowX == 'auto' || computedStyle.overflowX == 'scroll'
-        || computedStyle.overflowY == 'auto' || computedStyle.overflowY == 'scroll';
+    // We check for overflow:hidden only because all the other cases are scrollable
+    // under various conditions. See https://bugzilla.mozilla.org/show_bug.cgi?id=911574#c24
+    // for some more details.
+    return !(computedStyle.overflowX == 'hidden' && computedStyle.overflowY == 'hidden');
   },
 
   _findScrollableElement: function(elem, checkElem) {
@@ -4778,16 +4987,15 @@ var BrowserEventHandler = {
     let scrollable = false;
     while (elem) {
       /* Element is scrollable if its scroll-size exceeds its client size, and:
-       * - It has overflow 'auto' or 'scroll'
-       * - It's a textarea
-       * - It's an HTML/BODY node
-       * - It's a text input
+       * - It has overflow other than 'hidden', or
+       * - It's a textarea node, or
+       * - It's a text input, or
        * - It's a select element showing multiple rows
        */
       if (checkElem) {
         if ((elem.scrollTopMax > 0 || elem.scrollLeftMax > 0) &&
             (this._hasScrollableOverflow(elem) ||
-             elem.mozMatchesSelector("html, body, textarea")) ||
+             elem.mozMatchesSelector("textarea")) ||
             (elem instanceof HTMLInputElement && elem.mozIsTextField(false)) ||
             (elem instanceof HTMLSelectElement && (elem.size > 1 || elem.multiple))) {
           scrollable = true;
@@ -5475,12 +5683,7 @@ let HealthReportStatusListener = {
 
   PREF_TELEMETRY_ENABLED:
 #ifdef MOZ_TELEMETRY_REPORTING
-    // Telemetry pref differs based on build.
-#ifdef MOZ_TELEMETRY_ON_BY_DEFAULT
-    "toolkit.telemetry.enabledPreRelease",
-#else
     "toolkit.telemetry.enabled",
-#endif
 #else
     null,
 #endif
@@ -5697,7 +5900,10 @@ var XPInstallObserver = {
         if (!tab)
           return;
 
-        let host = installInfo.originatingURI.host;
+        let host = null;
+        if (installInfo.originatingURI) {
+          host = installInfo.originatingURI.host;
+        }
 
         let brandShortName = Strings.brand.GetStringFromName("brandShortName");
         let notificationName, buttons, message;
@@ -5725,7 +5931,23 @@ var XPInstallObserver = {
           }
         } else {
           notificationName = "xpinstall";
-          message = strings.formatStringFromName("xpinstallPromptWarning2", [brandShortName, host], 2);
+          if (host) {
+            // We have a host which asked for the install.
+            message = strings.formatStringFromName("xpinstallPromptWarning2", [brandShortName, host], 2);
+          } else {
+            // Without a host we address the add-on as the initiator of the install.
+            let addon = null;
+            if (installInfo.installs.length > 0) {
+              addon = installInfo.installs[0].name;
+            }
+            if (addon) {
+              // We have an addon name, show the regular message.
+              message = strings.formatStringFromName("xpinstallPromptWarningLocal", [brandShortName, addon], 2);
+            } else {
+              // We don't have an addon name, show an alternative message.
+              message = strings.formatStringFromName("xpinstallPromptWarningDirect", [brandShortName], 1);
+            }
+          }
 
           buttons = [{
             label: strings.GetStringFromName("xpinstallPromptAllowButton"),
@@ -6258,119 +6480,6 @@ var IndexedDB = {
   }
 };
 
-var ClipboardHelper = {
-  // Recorded so search with option can be removed/replaced when default engine changed.
-  _searchMenuItem: -1,
-
-  get clipboardHelper() {
-    delete this.clipboardHelper;
-    return this.clipboardHelper = Cc["@mozilla.org/widget/clipboardhelper;1"].getService(Ci.nsIClipboardHelper);
-  },
-
-  get clipboard() {
-    delete this.clipboard;
-    return this.clipboard = Cc["@mozilla.org/widget/clipboard;1"].getService(Ci.nsIClipboard);
-  },
-
-  copy: function(aElement, aX, aY) {
-    if (SelectionHandler.isSelectionActive()) {
-      SelectionHandler.copySelection();
-      return;
-    }
-
-    let selectionStart = aElement.selectionStart;
-    let selectionEnd = aElement.selectionEnd;
-    if (selectionStart != selectionEnd) {
-      string = aElement.value.slice(selectionStart, selectionEnd);
-      this.clipboardHelper.copyString(string, aElement.ownerDocument);
-    } else {
-      this.clipboardHelper.copyString(aElement.value, aElement.ownerDocument);
-    }
-  },
-
-  paste: function(aElement) {
-    if (!aElement || !(aElement instanceof Ci.nsIDOMNSEditableElement))
-      return;
-    let target = aElement.QueryInterface(Ci.nsIDOMNSEditableElement);
-    target.editor.paste(Ci.nsIClipboard.kGlobalClipboard);
-    target.focus();  
-  },
-
-  inputMethod: function(aElement) {
-    Cc["@mozilla.org/imepicker;1"].getService(Ci.nsIIMEPicker).show();
-  },
-
-  getCopyContext: function(isCopyAll) {
-    return {
-      matches: function(aElement, aX, aY) {
-        // Do not show "Copy All" for normal non-input text selection.
-        if (!isCopyAll && SelectionHandler.isSelectionActive())
-          return true;
-
-        if (NativeWindow.contextmenus.textContext.matches(aElement)) {
-          // Don't include "copy" for password fields.
-          // mozIsTextField(true) tests for only non-password fields.
-          if (aElement instanceof Ci.nsIDOMHTMLInputElement && !aElement.mozIsTextField(true))
-            return false;
-
-          let selectionStart = aElement.selectionStart;
-          let selectionEnd = aElement.selectionEnd;
-          if (selectionStart != selectionEnd)
-            return true;
-
-          if (isCopyAll && aElement.textLength > 0)
-            return true;
-        }
-        return false;
-      }
-    }
-  },
-
-  selectAllContext: {
-    matches: function selectAllContextMatches(aElement, aX, aY) {
-      if (SelectionHandler.isSelectionActive())
-        return true;
-
-      if (NativeWindow.contextmenus.textContext.matches(aElement))
-        return (aElement.selectionStart > 0 || aElement.selectionEnd < aElement.textLength);
-
-      return false;
-    }
-  },
-
-  shareContext: {
-    matches: function shareContextMatches(aElement, aX, aY) {
-      return SelectionHandler.isSelectionActive();
-    }
-  },
-
-  searchWithContext: {
-    matches: function searchWithContextMatches(aElement, aX, aY) {
-      return SelectionHandler.isSelectionActive();
-    }
-  },
-
-  pasteContext: {
-    matches: function(aElement) {
-      if (NativeWindow.contextmenus.textContext.matches(aElement)) {
-        let flavors = ["text/unicode"];
-        return ClipboardHelper.clipboard.hasDataMatchingFlavors(flavors, flavors.length, Ci.nsIClipboard.kGlobalClipboard);
-      }
-      return false;
-    }
-  },
-
-  cutContext: {
-    matches: function(aElement) {
-      let copyctx = ClipboardHelper.getCopyContext(false);
-      if (NativeWindow.contextmenus.textContext.matches(aElement)) {
-        return copyctx.matches(aElement);
-      }
-      return false;
-    }
-  }
-};
-
 var CharacterEncoding = {
   _charsets: [],
 
@@ -6409,40 +6518,31 @@ var CharacterEncoding = {
   },
 
   getEncoding: function getEncoding() {
-    function normalizeCharsetCode(charsetCode) {
-      return charsetCode.trim().toLowerCase();
-    }
-
-    function getTitle(charsetCode) {
-      let charsetTitle = charsetCode;
-      try {
-        charsetTitle = Strings.charset.GetStringFromName(charsetCode + ".title");
-      } catch (e) {
-        dump("error: title not found for " + charsetCode);
-      }
-      return charsetTitle;
+    function infoToCharset(info) {
+      return { code: info.value, title: info.label };
     }
 
     if (!this._charsets.length) {
-      let charsets = Services.prefs.getComplexValue("intl.charsetmenu.browser.static", Ci.nsIPrefLocalizedString).data;
-      this._charsets = charsets.split(",").map(function (charset) {
-        return {
-          code: normalizeCharsetCode(charset),
-          title: getTitle(charset)
-        };
-      });
+      let data = CharsetMenu.getData();
+
+      // In the desktop UI, the pinned charsets are shown above the rest.
+      let pinnedCharsets = data.pinnedCharsets.map(infoToCharset);
+      let otherCharsets = data.otherCharsets.map(infoToCharset)
+
+      this._charsets = pinnedCharsets.concat(otherCharsets);
     }
 
-    // if document charset is not in charset options, add it
-    let docCharset = normalizeCharsetCode(BrowserApp.selectedBrowser.contentDocument.characterSet);
-    let selected = 0;
+    // Look for the index of the selected charset. Default to -1 if the
+    // doc charset isn't found in the list of available charsets.
+    let docCharset = BrowserApp.selectedBrowser.contentDocument.characterSet;
+    let selected = -1;
     let charsetCount = this._charsets.length;
-    for (; selected < charsetCount && this._charsets[selected].code != docCharset; selected++);
-    if (selected == charsetCount) {
-      this._charsets.push({
-        code: docCharset,
-        title: getTitle(docCharset)
-      });
+
+    for (let i = 0; i < charsetCount; i++) {
+      if (this._charsets[i].code === docCharset) {
+        selected = i;
+        break;
+      }
     }
 
     sendMessageToJava({
@@ -6547,7 +6647,7 @@ var IdentityHandler = {
                                .QueryInterface(Components.interfaces.nsISSLStatusProvider)
                                .SSLStatus;
 
-    // Don't pass in the actual location object, since it can cause us to 
+    // Don't pass in the actual location object, since it can cause us to
     // hold on to the window object too long.  Just pass in the fields we
     // care about. (bug 424829)
     let locationObj = {};
@@ -6597,7 +6697,7 @@ var IdentityHandler = {
 
       return result;
     }
-    
+
     // Otherwise, we don't know the cert owner
     result.owner = Strings.browser.GetStringFromName("identity.ownerUnknown3");
 
@@ -7061,7 +7161,7 @@ var WebappsUI = {
          manifestURL: aData.app.manifestURL,
          origin: origin
       }, (data) => {
-        let profilePath = JSON.parse(data).profile;
+        let profilePath = data.profile;
         if (!profilePath)
           return;
 
@@ -7209,7 +7309,7 @@ var WebappsUI = {
         favicon.src = WebappsUI.DEFAULT_ICON;
       }
     };
-  
+
     favicon.src = aIconURL;
   },
 
@@ -7338,8 +7438,6 @@ var RemoteDebugger = {
 };
 
 var Telemetry = {
-  SHARED_PREF_TELEMETRY_ENABLED: "datareporting.telemetry.enabled",
-
   addData: function addData(aHistogramId, aValue) {
     let histogram = Services.telemetry.getHistogramById(aHistogramId);
     histogram.add(aValue);
@@ -7377,17 +7475,13 @@ let Reader = {
   pageAction: {
     readerModeCallback: function(){
       sendMessageToJava({
-        gecko: {
-          type: "Reader:Click",
-        }
+        type: "Reader:Click",
       });
     },
 
     readerModeActiveCallback: function(){
       sendMessageToJava({
-        gecko: {
-          type: "Reader:LongClick",
-        }
+        type: "Reader:LongClick",
       });
     },
   },
@@ -8308,7 +8402,7 @@ ContextMenuItem.prototype = {
     return {
       id: this.id,
       label: this.addVal("label", elt),
-      shareData: this.addVal("shareData", elt),
+      showAsActions: this.addVal("showAsActions", elt),
       icon: this.addVal("icon", elt),
       isGroup: this.addVal("isGroup", elt, false),
       inGroup: this.addVal("inGroup", elt, false),
@@ -8348,9 +8442,21 @@ HTMLContextMenuItem.prototype = Object.create(ContextMenuItem.prototype, {
       // If this is a menu item, show a new context menu with the submenu in it
       if (elt instanceof Ci.nsIDOMHTMLMenuElement) {
         try {
-          NativeWindow.contextmenus.menuitems = [];
-          NativeWindow.contextmenus._addHTMLContextMenuItemsForMenu(elt, target);
-          NativeWindow.contextmenus._innerShow(target);
+          NativeWindow.contextmenus.menus = {};
+
+          let elt = this.menuElementRef.get();
+          let target = this.targetElementRef.get();
+          if (!elt) {
+            return;
+          }
+
+          var items = NativeWindow.contextmenus._getHTMLContextMenuItemsForMenu(elt, target);
+          // This menu will always only have one context, but we still make sure its the "right" one.
+          var context = NativeWindow.contextmenus._getContextType(target);
+          if (items.length > 0) {
+            NativeWindow.contextmenus._addMenuItems(items, context);
+          }
+
         } catch(ex) {
           Cu.reportError(ex);
         }
@@ -8364,11 +8470,13 @@ HTMLContextMenuItem.prototype = Object.create(ContextMenuItem.prototype, {
   getValue: {
     value: function(target) {
       let elt = this.menuElementRef.get();
-      if (!elt)
+      if (!elt) {
         return null;
+      }
 
-      if (elt.hasAttribute("hidden"))
+      if (elt.hasAttribute("hidden")) {
         return null;
+      }
 
       return {
         id: this.id,
@@ -8380,3 +8488,21 @@ HTMLContextMenuItem.prototype = Object.create(ContextMenuItem.prototype, {
     }
   },
 });
+
+/**
+ * CID of Downloads.jsm's implementation of nsITransfer.
+ */
+const kTransferCid = Components.ID("{1b4c85df-cbdd-4bb6-b04e-613caece083c}");
+
+/**
+ * Contract ID of the service implementing nsITransfer.
+ */
+const kTransferContractId = "@mozilla.org/transfer;1";
+
+// Override Toolkit's nsITransfer implementation with the one from the
+// JavaScript API for downloads.  This will eventually be removed when
+// nsIDownloadManager will not be available anymore (bug 851471).  The
+// old code in this module will be removed in bug 899110.
+Components.manager.QueryInterface(Ci.nsIComponentRegistrar)
+                  .registerFactory(kTransferCid, "",
+                                   kTransferContractId, null);

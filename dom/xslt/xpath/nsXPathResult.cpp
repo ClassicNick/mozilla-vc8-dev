@@ -361,7 +361,7 @@ nsXPathResult::Invalidate(const nsIContent* aChangeRoot)
                 static_cast<nsIContent*>(contextNode.get())
                     ->GetBindingParent();
         } else if (contextNode->IsNodeOfType(nsINode::eATTRIBUTE)) {
-            nsIContent* parent =
+            Element* parent =
               static_cast<Attr*>(contextNode.get())->GetElement();
             if (parent) {
                 ctxBindingParent = parent->GetBindingParent();

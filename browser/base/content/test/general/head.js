@@ -1,7 +1,7 @@
 Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 XPCOMUtils.defineLazyModuleGetter(this, "Promise",
-  "resource://gre/modules/commonjs/sdk/core/promise.js");
+  "resource://gre/modules/Promise.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "Task",
   "resource://gre/modules/Task.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "PlacesUtils",
@@ -289,6 +289,38 @@ function promiseHistoryClearedState(aURIs, aShouldBeCleared) {
     });
   });
 
+  return deferred.promise;
+}
+
+/**
+ * Waits for the next top-level document load in the current browser.  The URI
+ * of the document is compared against aExpectedURL.  The load is then stopped
+ * before it actually starts.
+ *
+ * @param aExpectedURL
+ *        The URL of the document that is expected to load.
+ * @return promise
+ */
+function waitForDocLoadAndStopIt(aExpectedURL) {
+  let deferred = Promise.defer();
+  let progressListener = {
+    onStateChange: function (webProgress, req, flags, status) {
+      info("waitForDocLoadAndStopIt: onStateChange: " + req.name);
+      let docStart = Ci.nsIWebProgressListener.STATE_IS_DOCUMENT |
+                     Ci.nsIWebProgressListener.STATE_START;
+      if ((flags & docStart) && webProgress.isTopLevel) {
+        info("waitForDocLoadAndStopIt: Document start: " +
+             req.QueryInterface(Ci.nsIChannel).URI.spec);
+        is(req.originalURI.spec, aExpectedURL,
+           "waitForDocLoadAndStopIt: The expected URL was loaded");
+        req.cancel(Components.results.NS_ERROR_FAILURE);
+        gBrowser.removeProgressListener(progressListener);
+        deferred.resolve();
+      }
+    },
+  };
+  gBrowser.addProgressListener(progressListener);
+  info("waitForDocLoadAndStopIt: Waiting for URL: " + aExpectedURL);
   return deferred.promise;
 }
 

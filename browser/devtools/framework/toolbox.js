@@ -10,7 +10,7 @@ const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 2;
 
 let {Cc, Ci, Cu} = require("chrome");
-let promise = require("sdk/core/promise");
+let {Promise: promise} = require("resource://gre/modules/Promise.jsm");
 let EventEmitter = require("devtools/toolkit/event-emitter");
 let Telemetry = require("devtools/shared/telemetry");
 let HUDService = require("devtools/webconsole/hudservice");
@@ -39,10 +39,6 @@ loader.lazyGetter(this, "toolboxStrings", () => {
       return null;
     }
   };
-});
-
-loader.lazyGetter(this, "Requisition", () => {
-  return require("gcli/cli").Requisition;
 });
 
 loader.lazyGetter(this, "Selection", () => require("devtools/framework/selection").Selection);
@@ -539,7 +535,7 @@ Toolbox.prototype = {
 
     let spec = CommandUtils.getCommandbarSpec("devtools.toolbox.toolbarSpec");
     let environment = CommandUtils.createEnvironment(this, '_target');
-    this._requisition = new Requisition({ environment: environment });
+    this._requisition = CommandUtils.createRequisition(environment);
     let buttons = CommandUtils.createButtons(spec, this._target,
                                              this.doc, this._requisition);
     let container = this.doc.getElementById("toolbox-buttons");
@@ -878,7 +874,9 @@ Toolbox.prototype = {
    */
   focusConsoleInput: function() {
     let hud = this.getPanel("webconsole").hud;
-    hud.jsterm.inputNode.focus();
+    if (hud && hud.jsterm) {
+      hud.jsterm.inputNode.focus();
+    }
   },
 
   /**
@@ -964,7 +962,7 @@ Toolbox.prototype = {
       toolName = toolboxStrings("toolbox.defaultTitle");
     }
     let title = toolboxStrings("toolbox.titleTemplate",
-                               toolName, this.target.url);
+                               toolName, this.target.url || this.target.name);
     this._host.setTitle(title);
   },
 
@@ -1433,20 +1431,20 @@ ToolboxHighlighterUtils.prototype = {
    * @return a promise that resolves when the highlighter is hidden
    */
   unhighlight: function(forceHide=false) {
-    if (this.isRemoteHighlightable) {
-      // If the remote highlighter exists on the target, use it
-      return this.toolbox.initInspector().then(() => {
-        let autohide = forceHide || !gDevTools.testing;
+    let unhighlightPromise;
+    forceHide = forceHide || !gDevTools.testing;
 
-        if (autohide) {
-          return this.toolbox.highlighter.hideBoxModel();
-        }
-        return promise.resolve();
-      });
+    if (forceHide && this.isRemoteHighlightable && this.toolbox.highlighter) {
+      // If the remote highlighter exists on the target, use it
+      unhighlightPromise = this.toolbox.highlighter.hideBoxModel();
     } else {
       // If not, no need to unhighlight as the older highlight method uses a
       // setTimeout to hide itself
-      return promise.resolve();
+      unhighlightPromise = promise.resolve();
     }
+
+    return unhighlightPromise.then(() => {
+      this.toolbox.emit("node-unhighlight");
+    });
   }
 };

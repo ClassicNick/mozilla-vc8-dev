@@ -33,19 +33,22 @@ public:
 class TextTrack;
 class TextTrackCue;
 
-class TextTrackManager
+class TextTrackManager MOZ_FINAL : public nsIDOMEventListener
 {
 public:
-  NS_DECL_CYCLE_COLLECTION_NATIVE_CLASS(TextTrackManager)
-  NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(TextTrackManager);
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTION_CLASS(TextTrackManager)
+
+  NS_DECL_NSIDOMEVENTLISTENER
 
   TextTrackManager(HTMLMediaElement *aMediaElement);
-  ~TextTrackManager();
 
   TextTrackList* TextTracks() const;
   already_AddRefed<TextTrack> AddTextTrack(TextTrackKind aKind,
                                            const nsAString& aLabel,
                                            const nsAString& aLanguage,
+                                           TextTrackMode aMode,
+                                           TextTrackReadyState aReadyState,
                                            TextTrackSource aTextTrackSource);
   void AddTextTrack(TextTrack* aTextTrack);
   void RemoveTextTrack(TextTrack* aTextTrack, bool aPendingListOnly);
@@ -86,11 +89,10 @@ public:
 
   void PopulatePendingList();
 
+  void AddListeners();
+
   // The HTMLMediaElement that this TextTrackManager manages the TextTracks of.
-  // This is a weak reference as the life time of TextTrackManager is dependent
-  // on the HTMLMediaElement, so it should not be trying to hold the
-  // HTMLMediaElement alive.
-  HTMLMediaElement* mMediaElement;
+  nsRefPtr<HTMLMediaElement> mMediaElement;
 private:
   // List of the TextTrackManager's owning HTMLMediaElement's TextTracks.
   nsRefPtr<TextTrackList> mTextTracks;
@@ -100,6 +102,21 @@ private:
   nsRefPtr<TextTrackCueList> mNewCues;
 
   static StaticRefPtr<nsIWebVTTParserWrapper> sParserWrapper;
+
+  bool performedTrackSelection;
+
+  // Runs the algorithm for performing automatic track selection.
+  void HonorUserPreferencesForTrackSelection();
+  // Performs track selection for a single TextTrackKind.
+  void PerformTrackSelection(TextTrackKind aTextTrackKind);
+  //Performs track selection for a set of TextTrackKinds, for example,
+  // 'subtitles' and 'captions' should be selected together.
+  void PerformTrackSelection(TextTrackKind aTextTrackKinds[], uint32_t size);
+  void GetTextTracksOfKinds(TextTrackKind aTextTrackKinds[], uint32_t size,
+                            nsTArray<TextTrack*>& aTextTracks);
+  void GetTextTracksOfKind(TextTrackKind aTextTrackKind,
+                           nsTArray<TextTrack*>& aTextTracks);
+  bool TrackIsDefault(TextTrack* aTextTrack);
 };
 
 } // namespace dom

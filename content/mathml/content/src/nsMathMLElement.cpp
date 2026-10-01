@@ -14,7 +14,6 @@
 #include "nsMappedAttributes.h"
 #include "nsStyleConsts.h"
 #include "nsIDocument.h"
-#include "nsEventStates.h"
 #include "nsIPresShell.h"
 #include "nsPresContext.h"
 #include "mozAutoDocUpdate.h"
@@ -22,6 +21,8 @@
 #include "nsContentUtils.h"
 #include "nsIURI.h"
 
+#include "mozilla/EventDispatcher.h"
+#include "mozilla/EventStates.h"
 #include "mozilla/dom/ElementBinding.h"
 
 using namespace mozilla;
@@ -890,7 +891,7 @@ nsMathMLElement::MapMathMLAttributesInto(const nsMappedAttributes* aAttributes,
 }
 
 nsresult
-nsMathMLElement::PreHandleEvent(nsEventChainPreVisitor& aVisitor)
+nsMathMLElement::PreHandleEvent(EventChainPreVisitor& aVisitor)
 {
   nsresult rv = Element::PreHandleEvent(aVisitor);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -899,18 +900,19 @@ nsMathMLElement::PreHandleEvent(nsEventChainPreVisitor& aVisitor)
 }
 
 nsresult
-nsMathMLElement::PostHandleEvent(nsEventChainPostVisitor& aVisitor)
+nsMathMLElement::PostHandleEvent(EventChainPostVisitor& aVisitor)
 {
   return PostHandleEventForLinks(aVisitor);
 }
 
 NS_IMPL_ELEMENT_CLONE(nsMathMLElement)
 
-nsEventStates
+EventStates
 nsMathMLElement::IntrinsicState() const
 {
   return Link::LinkState() | nsMathMLElementBase::IntrinsicState() |
-    (mIncrementScriptLevel ? NS_EVENT_STATE_INCREMENT_SCRIPT_LEVEL : nsEventStates());
+    (mIncrementScriptLevel ?
+       NS_EVENT_STATE_INCREMENT_SCRIPT_LEVEL : EventStates());
 }
 
 bool
@@ -1106,7 +1108,7 @@ nsMathMLElement::UnsetAttr(int32_t aNameSpaceID, nsIAtom* aAttr,
 }
 
 JSObject*
-nsMathMLElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aScope)
+nsMathMLElement::WrapNode(JSContext *aCx)
 {
-  return ElementBinding::Wrap(aCx, aScope, this);
+  return ElementBinding::Wrap(aCx, this);
 }

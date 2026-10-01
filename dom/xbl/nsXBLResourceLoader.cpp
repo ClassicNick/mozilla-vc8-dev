@@ -119,7 +119,7 @@ nsXBLResourceLoader::LoadResources(bool* aResult)
       // XXX: initialDocumentURI is nullptr! 
       nsRefPtr<imgRequestProxy> req;
       nsContentUtils::LoadImage(url, doc, docPrincipal, docURL, nullptr,
-                                nsIRequest::LOAD_BACKGROUND,
+                                nsIRequest::LOAD_BACKGROUND, EmptyString(),
                                 getter_AddRefs(req));
     }
     else if (curr->mType == nsGkAtoms::stylesheet) {
@@ -274,7 +274,7 @@ nsXBLResourceLoader::NotifyBoundElements()
   mBoundElements.Clear();
 
   // Delete ourselves.
-  NS_RELEASE(mResources->mLoader);
+  mResources->ClearLoader();
 }
 
 nsresult

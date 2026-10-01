@@ -121,6 +121,7 @@ struct Effect;
 struct EffectChain;
 class Image;
 class ISurfaceAllocator;
+class Layer;
 class NewTextureSource;
 class DataTextureSource;
 class CompositingRenderTarget;
@@ -136,18 +137,12 @@ enum SurfaceInitMode
 /**
  * A base class for a platform-dependent helper for use by TextureHost.
  */
-class CompositorBackendSpecificData : public RefCounted<CompositorBackendSpecificData>
+class CompositorBackendSpecificData
 {
-public:
-  MOZ_DECLARE_REFCOUNTED_TYPENAME(CompositorBackendSpecificData)
-  CompositorBackendSpecificData()
-  {
-    MOZ_COUNT_CTOR(CompositorBackendSpecificData);
-  }
-  virtual ~CompositorBackendSpecificData()
-  {
-    MOZ_COUNT_DTOR(CompositorBackendSpecificData);
-  }
+  NS_INLINE_DECL_REFCOUNTING(CompositorBackendSpecificData)
+
+protected:
+  virtual ~CompositorBackendSpecificData() {}
 };
 
 /**
@@ -194,21 +189,20 @@ public:
  * The target and viewport methods can be called before any DrawQuad call and
  * affect any subsequent DrawQuad calls.
  */
-class Compositor : public RefCounted<Compositor>
+class Compositor
 {
+protected:
+  virtual ~Compositor() {}
+
 public:
-  MOZ_DECLARE_REFCOUNTED_TYPENAME(Compositor)
+  NS_INLINE_DECL_REFCOUNTING(Compositor)
+
   Compositor(PCompositorParent* aParent = nullptr)
     : mCompositorID(0)
     , mDiagnosticTypes(DIAGNOSTIC_NONE)
     , mParent(aParent)
     , mScreenRotation(ROTATION_0)
   {
-    MOZ_COUNT_CTOR(Compositor);
-  }
-  virtual ~Compositor()
-  {
-    MOZ_COUNT_DTOR(Compositor);
   }
 
   virtual TemporaryRef<DataTextureSource> CreateDataTextureSource(TextureFlags aFlags = 0) = 0;
@@ -290,7 +284,7 @@ public:
    * Returns the current target for rendering. Will return null if we are
    * rendering to the screen.
    */
-  virtual CompositingRenderTarget* GetCurrentRenderTarget() = 0;
+  virtual CompositingRenderTarget* GetCurrentRenderTarget() const = 0;
 
   /**
    * Mostly the compositor will pull the size from a widget and this method will
@@ -324,9 +318,9 @@ public:
   { /* Should turn into pure virtual once implemented in D3D */ }
 
   /*
-   * Clear aRect on FrameBuffer.
+   * Clear aRect on current render target.
    */
-  virtual void clearFBRect(const gfx::Rect* aRect) { }
+  virtual void ClearRect(const gfx::Rect& aRect) { }
 
   /**
    * Start a new frame.
@@ -358,6 +352,8 @@ public:
    * Flush the current frame to the screen and tidy up.
    */
   virtual void EndFrame() = 0;
+
+  virtual void SetFBAcquireFence(Layer* aLayer) {}
 
   /**
    * Post-rendering stuff if the rendering is done outside of this Compositor
@@ -394,16 +390,22 @@ public:
     mDiagnosticTypes = aDiagnostics;
   }
 
+  DiagnosticTypes GetDiagnosticTypes() const
+  {
+    return mDiagnosticTypes;
+  }
+
   void DrawDiagnostics(DiagnosticFlags aFlags,
                        const gfx::Rect& visibleRect,
                        const gfx::Rect& aClipRect,
-                       const gfx::Matrix4x4& transform);
+                       const gfx::Matrix4x4& transform,
+                       uint32_t aFlashCounter = DIAGNOSTIC_FLASH_COUNTER_MAX);
 
   void DrawDiagnostics(DiagnosticFlags aFlags,
                        const nsIntRegion& visibleRegion,
                        const gfx::Rect& aClipRect,
-                       const gfx::Matrix4x4& transform);
-
+                       const gfx::Matrix4x4& transform,
+                       uint32_t aFlashCounter = DIAGNOSTIC_FLASH_COUNTER_MAX);
 
 #ifdef MOZ_DUMP_PAINTING
   virtual const char* Name() const = 0;
@@ -495,22 +497,15 @@ public:
   // on the other hand, depends on the screen orientation.
   // This only applies to b2g as with other platforms, orientation is handled
   // at the OS level rather than in Gecko.
-  gfx::Rect ClipRectInLayersCoordinates(gfx::Rect aClip) const {
-    switch (mScreenRotation) {
-      case ROTATION_90:
-      case ROTATION_270:
-        return gfx::Rect(aClip.y, aClip.x, aClip.height, aClip.width);
-      case ROTATION_0:
-      case ROTATION_180:
-      default:
-        return aClip;
-    }
-  }
+  // In addition, the clip rect needs to be offset by the rendering origin.
+  // This becomes important if intermediate surfaces are used.
+  gfx::Rect ClipRectInLayersCoordinates(gfx::Rect aClip) const;
 protected:
   void DrawDiagnosticsInternal(DiagnosticFlags aFlags,
                                const gfx::Rect& aVisibleRect,
                                const gfx::Rect& aClipRect,
-                               const gfx::Matrix4x4& transform);
+                               const gfx::Matrix4x4& transform,
+                               uint32_t aFlashCounter);
 
   bool ShouldDrawDiagnostics(DiagnosticFlags);
 

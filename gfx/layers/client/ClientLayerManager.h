@@ -36,15 +36,6 @@ class PLayerChild;
 class TextureClientPool;
 class SimpleTextureClientPool;
 
-class TextureClientPoolMember
-  : public LinkedListElement<TextureClientPoolMember> {
-public:
-  TextureClientPoolMember(gfx::SurfaceFormat aFormat, TextureClientPool* aTexturePool);
-
-  gfx::SurfaceFormat mFormat;
-  RefPtr<TextureClientPool> mTexturePool;
-};
-
 class ClientLayerManager : public LayerManager
 {
   typedef nsTArray<nsRefPtr<Layer> > LayerRefArray;
@@ -69,6 +60,10 @@ public:
                               EndTransactionFlags aFlags = END_DEFAULT);
 
   virtual LayersBackend GetBackendType() { return LayersBackend::LAYERS_CLIENT; }
+  virtual LayersBackend GetCompositorBackendType() MOZ_OVERRIDE
+  {
+    return AsShadowForwarder()->GetCompositorBackendType();
+  }
   virtual void GetBackendName(nsAString& name);
   virtual const char* Name() const { return "Client"; }
 
@@ -168,6 +163,8 @@ public:
 
   virtual void Composite() MOZ_OVERRIDE;
 
+  virtual void DidComposite();
+
 protected:
   enum TransactionPhase {
     PHASE_NONE, PHASE_CONSTRUCTION, PHASE_DRAWING, PHASE_FORWARD
@@ -229,7 +226,7 @@ private:
   bool mNeedsComposite;
 
   RefPtr<ShadowLayerForwarder> mForwarder;
-  LinkedList<TextureClientPoolMember> mTexturePools;
+  nsAutoTArray<RefPtr<TextureClientPool>,2> mTexturePools;
 
   // indexed by gfx::SurfaceFormat
   nsTArray<RefPtr<SimpleTextureClientPool> > mSimpleTilePools;

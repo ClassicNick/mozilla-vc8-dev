@@ -3,7 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#pragma once
+#ifndef _MOZILLA_GFX_SOURCESURFACESKIA_H
+#define _MOZILLA_GFX_SOURCESURFACESKIA_H
 
 #ifdef USE_SKIA_GPU
 #include "skia/GrContext.h"
@@ -106,7 +107,7 @@ public:
   void Init(unsigned char* aData, const IntSize &aSize, int32_t aStride, SurfaceFormat aFormat);
 
 #ifdef USE_SKIA_GPU
-  void InitWithGrContext(GrContext* aGrContext,
+  bool InitWithGrContext(GrContext* aGrContext,
                          const IntSize &aSize,
                          SurfaceFormat aFormat) MOZ_OVERRIDE;
 #endif
@@ -137,3 +138,5 @@ private:
 
 }
 }
+
+#endif // _MOZILLA_GFX_SOURCESURFACESKIA_H

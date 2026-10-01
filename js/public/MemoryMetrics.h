@@ -124,6 +124,7 @@ struct ObjectsExtraSizes
     macro(Objects, NotLiveGCThing, mallocHeapElementsNonAsmJS) \
     macro(Objects, NotLiveGCThing, mallocHeapElementsAsmJS) \
     macro(Objects, NotLiveGCThing, nonHeapElementsAsmJS) \
+    macro(Objects, NotLiveGCThing, nonHeapElementsMapped) \
     macro(Objects, NotLiveGCThing, nonHeapCodeAsmJS) \
     macro(Objects, NotLiveGCThing, mallocHeapAsmJSModuleData) \
     macro(Objects, NotLiveGCThing, mallocHeapArgumentsData) \
@@ -182,7 +183,9 @@ struct GCSizes
 {
 #define FOR_EACH_SIZE(macro) \
     macro(_, _, marker) \
-    macro(_, _, nursery) \
+    macro(_, _, nurseryCommitted) \
+    macro(_, _, nurseryDecommitted) \
+    macro(_, _, nurseryHugeSlots) \
     macro(_, _, storeBufferVals) \
     macro(_, _, storeBufferCells) \
     macro(_, _, storeBufferSlots) \

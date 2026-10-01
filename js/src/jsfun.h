@@ -52,6 +52,7 @@ class JSFunction : public JSObject
 
         /* Derived Flags values for convenience: */
         NATIVE_FUN = 0,
+        NATIVE_LAMBDA_FUN = NATIVE_FUN | LAMBDA,
         INTERPRETED_LAMBDA = INTERPRETED | LAMBDA,
         INTERPRETED_LAMBDA_ARROW = INTERPRETED | LAMBDA | ARROW
     };
@@ -141,17 +142,7 @@ class JSFunction : public JSObject
         return nonLazyScript()->hasBaselineScript() || nonLazyScript()->hasIonScript();
     }
 
-    // Arrow functions are a little weird.
-    //
-    // Like all functions, (1) when the compiler parses an arrow function, it
-    // creates a function object that gets stored with the enclosing script;
-    // and (2) at run time the script's function object is cloned.
-    //
-    // But then, unlike other functions, (3) a bound function is created with
-    // the clone as its target.
-    //
-    // isArrow() is true for all three of these Function objects.
-    // isBoundFunction() is true only for the last one.
+    // Arrow functions store their lexical |this| in the first extended slot.
     bool isArrow()                  const { return flags() & ARROW; }
 
     /* Compound attributes: */
@@ -161,7 +152,7 @@ class JSFunction : public JSObject
     bool isInterpretedConstructor() const {
         // Note: the JITs inline this check, so be careful when making changes
         // here. See IonMacroAssembler::branchIfNotInterpretedConstructor.
-        return isInterpreted() && !isFunctionPrototype() &&
+        return isInterpreted() && !isFunctionPrototype() && !isArrow() &&
                (!isSelfHostedBuiltin() || isSelfHostedConstructor());
     }
     bool isNamedLambda() const {
@@ -277,9 +268,9 @@ class JSFunction : public JSObject
     //   JSScript, delazifying the function if necessary. This is the safest to
     //   use, but has extra checks, requires a cx and may trigger a GC.
     //
-    // - For functions which may have a LazyScript but whose JSScript is known
-    //   to exist, existingScript() will get the script and delazify the
-    //   function if necessary.
+    // - For inlined functions which may have a LazyScript but whose JSScript
+    //   is known to exist, existingScriptForInlinedFunction() will get the
+    //   script and delazify the function if necessary.
     //
     // - For functions known to have a JSScript, nonLazyScript() will get it.
 
@@ -295,12 +286,18 @@ class JSFunction : public JSObject
         return nonLazyScript();
     }
 
-    JSScript *existingScript() {
-        JS_ASSERT(isInterpreted());
+    JSScript *existingScriptForInlinedFunction() {
+        MOZ_ASSERT(isInterpreted());
         if (isInterpretedLazy()) {
+            // Get the script from the canonical function. Ion used the
+            // canonical function to inline the script and because it has
+            // Baseline code it has not been relazified. Note that we can't
+            // use lazyScript->script_ here as it may be null in some cases,
+            // see bug 976536.
             js::LazyScript *lazy = lazyScript();
-            JSScript *script = lazy->maybeScript();
-            JS_ASSERT(script);
+            JSFunction *fun = lazy->functionNonDelazifying();
+            MOZ_ASSERT(fun);
+            JSScript *script = fun->nonLazyScript();
 
             if (shadowZone()->needsBarrier())
                 js::LazyScript::writeBarrierPre(lazy);
@@ -547,6 +544,17 @@ class FunctionExtended : public JSFunction
   public:
     static const unsigned NUM_EXTENDED_SLOTS = 2;
 
+    /* Arrow functions store their lexical |this| in the first extended slot. */
+    static const unsigned ARROW_THIS_SLOT = 0;
+
+    static inline size_t offsetOfExtendedSlot(unsigned which) {
+        MOZ_ASSERT(which < NUM_EXTENDED_SLOTS);
+        return offsetof(FunctionExtended, extendedSlots) + which * sizeof(HeapValue);
+    }
+    static inline size_t offsetOfArrowThisSlot() {
+        return offsetOfExtendedSlot(ARROW_THIS_SLOT);
+    }
+
   private:
     friend class JSFunction;
 
@@ -558,6 +566,11 @@ extern JSFunction *
 CloneFunctionObject(JSContext *cx, HandleFunction fun, HandleObject parent,
                     gc::AllocKind kind = JSFunction::FinalizeKind,
                     NewObjectKind newKindArg = GenericObject);
+
+
+extern bool
+FindBody(JSContext *cx, HandleFunction fun, ConstTwoByteChars chars, size_t length,
+         size_t *bodyStart, size_t *bodyEnd);
 
 } // namespace js
 

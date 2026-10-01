@@ -20,7 +20,7 @@ const {UndoStack} = require("devtools/shared/undo");
 const {editableField, InplaceEditor} = require("devtools/shared/inplace-editor");
 const {gDevTools} = Cu.import("resource:///modules/devtools/gDevTools.jsm", {});
 const {HTMLEditor} = require("devtools/markupview/html-editor");
-const promise = require("sdk/core/promise");
+const promise = require("devtools/toolkit/deprecated-sync-thenables");
 const {Tooltip} = require("devtools/shared/widgets/Tooltip");
 const EventEmitter = require("devtools/toolkit/event-emitter");
 
@@ -110,7 +110,7 @@ MarkupView.prototype = {
   _initTooltips: function() {
     this.tooltip = new Tooltip(this._inspector.panelDoc);
     this.tooltip.startTogglingOnHover(this._elt,
-      this._buildTooltipContent.bind(this));
+      this._isImagePreviewTarget.bind(this));
   },
 
   _initHighlighter: function() {
@@ -177,7 +177,7 @@ MarkupView.prototype = {
   },
 
   _hideBoxModel: function(forceHide) {
-    this._inspector.toolbox.highlighterUtils.unhighlight(forceHide);
+    return this._inspector.toolbox.highlighterUtils.unhighlight(forceHide);
   },
 
   _briefBoxModelTimer: null,
@@ -232,7 +232,15 @@ MarkupView.prototype = {
     updateChildren(documentElement);
   },
 
-  _buildTooltipContent: function(target) {
+  /**
+   * Executed when the mouse hovers over a target in the markup-view and is used
+   * to decide whether this target should be used to display an image preview
+   * tooltip.
+   * Delegates the actual decision to the corresponding MarkupContainer instance
+   * if one is found.
+   * @return the promise returned by MarkupContainer._isImagePreviewTarget
+   */
+  _isImagePreviewTarget: function(target) {
     // From the target passed here, let's find the parent MarkupContainer
     // and ask it if the tooltip should be shown
     let parent = target, container;
@@ -247,7 +255,7 @@ MarkupView.prototype = {
     if (container) {
       // With the newly found container, delegate the tooltip content creation
       // and decision to show or not the tooltip
-      return container._buildTooltipContent(target, this.tooltip);
+      return container._isImagePreviewTarget(target, this.tooltip);
     }
   },
 
@@ -281,15 +289,16 @@ MarkupView.prototype = {
     let done = this._inspector.updating("markup-view");
     if (selection.isNode()) {
       if (this._shouldNewSelectionBeHighlighted()) {
-        this._brieflyShowBoxModel(selection.nodeFront, {
-          scrollIntoView: true
-        });
+        this._brieflyShowBoxModel(selection.nodeFront, {});
       }
 
       this.showNode(selection.nodeFront, true).then(() => {
         if (selection.reason !== "treepanel") {
           this.markNodeAsSelected(selection.nodeFront);
         }
+        done();
+      }, (e) => {
+        console.error(e);
         done();
       });
     } else {
@@ -813,11 +822,17 @@ MarkupView.prototype = {
 
   /**
    * Mark the given node expanded.
-   * @param aNode The NodeFront to mark as expanded.
+   * @param {NodeFront} aNode The NodeFront to mark as expanded.
+   * @param {Boolean} aExpanded Whether the expand or collapse.
+   * @param {Boolean} aExpandDescendants Whether to expand all descendants too
    */
-  setNodeExpanded: function(aNode, aExpanded) {
+  setNodeExpanded: function(aNode, aExpanded, aExpandDescendants) {
     if (aExpanded) {
-      this.expandNode(aNode);
+      if (aExpandDescendants) {
+        this.expandAll(aNode);
+      } else {
+        this.expandNode(aNode);
+      }
     } else {
       this.collapseNode(aNode);
     }
@@ -855,8 +870,10 @@ MarkupView.prototype = {
       let parent = node.parentNode();
       if (!container.elt.parentNode) {
         let parentContainer = this._containers.get(parent);
-        parentContainer.childrenDirty = true;
-        this._updateChildren(parentContainer, {expand: node});
+        if (parentContainer) {
+          parentContainer.childrenDirty = true;
+          this._updateChildren(parentContainer, {expand: node});
+        }
       }
 
       node = parent;
@@ -1044,9 +1061,13 @@ MarkupView.prototype = {
    * Tear down the markup panel.
    */
   destroy: function() {
+    if (this._destroyer) {
+      return this._destroyer;
+    }
+
     // Note that if the toolbox is closed, this will work fine, but will fail
     // in case the browser is closed and will trigger a noSuchActor message.
-    this._hideBoxModel();
+    this._destroyer = this._hideBoxModel();
 
     this._hoveredNode = null;
     this._inspector.toolbox.off("picker-node-hovered", this._onToolboxPickerHover);
@@ -1100,6 +1121,8 @@ MarkupView.prototype = {
 
     this.tooltip.destroy();
     this.tooltip = null;
+
+    return this._destroyer;
   },
 
   /**
@@ -1265,6 +1288,13 @@ MarkupContainer.prototype = {
     }
   },
 
+  /**
+   * If the node is an image or canvas (@see isPreviewable), then get the
+   * image data uri from the server so that it can then later be previewed in
+   * a tooltip if needed.
+   * Stores a promise in this.tooltipData.data that resolves when the data has
+   * been retrieved
+   */
   _prepareImagePreview: function() {
     if (this.isPreviewable()) {
       // Get the image data for later so that when the user actually hovers over
@@ -1291,6 +1321,27 @@ MarkupContainer.prototype = {
     }
   },
 
+  /**
+   * Executed by MarkupView._isImagePreviewTarget which is itself called when the
+   * mouse hovers over a target in the markup-view.
+   * Checks if the target is indeed something we want to have an image tooltip
+   * preview over and, if so, inserts content into the tooltip.
+   * @return a promise that resolves when the content has been inserted or
+   * rejects if no preview is required. This promise is then used by Tooltip.js
+   * to decide if/when to show the tooltip
+   */
+  _isImagePreviewTarget: function(target, tooltip) {
+    if (!this.tooltipData || this.tooltipData.target !== target) {
+      return promise.reject();
+    }
+
+    return this.tooltipData.data.then(({data, size}) => {
+      tooltip.setImageContent(data, size);
+    }, () => {
+      tooltip.setBrokenImageContent();
+    });
+  },
+
   copyImageDataUri: function() {
     // We need to send again a request to gettooltipData even if one was sent for
     // the tooltip, because we want the full-size image
@@ -1299,17 +1350,6 @@ MarkupContainer.prototype = {
         clipboardHelper.copyString(str, this.markup.doc);
       });
     });
-  },
-
-  _buildTooltipContent: function(target, tooltip) {
-    if (this.tooltipData && target === this.tooltipData.target) {
-      this.tooltipData.data.then(({data, size}) => {
-        tooltip.setImageContent(data, size);
-      }, () => {
-        tooltip.setBrokenImageContent();
-      });
-      return true;
-    }
   },
 
   /**
@@ -1379,7 +1419,7 @@ MarkupContainer.prototype = {
   _onToggle: function(event) {
     this.markup.navigate(this);
     if(this.hasChildren) {
-      this.markup.setNodeExpanded(this.node, !this.expanded);
+      this.markup.setNodeExpanded(this.node, !this.expanded, event.altKey);
     }
     event.stopPropagation();
   },

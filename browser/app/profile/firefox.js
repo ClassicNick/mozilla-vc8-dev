@@ -663,18 +663,133 @@ pref("plugins.click_to_play", true);
 
 pref("plugins.hideMissingPluginsNotification", false);
 
-#ifdef RELEASE_BUILD
-// For now, plugins other than Java and Flash are enabled in beta/release
-// and click-to-activate in earlier channels.
-pref("plugin.default.state", 2);
-#else
 pref("plugin.default.state", 1);
-#endif
+
+// Plugins bundled in XPIs are enabled by default.
+pref("plugin.defaultXpi.state", 2);
 
 // Flash is enabled by default, and Java is click-to-activate by default on
 // all channels.
 pref("plugin.state.flash", 2);
 pref("plugin.state.java", 1);
+
+// Whitelist Requests
+
+// Unity player, bug 979849
+#ifdef XP_WIN
+pref("plugin.state.npunity3d", 2);
+#endif
+#ifdef XP_MACOSX
+pref("plugin.state.unity web player", 2);
+#endif
+
+// Cisco Jabber SDK, bug 980133
+#ifdef XP_WIN
+pref("plugin.state.npciscowebcommunicator", 2);
+#endif
+#ifdef XP_MACOSX
+pref("plugin.state.ciscowebcommunicator", 2);
+#endif
+
+// McAfee Security Scanner detection plugin, bug 980772
+#ifdef XP_WIN
+pref("plugin.state.npmcafeemss", 2);
+#endif
+
+// Cisco VGConnect for directv.com, bug 981403
+#ifdef XP_WIN
+pref("plugin.state.npplayerplugin", 2);
+#endif
+#ifdef XP_MACOSX
+pref("plugin.state.playerplugin", 2);
+#endif
+
+// Cisco Jabber Client, bug 981905
+#ifdef XP_WIN
+pref("plugin.state.npchip", 2);
+#endif
+#ifdef XP_MACOSX
+pref("plugin.state.cisco jabber guest plug-in", 2);
+#endif
+
+// Estonian ID-card plugin, bug 982045
+#ifdef XP_WIN
+pref("plugin.state.npesteid-firefox-plugin", 2);
+#endif
+#ifdef XP_MACOSX
+pref("plugin.state.esteidfirefoxplugin", 2);
+#endif
+#ifdef UNIX_BUT_NOT_MAC
+pref("plugin.state.npesteid-firefox-plugin", 2);
+#endif
+
+// coupons.com, bug 984441
+#ifdef XP_WIN
+pref("plugin.state.npmozcouponprinter", 2);
+#endif
+#ifdef XP_MACOSX
+pref("plugin.state.couponprinter-firefox_v", 2);
+#endif
+
+// Nexus Personal BankID, bug 987056
+pref("plugin.state.npbispbrowser", 2);
+
+// Gradecam, bug 988119
+#ifdef XP_WIN
+pref("plugin.state.npgcplugin", 2);
+#endif
+#ifdef XP_MACOSX
+pref("plugin.state.gcplugin", 2);
+#endif
+
+// Smart Card Plugin, bug 988781
+#ifdef XP_WIN
+pref("plugin.state.npwebcard", 2);
+#endif
+
+// Cisco WebEx, bug 989096
+#ifdef XP_WIN
+pref("plugin.state.npatgpc", 2);
+#endif
+#ifdef XP_MACOSX
+pref("plugin.state.webex", 2);
+#endif
+#ifdef UNIX_BUT_NOT_MAC
+pref("plugin.state.npatgpc", 2);
+#endif
+
+// Skype, bug 990067
+#ifdef XP_WIN
+pref("plugin.state.npskypewebplugin", 2);
+#endif
+#ifdef XP_MACOSX
+pref("plugin.state.skypewebplugin", 2);
+#endif
+
+// Facebook video calling, bug 990068
+#ifdef XP_WIN
+pref("plugin.state.npfacebookvideocalling", 2);
+#endif
+#ifdef XP_MACOSX
+pref("plugin.state.facebookvideocalling", 2);
+#endif
+
+// MS Office Lync plugin, bug 990069
+#ifdef XP_WIN
+pref("plugin.state.npmeetingjoinpluginoc", 2);
+#endif
+#ifdef XP_MACOSX
+pref("plugin.state.lwaplugin", 2);
+#endif
+
+// VidyoWeb, bug 990286
+#ifdef XP_WIN
+pref("plugin.state.npvidyoweb", 2);
+#endif
+#ifdef XP_MACOSX
+pref("plugin.state.npvidyoweb", 2);
+pref("plugin.state.vidyoweb", 2);
+#endif
 
 // display door hanger if flash not installed
 pref("plugins.notifyMissingFlash", true);
@@ -828,12 +943,12 @@ pref("urlclassifier.gethashnoise", 4);
 // the database.
 pref("urlclassifier.max-complete-age", 2700);
 // Tables for application reputation.
-pref("urlclassifier.download_block_table", "goog-badbinurl-shavar");
+pref("urlclassifier.downloadBlockTable", "goog-badbinurl-shavar");
 #ifdef XP_WIN
 // Only download the whitelist on Windows, since the whitelist is
 // only useful for suppressing remote lookups for signed binaries which we can
 // only verify on Windows (Bug 974579).
-pref("urlclassifier.download_allow_table", "goog-downloadwhite-digest256");
+pref("urlclassifier.downloadAllowTable", "goog-downloadwhite-digest256");
 #endif
 #endif
 
@@ -1176,7 +1291,7 @@ pref("devtools.profiler.ui.show-platform-data", false);
 pref("devtools.netmonitor.enabled", true);
 
 // The default Network Monitor UI settings
-pref("devtools.netmonitor.panes-network-details-width", 450);
+pref("devtools.netmonitor.panes-network-details-width", 550);
 pref("devtools.netmonitor.panes-network-details-height", 450);
 pref("devtools.netmonitor.statistics", true);
 pref("devtools.netmonitor.filters", "[\"all\"]");
@@ -1205,8 +1320,11 @@ pref("devtools.styleeditor.autocompletion-enabled", true);
 // Enable the Shader Editor.
 pref("devtools.shadereditor.enabled", false);
 
-// Enable tools for Chrome development.
-pref("devtools.chrome.enabled", false);
+// Enable the Canvas Debugger.
+pref("devtools.canvasdebugger.enabled", false);
+
+// Enable the Web Audio Editor
+pref("devtools.webaudioeditor.enabled", false);
 
 // Default theme ("dark" or "light")
 pref("devtools.theme", "light");
@@ -1225,8 +1343,8 @@ pref("devtools.webconsole.filter.csserror", true);
 pref("devtools.webconsole.filter.cssparser", false);
 pref("devtools.webconsole.filter.csslog", false);
 pref("devtools.webconsole.filter.exception", true);
-pref("devtools.webconsole.filter.jswarn", false);
-pref("devtools.webconsole.filter.jslog", true);
+pref("devtools.webconsole.filter.jswarn", true);
+pref("devtools.webconsole.filter.jslog", false);
 pref("devtools.webconsole.filter.error", true);
 pref("devtools.webconsole.filter.warn", true);
 pref("devtools.webconsole.filter.info", true);
@@ -1236,10 +1354,10 @@ pref("devtools.webconsole.filter.secwarn", true);
 
 // Remember the Browser Console filters
 pref("devtools.browserconsole.filter.network", true);
-pref("devtools.browserconsole.filter.networkinfo", true);
+pref("devtools.browserconsole.filter.networkinfo", false);
 pref("devtools.browserconsole.filter.netwarn", true);
 pref("devtools.browserconsole.filter.csserror", true);
-pref("devtools.browserconsole.filter.cssparser", true);
+pref("devtools.browserconsole.filter.cssparser", false);
 pref("devtools.browserconsole.filter.csslog", false);
 pref("devtools.browserconsole.filter.exception", true);
 pref("devtools.browserconsole.filter.jswarn", true);
@@ -1271,15 +1389,20 @@ pref("devtools.hud.loglimit.cssparser", 200);
 pref("devtools.hud.loglimit.exception", 200);
 pref("devtools.hud.loglimit.console", 200);
 
+// By how many times eyedropper will magnify pixels
+pref("devtools.eyedropper.zoom", 6);
+
 // The developer tools editor configuration:
 // - tabsize: how many spaces to use when a Tab character is displayed.
 // - expandtab: expand Tab characters to spaces.
 // - keymap: which keymap to use (can be 'default', 'emacs' or 'vim')
 // - autoclosebrackets: whether to permit automatic bracket/quote closing.
-pref("devtools.editor.tabsize", 4);
+// - detectindentation: whether to detect the indentation from the file
+pref("devtools.editor.tabsize", 2);
 pref("devtools.editor.expandtab", true);
 pref("devtools.editor.keymap", "default");
 pref("devtools.editor.autoclosebrackets", true);
+pref("devtools.editor.detectindentation", true);
 
 // Enable the Font Inspector
 pref("devtools.fontinspector.enabled", true);
@@ -1311,6 +1434,8 @@ pref("browser.newtabpage.rows", 3);
 
 // number of columns of newtab grid
 pref("browser.newtabpage.columns", 3);
+
+pref("browser.newtabpage.directorySource", "data:application/json,{}");
 
 // Enable the DOM fullscreen API.
 pref("full-screen-api.enabled", true);
@@ -1360,6 +1485,8 @@ pref("security.csp.speccompliant", true);
 // Block insecure active content on https pages
 pref("security.mixed_content.block_active_content", true);
 
+pref("security.use_mozillapkix_verification", true);
+
 // Override the Gecko-default value of false for Firefox.
 pref("plain_text.wrap_long_lines", true);
 
@@ -1369,6 +1496,11 @@ pref("dom.debug.propagate_gesture_events_through_content", false);
 
 // The request URL of the GeoLocation backend.
 pref("geo.wifi.uri", "https://www.googleapis.com/geolocation/v1/geolocate?key=%GOOGLE_API_KEY%");
+#ifdef RELEASE_BUILD
+pref("geo.wifi.logging.enabled", false);
+#else
+pref("geo.wifi.logging.enabled", true);
+#endif
 
 // Necko IPC security checks only needed for app isolation for cookies/cache/etc:
 // currently irrelevant for desktop e10s
@@ -1403,3 +1535,18 @@ pref("ui.key.menuAccessKeyFocuses", true);
 
 // Delete HTTP cache v2 data of users that didn't opt-in manually
 pref("browser.cache.auto_delete_cache_version", 1);
+// Play with different values of the decay time and get telemetry,
+// 0 means to randomize (and persist) the experiment value in users' profiles,
+// -1 means no experiment is run and we use the preferred value for frecency (6h)
+pref("browser.cache.frecency_experiment", 0);
+
+pref("browser.translation.detectLanguage", false);
+
+// Telemetry experiments settings.
+pref("experiments.enabled", true);
+pref("experiments.manifest.fetchIntervalSeconds", 86400);
+pref("experiments.manifest.uri", "https://telemetry-experiment.cdn.mozilla.net/manifest/v1/firefox/%VERSION%/%CHANNEL%");
+pref("experiments.manifest.certs.1.commonName", "*.cdn.mozilla.net");
+pref("experiments.manifest.certs.1.issuerName", "CN=Cybertrust Public SureServer SV CA,O=Cybertrust Inc");
+// Whether experiments are supported by the current application profile.
+pref("experiments.supported", true);

@@ -20,6 +20,7 @@
 #include "nsIDOMDeviceStorage.h"
 #include "nsIDOMEventListener.h"
 #include "nsIScriptSecurityManager.h"
+#include "Navigator.h"
 #include "nsXULAppAPI.h"
 #include "DOMCameraManager.h"
 #include "DOMCameraCapabilities.h"
@@ -29,6 +30,7 @@
 #include "mozilla/dom/CameraControlBinding.h"
 #include "mozilla/dom/CameraManagerBinding.h"
 #include "mozilla/dom/CameraCapabilitiesBinding.h"
+#include "DOMCameraDetectedFace.h"
 #include "mozilla/dom/BindingUtils.h"
 
 using namespace mozilla;
@@ -43,7 +45,7 @@ NS_INTERFACE_MAP_END_INHERITING(DOMMediaStream)
 NS_IMPL_ADDREF_INHERITED(nsDOMCameraControl, DOMMediaStream)
 NS_IMPL_RELEASE_INHERITED(nsDOMCameraControl, DOMMediaStream)
 
-NS_IMPL_CYCLE_COLLECTION_INHERITED_18(nsDOMCameraControl, DOMMediaStream,
+NS_IMPL_CYCLE_COLLECTION_INHERITED_20(nsDOMCameraControl, DOMMediaStream,
                                       mCapabilities,
                                       mWindow,
                                       mGetCameraOnSuccessCb,
@@ -61,7 +63,16 @@ NS_IMPL_CYCLE_COLLECTION_INHERITED_18(nsDOMCameraControl, DOMMediaStream,
                                       mOnShutterCb,
                                       mOnClosedCb,
                                       mOnRecorderStateChangeCb,
-                                      mOnPreviewStateChangeCb)
+                                      mOnPreviewStateChangeCb,
+                                      mOnAutoFocusMovingCb,
+                                      mOnFacesDetectedCb)
+
+/* static */
+bool
+nsDOMCameraControl::HasSupport(JSContext* aCx, JSObject* aGlobal)
+{
+  return Navigator::HasCameraSupport(aCx, aGlobal);
+}
 
 class mozilla::StartRecordingHelper : public nsIDOMEventListener
 {
@@ -142,6 +153,8 @@ nsDOMCameraControl::nsDOMCameraControl(uint32_t aCameraId,
   , mOnClosedCb(nullptr)
   , mOnRecorderStateChangeCb(nullptr)
   , mOnPreviewStateChangeCb(nullptr)
+  , mOnAutoFocusMovingCb(nullptr)
+  , mOnFacesDetectedCb(nullptr)
   , mWindow(aWindow)
 {
   DOM_CAMERA_LOGT("%s:%d : this=%p\n", __func__, __LINE__, this);
@@ -200,9 +213,9 @@ nsDOMCameraControl::~nsDOMCameraControl()
 }
 
 JSObject*
-nsDOMCameraControl::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope)
+nsDOMCameraControl::WrapObject(JSContext* aCx)
 {
-  return CameraControlBinding::Wrap(aCx, aScope, this);
+  return CameraControlBinding::Wrap(aCx, this);
 }
 
 bool
@@ -487,7 +500,7 @@ nsDOMCameraControl::GetPictureSize(JSContext* cx, ErrorResult& aRv)
   JS::Rooted<JS::Value> value(cx);
 
   ICameraControl::Size size;
-  aRv = mCameraControl->Get(CAMERA_PARAM_PICTURESIZE, size);
+  aRv = mCameraControl->Get(CAMERA_PARAM_PICTURE_SIZE, size);
   if (aRv.Failed()) {
     return value;
   }
@@ -505,7 +518,7 @@ nsDOMCameraControl::SetPictureSize(JSContext* aCx, JS::Handle<JS::Value> aSize, 
   }
 
   ICameraControl::Size s = { size.mWidth, size.mHeight };
-  aRv = mCameraControl->Set(CAMERA_PARAM_PICTURESIZE, s);
+  aRv = mCameraControl->Set(CAMERA_PARAM_PICTURE_SIZE, s);
 }
 
 /* attribute any thumbnailSize */
@@ -610,57 +623,72 @@ nsDOMCameraControl::SensorAngle()
   return angle;
 }
 
-already_AddRefed<CameraShutterCallback>
+// Callback attributes
+
+CameraShutterCallback*
 nsDOMCameraControl::GetOnShutter()
 {
-  nsCOMPtr<CameraShutterCallback> cb = mOnShutterCb;
-  return cb.forget();
+  return mOnShutterCb;
 }
-
 void
 nsDOMCameraControl::SetOnShutter(CameraShutterCallback* aCb)
 {
   mOnShutterCb = aCb;
 }
 
-/* attribute CameraClosedCallback onClosed; */
-already_AddRefed<CameraClosedCallback>
+CameraClosedCallback*
 nsDOMCameraControl::GetOnClosed()
 {
-  nsCOMPtr<CameraClosedCallback> onClosed = mOnClosedCb;
-  return onClosed.forget();
+  return mOnClosedCb;
 }
-
 void
 nsDOMCameraControl::SetOnClosed(CameraClosedCallback* aCb)
 {
   mOnClosedCb = aCb;
 }
 
-already_AddRefed<CameraRecorderStateChange>
+CameraRecorderStateChange*
 nsDOMCameraControl::GetOnRecorderStateChange()
 {
-  nsCOMPtr<CameraRecorderStateChange> cb = mOnRecorderStateChangeCb;
-  return cb.forget();
+  return mOnRecorderStateChangeCb;
 }
-
 void
 nsDOMCameraControl::SetOnRecorderStateChange(CameraRecorderStateChange* aCb)
 {
   mOnRecorderStateChangeCb = aCb;
 }
 
-/* attribute CameraPreviewStateChange onPreviewStateChange; */
-already_AddRefed<CameraPreviewStateChange>
+CameraPreviewStateChange*
 nsDOMCameraControl::GetOnPreviewStateChange()
 {
-  nsCOMPtr<CameraPreviewStateChange> cb = mOnPreviewStateChangeCb;
-  return cb.forget();
+  return mOnPreviewStateChangeCb;
 }
 void
 nsDOMCameraControl::SetOnPreviewStateChange(CameraPreviewStateChange* aCb)
 {
   mOnPreviewStateChangeCb = aCb;
+}
+
+CameraAutoFocusMovingCallback*
+nsDOMCameraControl::GetOnAutoFocusMoving()
+{
+  return mOnAutoFocusMovingCb;
+}
+void
+nsDOMCameraControl::SetOnAutoFocusMoving(CameraAutoFocusMovingCallback* aCb)
+{
+  mOnAutoFocusMovingCb = aCb;
+}
+
+CameraFaceDetectionCallback*
+nsDOMCameraControl::GetOnFacesDetected()
+{
+  return mOnFacesDetectedCb;
+}
+void
+nsDOMCameraControl::SetOnFacesDetected(CameraFaceDetectionCallback* aCb)
+{
+  mOnFacesDetectedCb = aCb;
 }
 
 already_AddRefed<dom::CameraCapabilities>
@@ -699,7 +727,7 @@ nsDOMCameraControl::StartRecording(const CameraStartRecordingOptions& aOptions,
     mAudioChannelAgent = do_CreateInstance("@mozilla.org/audiochannelagent;1");
     if (mAudioChannelAgent) {
       // Camera app will stop recording when it falls to the background, so no callback is necessary.
-      mAudioChannelAgent->Init(mWindow, AUDIO_CHANNEL_CONTENT, nullptr);
+      mAudioChannelAgent->Init(mWindow, (int32_t)AudioChannel::Content, nullptr);
       // Video recording doesn't output any sound, so it's not necessary to check canPlay.
       int32_t canPlay;
       mAudioChannelAgent->StartPlaying(&canPlay);
@@ -736,6 +764,7 @@ nsDOMCameraControl::OnCreatedFileDescriptor(bool aSucceeded)
     o.rotation = mOptions.mRotation;
     o.maxFileSizeBytes = mOptions.mMaxFileSizeBytes;
     o.maxVideoLengthMs = mOptions.mMaxVideoLengthMs;
+    o.autoEnableLowLightTorch = mOptions.mAutoEnableLowLightTorch;
     nsresult rv = mCameraControl->StartRecording(mDSFileDescriptor.get(), &o);
     if (NS_SUCCEEDED(rv)) {
       return;
@@ -783,7 +812,7 @@ nsDOMCameraControl::SetConfiguration(const CameraConfiguration& aConfiguration,
 {
   MOZ_ASSERT(mCameraControl);
 
-  nsCOMPtr<CameraTakePictureCallback> cb = mTakePictureOnSuccessCb;
+  nsRefPtr<CameraTakePictureCallback> cb = mTakePictureOnSuccessCb;
   if (cb) {
     // We're busy taking a picture, can't change modes right now.
     if (aOnError.WasPassed()) {
@@ -815,6 +844,29 @@ nsDOMCameraControl::SetConfiguration(const CameraConfiguration& aConfiguration,
   aRv = mCameraControl->SetConfiguration(config);
 }
 
+class ImmediateErrorCallback : public nsRunnable
+{
+public:
+  ImmediateErrorCallback(CameraErrorCallback* aCallback, const nsAString& aMessage)
+    : mCallback(aCallback)
+    , mMessage(aMessage)
+  { }
+  
+  NS_IMETHODIMP
+  Run()
+  {
+    MOZ_ASSERT(NS_IsMainThread());
+    ErrorResult ignored;
+    mCallback->Call(mMessage, ignored);
+    return NS_OK;
+  }
+
+protected:
+  nsRefPtr<CameraErrorCallback> mCallback;
+  nsString mMessage;
+};
+
+
 void
 nsDOMCameraControl::AutoFocus(CameraAutoFocusCallback& aOnSuccess,
                               const Optional<OwningNonNull<CameraErrorCallback> >& aOnError,
@@ -822,17 +874,16 @@ nsDOMCameraControl::AutoFocus(CameraAutoFocusCallback& aOnSuccess,
 {
   MOZ_ASSERT(mCameraControl);
 
-  nsCOMPtr<CameraAutoFocusCallback> cb = mAutoFocusOnSuccessCb.forget();
-  bool cancel = false;
+  nsRefPtr<CameraAutoFocusCallback> cb = mAutoFocusOnSuccessCb;
   if (cb) {
-    // we have a callback, which means we're already in the process of
-    // auto-focusing--cancel the old callback
-    nsCOMPtr<CameraErrorCallback> ecb = mAutoFocusOnErrorCb.forget();
-    if (ecb) {
-      ErrorResult ignored;
-      ecb->Call(NS_LITERAL_STRING("Interrupted"), ignored);
+    if (aOnError.WasPassed()) {
+      // There is already a call to AutoFocus() in progress, abort this new one
+      // and invoke the error callback (if one was passed in).
+      NS_DispatchToMainThread(new ImmediateErrorCallback(&aOnError.Value(),
+                              NS_LITERAL_STRING("AutoFocusAlreadyInProgress")));
     }
-    cancel = true;
+    aRv = NS_ERROR_FAILURE;
+    return;
   }
 
   mAutoFocusOnSuccessCb = &aOnSuccess;
@@ -841,7 +892,21 @@ nsDOMCameraControl::AutoFocus(CameraAutoFocusCallback& aOnSuccess,
     mAutoFocusOnErrorCb = &aOnError.Value();
   }
 
-  aRv = mCameraControl->AutoFocus(cancel);
+  aRv = mCameraControl->AutoFocus();
+}
+
+void
+nsDOMCameraControl::StartFaceDetection(ErrorResult& aRv)
+{
+  MOZ_ASSERT(mCameraControl);
+  aRv = mCameraControl->StartFaceDetection();
+}
+
+void
+nsDOMCameraControl::StopFaceDetection(ErrorResult& aRv)
+{
+  MOZ_ASSERT(mCameraControl);
+  aRv = mCameraControl->StopFaceDetection();
 }
 
 void
@@ -852,13 +917,13 @@ nsDOMCameraControl::TakePicture(const CameraPictureOptions& aOptions,
 {
   MOZ_ASSERT(mCameraControl);
 
-  nsCOMPtr<CameraTakePictureCallback> cb = mTakePictureOnSuccessCb;
+  nsRefPtr<CameraTakePictureCallback> cb = mTakePictureOnSuccessCb;
   if (cb) {
-    // There is already a call to TakePicture() in progress, abort this one and
-    //  invoke the error callback (if one was passed in).
     if (aOnError.WasPassed()) {
-      ErrorResult ignored;
-      aOnError.Value().Call(NS_LITERAL_STRING("TakePictureAlreadyInProgress"), ignored);
+      // There is already a call to TakePicture() in progress, abort this new
+      // one and invoke the error callback (if one was passed in).
+      NS_DispatchToMainThread(new ImmediateErrorCallback(&aOnError.Value(),
+                              NS_LITERAL_STRING("TakePictureAlreadyInProgress")));
     }
     aRv = NS_ERROR_FAILURE;
     return;
@@ -916,6 +981,13 @@ nsDOMCameraControl::ReleaseHardware(const Optional<OwningNonNull<CameraReleaseCa
 }
 
 void
+nsDOMCameraControl::ResumeContinuousFocus(ErrorResult& aRv)
+{
+  MOZ_ASSERT(mCameraControl);
+  aRv = mCameraControl->ResumeContinuousFocus();
+}
+
+void
 nsDOMCameraControl::Shutdown()
 {
   DOM_CAMERA_LOGI("%s:%d\n", __func__, __LINE__);
@@ -942,6 +1014,8 @@ nsDOMCameraControl::Shutdown()
   mOnClosedCb = nullptr;
   mOnRecorderStateChangeCb = nullptr;
   mOnPreviewStateChangeCb = nullptr;
+  mOnAutoFocusMovingCb = nullptr;
+  mOnFacesDetectedCb = nullptr;
 
   mCameraControl->Shutdown();
 }
@@ -971,7 +1045,7 @@ nsDOMCameraControl::OnHardwareStateChange(CameraControlListener::HardwareState a
       // The hardware is open, so we can return a camera to JS, even if
       // the preview hasn't started yet.
       if (mGetCameraOnSuccessCb) {
-        nsCOMPtr<GetCameraCallback> cb = mGetCameraOnSuccessCb.forget();
+        nsRefPtr<GetCameraCallback> cb = mGetCameraOnSuccessCb.forget();
         ErrorResult ignored;
         mGetCameraOnErrorCb = nullptr;
         cb->Call(*this, *mCurrentConfiguration, ignored);
@@ -981,12 +1055,12 @@ nsDOMCameraControl::OnHardwareStateChange(CameraControlListener::HardwareState a
     case CameraControlListener::kHardwareClosed:
       if (mReleaseOnSuccessCb) {
         // If we have this event handler, this was a solicited hardware close.
-        nsCOMPtr<CameraReleaseCallback> cb = mReleaseOnSuccessCb.forget();
+        nsRefPtr<CameraReleaseCallback> cb = mReleaseOnSuccessCb.forget();
         mReleaseOnErrorCb = nullptr;
         cb->Call(ignored);
       } else if(mOnClosedCb) {
         // If not, something else closed the hardware.
-        nsCOMPtr<CameraClosedCallback> cb = mOnClosedCb;
+        nsRefPtr<CameraClosedCallback> cb = mOnClosedCb;
         cb->Call(ignored);
       }
       break;
@@ -1003,7 +1077,7 @@ nsDOMCameraControl::OnShutter()
 
   DOM_CAMERA_LOGI("DOM ** SNAP **\n");
 
-  nsCOMPtr<CameraShutterCallback> cb = mOnShutterCb;
+  nsRefPtr<CameraShutterCallback> cb = mOnShutterCb;
   if (cb) {
     ErrorResult ignored;
     cb->Call(ignored);
@@ -1030,7 +1104,7 @@ nsDOMCameraControl::OnPreviewStateChange(CameraControlListener::PreviewState aSt
       break;
   }
 
-  nsCOMPtr<CameraPreviewStateChange> cb = mOnPreviewStateChangeCb;
+  nsRefPtr<CameraPreviewStateChange> cb = mOnPreviewStateChangeCb;
   ErrorResult ignored;
   cb->Call(state, ignored);
 }
@@ -1048,7 +1122,7 @@ nsDOMCameraControl::OnRecorderStateChange(CameraControlListener::RecorderState a
   switch (aState) {
     case CameraControlListener::kRecorderStarted:
       if (mStartRecordingOnSuccessCb) {
-        nsCOMPtr<CameraStartRecordingCallback> cb = mStartRecordingOnSuccessCb.forget();
+        nsRefPtr<CameraStartRecordingCallback> cb = mStartRecordingOnSuccessCb.forget();
         mStartRecordingOnErrorCb = nullptr;
         cb->Call(ignored);
       }
@@ -1091,7 +1165,7 @@ nsDOMCameraControl::OnRecorderStateChange(CameraControlListener::RecorderState a
       return;
   }
 
-  nsCOMPtr<CameraRecorderStateChange> cb = mOnRecorderStateChangeCb;
+  nsRefPtr<CameraRecorderStateChange> cb = mOnRecorderStateChangeCb;
   if (cb) {
     cb->Call(state, ignored);
   }
@@ -1117,7 +1191,7 @@ nsDOMCameraControl::OnConfigurationChange(DOMCameraConfiguration* aConfiguration
   DOM_CAMERA_LOGI("    recorder profile       : %s\n",
     NS_ConvertUTF16toUTF8(mCurrentConfiguration->mRecorderProfile).get());
 
-  nsCOMPtr<CameraSetConfigurationCallback> cb = mSetConfigurationOnSuccessCb.forget();
+  nsRefPtr<CameraSetConfigurationCallback> cb = mSetConfigurationOnSuccessCb.forget();
   mSetConfigurationOnErrorCb = nullptr;
   if (cb) {
     ErrorResult ignored;
@@ -1130,7 +1204,7 @@ nsDOMCameraControl::OnAutoFocusComplete(bool aAutoFocusSucceeded)
 {
   MOZ_ASSERT(NS_IsMainThread());
 
-  nsCOMPtr<CameraAutoFocusCallback> cb = mAutoFocusOnSuccessCb.forget();
+  nsRefPtr<CameraAutoFocusCallback> cb = mAutoFocusOnSuccessCb.forget();
   mAutoFocusOnErrorCb = nullptr;
   if (cb) {
     ErrorResult ignored;
@@ -1139,11 +1213,49 @@ nsDOMCameraControl::OnAutoFocusComplete(bool aAutoFocusSucceeded)
 }
 
 void
+nsDOMCameraControl::OnAutoFocusMoving(bool aIsMoving)
+{
+  MOZ_ASSERT(NS_IsMainThread());
+
+  nsRefPtr<CameraAutoFocusMovingCallback> cb = mOnAutoFocusMovingCb;
+  if (cb) {
+    ErrorResult ignored;
+    cb->Call(aIsMoving, ignored);
+  }
+}
+
+void
+nsDOMCameraControl::OnFacesDetected(const nsTArray<ICameraControl::Face>& aFaces)
+{
+  DOM_CAMERA_LOGI("DOM OnFacesDetected %u face(s)\n", aFaces.Length());
+  MOZ_ASSERT(NS_IsMainThread());
+
+  nsRefPtr<CameraFaceDetectionCallback> cb = mOnFacesDetectedCb;
+  if (!cb) {
+    return;
+  }
+
+  Sequence<OwningNonNull<DOMCameraDetectedFace> > faces;
+  uint32_t len = aFaces.Length();
+
+  if (faces.SetCapacity(len)) {
+    nsRefPtr<DOMCameraDetectedFace> f;
+    for (uint32_t i = 0; i < len; ++i) {
+      f = new DOMCameraDetectedFace(this, aFaces[i]);
+      *faces.AppendElement() = f.forget().take();
+    }
+  }
+
+  ErrorResult ignored;
+  cb->Call(faces, ignored);
+}
+
+void
 nsDOMCameraControl::OnTakePictureComplete(nsIDOMBlob* aPicture)
 {
   MOZ_ASSERT(NS_IsMainThread());
 
-  nsCOMPtr<CameraTakePictureCallback> cb = mTakePictureOnSuccessCb.forget();
+  nsRefPtr<CameraTakePictureCallback> cb = mTakePictureOnSuccessCb.forget();
   mTakePictureOnErrorCb = nullptr;
   if (!cb) {
     // Warn because it shouldn't be possible to get here without
@@ -1164,36 +1276,37 @@ nsDOMCameraControl::OnError(CameraControlListener::CameraErrorContext aContext, 
     NS_LossyConvertUTF16toASCII(aError).get());
   MOZ_ASSERT(NS_IsMainThread());
 
-  nsCOMPtr<CameraErrorCallback>* errorCb;
+  nsRefPtr<CameraErrorCallback> errorCb;
+
   switch (aContext) {
     case CameraControlListener::kInStartCamera:
       mGetCameraOnSuccessCb = nullptr;
-      errorCb = &mGetCameraOnErrorCb;
+      errorCb = mGetCameraOnErrorCb.forget();
       break;
 
     case CameraControlListener::kInStopCamera:
       mReleaseOnSuccessCb = nullptr;
-      errorCb = &mReleaseOnErrorCb;
+      errorCb = mReleaseOnErrorCb.forget();
       break;
 
     case CameraControlListener::kInSetConfiguration:
       mSetConfigurationOnSuccessCb = nullptr;
-      errorCb = &mSetConfigurationOnErrorCb;
+      errorCb = mSetConfigurationOnErrorCb.forget();
       break;
 
     case CameraControlListener::kInAutoFocus:
       mAutoFocusOnSuccessCb = nullptr;
-      errorCb = &mAutoFocusOnErrorCb;
+      errorCb = mAutoFocusOnErrorCb.forget();
       break;
 
     case CameraControlListener::kInTakePicture:
       mTakePictureOnSuccessCb = nullptr;
-      errorCb = &mTakePictureOnErrorCb;
+      errorCb = mTakePictureOnErrorCb.forget();
       break;
 
     case CameraControlListener::kInStartRecording:
       mStartRecordingOnSuccessCb = nullptr;
-      errorCb = &mStartRecordingOnErrorCb;
+      errorCb = mStartRecordingOnErrorCb.forget();
       break;
 
     case CameraControlListener::kInStopRecording:
@@ -1231,17 +1344,13 @@ nsDOMCameraControl::OnError(CameraControlListener::CameraErrorContext aContext, 
       return;
   }
 
-  MOZ_ASSERT(errorCb);
-
-  if (!*errorCb) {
+  if (!errorCb) {
     DOM_CAMERA_LOGW("DOM No error handler for error '%s' in context=%d\n",
       NS_LossyConvertUTF16toASCII(aError).get(), aContext);
     return;
   }
 
-  // kung-fu death grip
-  nsCOMPtr<CameraErrorCallback> cb = (*errorCb).forget();
   ErrorResult ignored;
-  cb->Call(aError, ignored);
+  errorCb->Call(aError, ignored);
 }
 

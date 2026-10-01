@@ -16,7 +16,7 @@ const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 
 Cu.import('resource://gre/modules/XPCOMUtils.jsm');
 Cu.import('resource://gre/modules/Services.jsm');
-Cu.import('resource://gre/modules/DataStore.jsm');
+Cu.import('resource://gre/modules/DataStoreImpl.jsm');
 Cu.import("resource://gre/modules/DataStoreDB.jsm");
 Cu.import("resource://gre/modules/DOMRequestHelper.jsm");
 
@@ -352,10 +352,15 @@ DataStoreService.prototype = {
     for (let i = 0; i < aStores.length; ++i) {
       let obj = new DataStore(aWindow, aStores[i].name,
                               aStores[i].owner, aStores[i].readOnly);
-      let exposedObj = aWindow.DataStore._create(aWindow, obj);
-      obj.exposedObject = exposedObj;
 
-      results.push(exposedObj);
+      let storeImpl = aWindow.DataStoreImpl._create(aWindow, obj);
+
+      let exposedStore = new aWindow.DataStore();
+      exposedStore.setDataStoreImpl(storeImpl);
+
+      obj.exposedObject = exposedStore;
+
+      results.push(exposedStore);
 
       obj.retrieveRevisionId(
         function() {
@@ -378,7 +383,7 @@ DataStoreService.prototype = {
   },
 
   observe: function observe(aSubject, aTopic, aData) {
-    debug('getDataStores - aTopic: ' + aTopic);
+    debug('observe - aTopic: ' + aTopic);
     if (aTopic != 'webapps-clear-data') {
       return;
     }
@@ -391,14 +396,33 @@ DataStoreService.prototype = {
       return;
     }
 
+    function isEmpty(aMap) {
+      for (var key in aMap) {
+        if (aMap.hasOwnProperty(key)) {
+          return false;
+        }
+      }
+      return true;
+    }
+
     for (let key in this.stores) {
       if (params.appId in this.stores[key]) {
         this.deleteDatabase(key, this.stores[key][params.appId].owner);
         delete this.stores[key][params.appId];
       }
 
-      if (!this.stores[key].length) {
+      if (isEmpty(this.stores[key])) {
         delete this.stores[key];
+      }
+    }
+
+    for (let key in this.accessStores) {
+      if (params.appId in this.accessStores[key]) {
+        delete this.accessStores[key][params.appId];
+      }
+
+      if (isEmpty(this.accessStores[key])) {
+        delete this.accessStores[key];
       }
     }
   },
@@ -478,10 +502,12 @@ DataStoreServiceChild.prototype = {
 
     switch (aMessage.name) {
       case 'DataStore:Get:Return:OK':
+        this.destroyDOMRequestHelper();
         this._successCb(aMessage.data.stores);
         break;
 
       case 'DataStore:Get:Return:KO':
+        this.destroyDOMRequestHelper();
         this._errorCb();
         break;
     }

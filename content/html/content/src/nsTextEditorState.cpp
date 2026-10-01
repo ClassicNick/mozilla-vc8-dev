@@ -35,7 +35,7 @@
 #include "nsServiceManagerUtils.h"
 #include "nsIEditor.h"
 #include "nsTextEditRules.h"
-#include "mozilla/Selection.h"
+#include "mozilla/dom/Selection.h"
 #include "mozilla/EventListenerManager.h"
 #include "nsContentUtils.h"
 #include "mozilla/Preferences.h"
@@ -1234,6 +1234,16 @@ nsTextEditorState::PrepareEditor(const nsAString *aValue)
     newEditor = mEditor; // just pretend that we have a new editor!
   }
 
+  // Get the current value of the textfield from the content.
+  // Note that if we've created a new editor, mEditor is null at this stage,
+  // so we will get the real value from the content.
+  nsAutoString defaultValue;
+  if (aValue) {
+    defaultValue = *aValue;
+  } else {
+    GetValue(defaultValue, true);
+  }
+
   if (!mEditorInitialized) {
     // Now initialize the editor.
     //
@@ -1252,9 +1262,10 @@ nsTextEditorState::PrepareEditor(const nsAString *aValue)
     // Note that any script that's directly trying to access our value
     // has to be going through some scriptable object to do that and that
     // already does the relevant security checks.
-    AutoSystemCaller asc;
+    AutoNoJSAPI nojsapi;
 
-    rv = newEditor->Init(domdoc, GetRootNode(), mSelCon, editorFlags);
+    rv = newEditor->Init(domdoc, GetRootNode(), mSelCon, editorFlags,
+                         defaultValue);
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
@@ -1333,16 +1344,6 @@ nsTextEditorState::PrepareEditor(const nsAString *aValue)
       mSelCon->SetDisplaySelection(nsISelectionController::SELECTION_OFF);
 
     newEditor->SetFlags(editorFlags);
-  }
-
-  // Get the current value of the textfield from the content.
-  // Note that if we've created a new editor, mEditor is null at this stage,
-  // so we will get the real value from the content.
-  nsAutoString defaultValue;
-  if (aValue) {
-    defaultValue = *aValue;
-  } else {
-    GetValue(defaultValue, true);
   }
 
   if (shouldInitializeEditor) {
@@ -1740,8 +1741,8 @@ nsTextEditorState::GetValue(nsAString& aValue, bool aIgnoreWrap) const
     // XXXbz if we could just get the textContent of our anonymous content (eg
     // if plaintext editor didn't create <br> nodes all over), we wouldn't need
     // this.
-    { /* Scope for AutoSystemCaller. */
-      AutoSystemCaller asc;
+    { /* Scope for AutoNoJSAPI. */
+      AutoNoJSAPI nojsapi;
 
       mEditor->OutputToString(NS_LITERAL_STRING("text/plain"), flags,
                               aValue);
@@ -1780,18 +1781,7 @@ nsTextEditorState::SetValue(const nsAString& aValue, bool aUserInput,
 #endif
 
     nsAutoString currentValue;
-    if (!mEditorInitialized && IsSingleLineTextControl()) {
-      // Grab the current value directly from the text node to make sure that we
-      // deal with stale data correctly.
-      NS_ASSERTION(mRootNode, "We should have a root node here");
-      nsIContent *textContent = mRootNode->GetFirstChild();
-      nsCOMPtr<nsIDOMCharacterData> textNode = do_QueryInterface(textContent);
-      if (textNode) {
-        textNode->GetData(currentValue);
-      }
-    } else {
-      mBoundFrame->GetText(currentValue);
-    }
+    mBoundFrame->GetText(currentValue);
 
     nsWeakFrame weakFrame(mBoundFrame);
 
@@ -1820,7 +1810,7 @@ nsTextEditorState::SetValue(const nsAString& aValue, bool aUserInput,
       // for why this is needed.  Note that we have to do this up here, because
       // otherwise SelectAll() will fail.
       {
-        AutoSystemCaller asc;
+        AutoNoJSAPI nojsapi;
 
         nsCOMPtr<nsISelection> domSel;
         nsCOMPtr<nsISelectionPrivate> selPriv;

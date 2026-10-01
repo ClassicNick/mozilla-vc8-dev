@@ -18,7 +18,7 @@ XPCOMUtils.defineLazyServiceGetter(this, "cpmm",
                                    "nsIMessageSender");
 
 function convertAppsArray(aApps, aWindow) {
-  let apps = Cu.createArrayIn(aWindow);
+  let apps = new aWindow.Array();
   for (let i = 0; i < aApps.length; i++) {
     let app = aApps[i];
     apps.push(createApplicationObject(aWindow, app));
@@ -486,7 +486,6 @@ WebappsApplication.prototype = {
                               rules: aRules,
                               manifestURL: this.manifestURL,
                               outerWindowID: this._id,
-                              appStatus: this._appStatus,
                               requestID: this.getPromiseResolverId({
                                 resolve: aResolve,
                                 reject: aReject

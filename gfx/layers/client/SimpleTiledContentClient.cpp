@@ -14,6 +14,7 @@
 #include "CompositorChild.h"            // for CompositorChild
 #include "gfxContext.h"                 // for gfxContext, etc
 #include "gfxPlatform.h"                // for gfxPlatform
+#include "gfxPrefs.h"                   // for gfxPrefs::LayersTileWidth/Height
 #include "gfxRect.h"                    // for gfxRect
 #include "mozilla/Attributes.h"         // for MOZ_THIS_IN_INITIALIZER_LIST
 #include "mozilla/MathAlgorithms.h"     // for Abs
@@ -74,7 +75,7 @@ SimpleTiledLayerBuffer::ValidateTile(SimpleTiledLayerTile aTile,
                                      const nsIntRegion& aDirtyRegion)
 {
   PROFILER_LABEL("SimpleTiledLayerBuffer", "ValidateTile");
-  static gfx::IntSize kTileSize(TILEDLAYERBUFFER_TILE_SIZE, TILEDLAYERBUFFER_TILE_SIZE);
+  static gfx::IntSize kTileSize(gfxPrefs::LayersTileWidth(), gfxPrefs::LayersTileHeight());
 
   gfx::SurfaceFormat tileFormat = gfxPlatform::GetPlatform()->Optimal2DFormatForContent(GetContentType());
 
@@ -89,19 +90,17 @@ SimpleTiledLayerBuffer::ValidateTile(SimpleTiledLayerTile aTile,
     return SimpleTiledLayerTile();
   }
 
-  if (!textureClient->Lock(OPEN_WRITE)) {
+  if (!textureClient->Lock(OPEN_READ_WRITE)) {
     NS_WARNING("TextureClient lock failed");
     return SimpleTiledLayerTile();
   }
 
-  TextureClientSurface *textureClientSurf = textureClient->AsTextureClientSurface();
-  if (!textureClientSurf) {
+  if (!textureClient->CanExposeDrawTarget()) {
     doBufferedDrawing = false;
   }
 
   RefPtr<DrawTarget> drawTarget;
 
-  nsRefPtr<gfxImageSurface> clientAsImageSurface;
   unsigned char *bufferData = nullptr;
 
   // these are set/updated differently based on doBufferedDrawing
@@ -109,27 +108,29 @@ SimpleTiledLayerBuffer::ValidateTile(SimpleTiledLayerTile aTile,
   nsIntRegion drawRegion;
   nsIntRegion invalidateRegion;
 
-  if (doBufferedDrawing) {
-    // try to obtain the TextureClient as an ImageSurface, so that we can
-    // access the pixels directly
-    nsRefPtr<gfxASurface> asurf = textureClientSurf->GetAsSurface();
-    clientAsImageSurface = asurf ? asurf->GetAsImageSurface() : nullptr;
-    if (clientAsImageSurface) {
-      int32_t bufferStride = clientAsImageSurface->Stride();
+  RefPtr<DrawTarget> srcDT;
+  uint8_t* srcData = nullptr;
+  int32_t srcStride = 0;
+  gfx::IntSize srcSize;
+  gfx::SurfaceFormat srcFormat = gfx::SurfaceFormat::UNKNOWN;
 
+  if (doBufferedDrawing) {
+    // try to directly access the pixels of the TextureClient
+    srcDT = textureClient->GetAsDrawTarget();
+    if (srcDT->LockBits(&srcData, &srcSize, &srcStride, &srcFormat)) {
       if (!aTile.mCachedBuffer) {
-        aTile.mCachedBuffer = SharedBuffer::Create(clientAsImageSurface->GetDataSize());
+        aTile.mCachedBuffer = SharedBuffer::Create(srcStride * srcSize.height);
         fullPaint = true;
       }
       bufferData = (unsigned char*) aTile.mCachedBuffer->Data();
 
       drawTarget = gfxPlatform::GetPlatform()->CreateDrawTargetForData(bufferData,
                                                                        kTileSize,
-                                                                       bufferStride,
+                                                                       srcStride,
                                                                        tileFormat);
 
       if (fullPaint) {
-        drawBounds = nsIntRect(aTileOrigin.x, aTileOrigin.y, GetScaledTileLength(), GetScaledTileLength());
+        drawBounds = nsIntRect(aTileOrigin.x, aTileOrigin.y, GetScaledTileSize().width, GetScaledTileSize().height);
         drawRegion = nsIntRegion(drawBounds);
       } else {
         drawBounds = aDirtyRegion.GetBounds();
@@ -146,10 +147,10 @@ SimpleTiledLayerBuffer::ValidateTile(SimpleTiledLayerTile aTile,
 
   // this might get set above if we couldn't extract out a buffer
   if (!doBufferedDrawing) {
-    drawTarget = textureClient->AsTextureClientDrawTarget()->GetAsDrawTarget();
+    drawTarget = textureClient->GetAsDrawTarget();
 
     fullPaint = true;
-    drawBounds = nsIntRect(aTileOrigin.x, aTileOrigin.y, GetScaledTileLength(), GetScaledTileLength());
+    drawBounds = nsIntRect(aTileOrigin.x, aTileOrigin.y, GetScaledTileSize().width, GetScaledTileSize().height);
     drawRegion = nsIntRegion(drawBounds);
 
     if (GetContentType() == gfxContentType::COLOR_ALPHA)
@@ -169,14 +170,15 @@ SimpleTiledLayerBuffer::ValidateTile(SimpleTiledLayerTile aTile,
             mCallbackData);
 
   ctxt = nullptr;
-  drawTarget = nullptr;
 
   if (doBufferedDrawing) {
-    memcpy(clientAsImageSurface->Data(), bufferData, clientAsImageSurface->GetDataSize());
-    clientAsImageSurface = nullptr;
+    memcpy(srcData, bufferData, srcSize.height * srcStride);
     bufferData = nullptr;
+    srcDT->ReleaseBits(srcData);
+    srcDT = nullptr;
   }
 
+  drawTarget = nullptr;
   textureClient->Unlock();
 
   if (!mCompositableClient->AddTextureClient(textureClient)) {
@@ -248,9 +250,6 @@ SimpleClientTiledThebesLayer::SimpleClientTiledThebesLayer(ClientLayerManager* a
   , mContentClient()
 {
   MOZ_COUNT_CTOR(SimpleClientTiledThebesLayer);
-
-  mPaintData.mLastScrollOffset = ScreenPoint(0, 0);
-  mPaintData.mFirstPaint = true;
 }
 
 SimpleClientTiledThebesLayer::~SimpleClientTiledThebesLayer()
@@ -262,102 +261,6 @@ void
 SimpleClientTiledThebesLayer::FillSpecificAttributes(SpecificLayerAttributes& aAttrs)
 {
   aAttrs = ThebesLayerAttributes(GetValidRegion());
-}
-
-static LayoutDeviceRect
-ApplyParentLayerToLayoutTransform(const gfx3DMatrix& aTransform, const ParentLayerRect& aParentLayerRect)
-{
-  return TransformTo<LayoutDevicePixel>(aTransform, aParentLayerRect);
-}
-
-void
-SimpleClientTiledThebesLayer::BeginPaint()
-{
-  if (ClientManager()->IsRepeatTransaction()) {
-    return;
-  }
-
-  mPaintData.mLowPrecisionPaintCount = 0;
-  mPaintData.mPaintFinished = false;
-
-  // Get the metrics of the nearest scroll container.
-  ContainerLayer* scrollParent = nullptr;
-  for (ContainerLayer* parent = GetParent(); parent; parent = parent->GetParent()) {
-    const FrameMetrics& metrics = parent->GetFrameMetrics();
-    if (metrics.mScrollId != FrameMetrics::NULL_SCROLL_ID) {
-      scrollParent = parent;
-      break;
-    }
-  }
-
-  if (!scrollParent) {
-    // XXX I don't think this can happen, but if it does, warn and set the
-    //     composition bounds to empty so that progressive updates are disabled.
-    NS_WARNING("Tiled Thebes layer with no scrollable container parent");
-    mPaintData.mCompositionBounds.SetEmpty();
-    return;
-  }
-
-  const FrameMetrics& metrics = scrollParent->GetFrameMetrics();
-
-  // Calculate the transform required to convert screen space into transformed
-  // layout device space.
-  gfx::Matrix4x4 effectiveTransform = GetEffectiveTransform();
-  for (ContainerLayer* parent = GetParent(); parent; parent = parent->GetParent()) {
-    if (parent->UseIntermediateSurface()) {
-      effectiveTransform = effectiveTransform * parent->GetEffectiveTransform();
-    }
-  }
-  gfx3DMatrix layoutToParentLayer;
-  gfx::To3DMatrix(effectiveTransform, layoutToParentLayer);
-  layoutToParentLayer.ScalePost(metrics.GetParentResolution().scale,
-                                metrics.GetParentResolution().scale,
-                                1.f);
-
-  mPaintData.mTransformParentLayerToLayout = layoutToParentLayer.Inverse();
-
-  // Compute the critical display port in layer space.
-  mPaintData.mLayoutCriticalDisplayPort.SetEmpty();
-  if (!metrics.mCriticalDisplayPort.IsEmpty()) {
-    // Convert the display port to screen space first so that we can transform
-    // it into layout device space.
-    const ParentLayerRect& criticalDisplayPort = metrics.mCriticalDisplayPort
-                                               * metrics.mDevPixelsPerCSSPixel
-                                               * metrics.GetParentResolution();
-    LayoutDeviceRect transformedCriticalDisplayPort =
-      ApplyParentLayerToLayoutTransform(mPaintData.mTransformParentLayerToLayout, criticalDisplayPort);
-    mPaintData.mLayoutCriticalDisplayPort =
-      LayoutDeviceIntRect::ToUntyped(RoundedOut(transformedCriticalDisplayPort));
-  }
-
-  // Calculate the frame resolution. Because this is Gecko-side, before any
-  // async transforms have occurred, we can use mZoom for this.
-  mPaintData.mResolution = metrics.GetZoom();
-
-  // Calculate the scroll offset since the last transaction, and the
-  // composition bounds.
-  mPaintData.mCompositionBounds.SetEmpty();
-  mPaintData.mScrollOffset.MoveTo(0, 0);
-  Layer* primaryScrollable = ClientManager()->GetPrimaryScrollableLayer();
-  if (primaryScrollable) {
-    const FrameMetrics& metrics = primaryScrollable->AsContainerLayer()->GetFrameMetrics();
-    mPaintData.mScrollOffset = metrics.GetScrollOffset() * metrics.GetZoom();
-    mPaintData.mCompositionBounds =
-      ApplyParentLayerToLayoutTransform(mPaintData.mTransformParentLayerToLayout,
-                                        ParentLayerRect(metrics.mCompositionBounds));
-  }
-}
-
-void
-SimpleClientTiledThebesLayer::EndPaint(bool aFinish)
-{
-  if (!aFinish && !mPaintData.mPaintFinished) {
-    return;
-  }
-
-  mPaintData.mLastScrollOffset = mPaintData.mScrollOffset;
-  mPaintData.mPaintFinished = true;
-  mPaintData.mFirstPaint = false;
 }
 
 void
@@ -388,83 +291,29 @@ SimpleClientTiledThebesLayer::RenderLayer()
   nsIntRegion invalidRegion = mVisibleRegion;
   invalidRegion.Sub(invalidRegion, mValidRegion);
   if (invalidRegion.IsEmpty()) {
-    EndPaint(true);
     return;
   }
-
-  const FrameMetrics& parentMetrics = GetParent()->GetFrameMetrics();
-
-  nsIntRegion wantToPaintRegion = mVisibleRegion;
 
   // Only paint the mask layer on the first transaction.
   if (GetMaskLayer() && !ClientManager()->IsRepeatTransaction()) {
     ToClientLayer(GetMaskLayer())->RenderLayer();
   }
 
-  // Fast path for no progressive updates, no low-precision updates and no
-  // critical display-port set, or no display-port set.
-  if (parentMetrics.mCriticalDisplayPort.IsEmpty() ||
-      parentMetrics.mDisplayPort.IsEmpty())
-  {
-    mValidRegion = wantToPaintRegion;
+  // SimpleTiledContentClient doesn't support progressive updates or the low
+  // precision buffer yet.
+  MOZ_ASSERT(!gfxPrefs::UseProgressiveTilePainting() &&
+             !gfxPrefs::UseLowPrecisionBuffer());
 
-    NS_ASSERTION(!ClientManager()->IsRepeatTransaction(), "Didn't paint our mask layer");
+  mValidRegion = mVisibleRegion;
 
-    mContentClient->mTiledBuffer.PaintThebes(mValidRegion, invalidRegion,
-                                             callback, data);
+  NS_ASSERTION(!ClientManager()->IsRepeatTransaction(), "Didn't paint our mask layer");
 
-    ClientManager()->Hold(this);
+  mContentClient->mTiledBuffer.PaintThebes(mValidRegion, invalidRegion,
+                                           callback, data);
 
-    mContentClient->UseTiledLayerBuffer();
+  ClientManager()->Hold(this);
 
-    return;
-  }
-
-  // Calculate everything we need to perform the paint.
-  BeginPaint();
-
-  if (mPaintData.mPaintFinished) {
-    return;
-  }
-
-  // Make sure that tiles that fall outside of the visible region are
-  // discarded on the first update.
-  if (!ClientManager()->IsRepeatTransaction()) {
-    mValidRegion.And(mValidRegion, wantToPaintRegion);
-    if (!mPaintData.mLayoutCriticalDisplayPort.IsEmpty()) {
-      // Make sure that tiles that fall outside of the critical displayport are
-      // discarded on the first update.
-      mValidRegion.And(mValidRegion, mPaintData.mLayoutCriticalDisplayPort);
-    }
-  }
-
-  nsIntRegion lowPrecisionInvalidRegion;
-  if (!mPaintData.mLayoutCriticalDisplayPort.IsEmpty()) {
-    // Clip the invalid region to the critical display-port
-    invalidRegion.And(invalidRegion, mPaintData.mLayoutCriticalDisplayPort);
-    if (invalidRegion.IsEmpty() && lowPrecisionInvalidRegion.IsEmpty()) {
-      EndPaint(true);
-      return;
-    }
-  }
-
-  if (!invalidRegion.IsEmpty()) {
-    mValidRegion = wantToPaintRegion;
-    if (!mPaintData.mLayoutCriticalDisplayPort.IsEmpty()) {
-      mValidRegion.And(mValidRegion, mPaintData.mLayoutCriticalDisplayPort);
-    }
-    mContentClient->mTiledBuffer.SetFrameResolution(mPaintData.mResolution);
-    mContentClient->mTiledBuffer.PaintThebes(mValidRegion, invalidRegion,
-                                             callback, data);
-
-    ClientManager()->Hold(this);
-    mContentClient->UseTiledLayerBuffer();
-
-    EndPaint(false);
-    return;
-  }
-
-  EndPaint(false);
+  mContentClient->UseTiledLayerBuffer();
 }
 
 

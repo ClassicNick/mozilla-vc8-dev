@@ -1182,8 +1182,8 @@ JSScript::initScriptCounts(JSContext *cx)
 
     /* Enable interrupts in any interpreter frames running on this script. */
     for (ActivationIterator iter(cx->runtime()); !iter.done(); ++iter) {
-        if (iter.activation()->isInterpreter())
-            iter.activation()->asInterpreter()->enableInterruptsIfRunning(this);
+        if (iter->isInterpreter())
+            iter->asInterpreter()->enableInterruptsIfRunning(this);
     }
 
     return true;
@@ -1392,33 +1392,77 @@ JSScript::sourceData(JSContext *cx)
     return scriptSource()->substring(cx, sourceStart(), sourceEnd());
 }
 
-SourceDataCache::AutoSuppressPurge::AutoSuppressPurge(JSContext *cx)
- : cache_(cx->runtime()->sourceDataCache)
+SourceDataCache::AutoHoldEntry::AutoHoldEntry()
+  : cache_(nullptr), source_(nullptr), charsToFree_(nullptr)
 {
-    oldValue_ = cache_.numSuppressPurges_++;
 }
 
-SourceDataCache::AutoSuppressPurge::~AutoSuppressPurge()
+void
+SourceDataCache::AutoHoldEntry::holdEntry(SourceDataCache *cache, ScriptSource *source)
 {
-    cache_.numSuppressPurges_--;
-    JS_ASSERT(cache_.numSuppressPurges_ == oldValue_);
+    // Initialise the holder for a specific cache and script source. This will
+    // hold on to the cached source chars in the event that the cache is purged.
+    JS_ASSERT(!cache_ && !source_ && !charsToFree_);
+    cache_ = cache;
+    source_ = source;
+}
+
+void
+SourceDataCache::AutoHoldEntry::deferDelete(const jschar *chars)
+{
+    // Take ownership of source chars now the cache is being purged. Remove our
+    // reference to the ScriptSource which might soon be destroyed.
+    JS_ASSERT(cache_ && source_ && !charsToFree_);
+    cache_ = nullptr;
+    source_ = nullptr;
+    charsToFree_ = chars;
+}
+
+SourceDataCache::AutoHoldEntry::~AutoHoldEntry()
+{
+    // The holder is going out of scope. If it has taken ownership of cached
+    // chars then delete them, otherwise unregister ourself with the cache.
+    if (charsToFree_) {
+        JS_ASSERT(!cache_ && !source_);
+        js_free(const_cast<jschar *>(charsToFree_));
+    } else if (cache_) {
+        JS_ASSERT(source_);
+        cache_->releaseEntry(*this);
+    }
+}
+
+void
+SourceDataCache::holdEntry(AutoHoldEntry &holder, ScriptSource *ss)
+{
+    JS_ASSERT(!holder_);
+    holder.holdEntry(this, ss);
+    holder_ = &holder;
+}
+
+void
+SourceDataCache::releaseEntry(AutoHoldEntry &holder)
+{
+    JS_ASSERT(holder_ == &holder);
+    holder_ = nullptr;
 }
 
 const jschar *
-SourceDataCache::lookup(ScriptSource *ss, const AutoSuppressPurge &asp)
+SourceDataCache::lookup(ScriptSource *ss, AutoHoldEntry &holder)
 {
-    JS_ASSERT(this == &asp.cache());
+    JS_ASSERT(!holder_);
     if (!map_)
         return nullptr;
-    if (Map::Ptr p = map_->lookup(ss))
+    if (Map::Ptr p = map_->lookup(ss)) {
+        holdEntry(holder, ss);
         return p->value();
+    }
     return nullptr;
 }
 
 bool
-SourceDataCache::put(ScriptSource *ss, const jschar *str, const AutoSuppressPurge &asp)
+SourceDataCache::put(ScriptSource *ss, const jschar *str, AutoHoldEntry &holder)
 {
-    JS_ASSERT(this == &asp.cache());
+    JS_ASSERT(!holder_);
 
     if (!map_) {
         map_ = js_new<Map>();
@@ -1432,17 +1476,28 @@ SourceDataCache::put(ScriptSource *ss, const jschar *str, const AutoSuppressPurg
         }
     }
 
-    return map_->put(ss, str);
+    if (!map_->put(ss, str))
+        return false;
+
+    holdEntry(holder, ss);
+    return true;
 }
 
 void
 SourceDataCache::purge()
 {
-    if (!map_ || numSuppressPurges_ > 0)
+    if (!map_)
         return;
 
-    for (Map::Range r = map_->all(); !r.empty(); r.popFront())
-        js_delete(const_cast<jschar*>(r.front().value()));
+    for (Map::Range r = map_->all(); !r.empty(); r.popFront()) {
+        const jschar *chars = r.front().value();
+        if (holder_ && r.front().key() == holder_->source()) {
+            holder_->deferDelete(chars);
+            holder_ = nullptr;
+        } else {
+            js_free(const_cast<jschar*>(chars));
+        }
+    }
 
     js_delete(map_);
     map_ = nullptr;
@@ -1463,7 +1518,7 @@ SourceDataCache::sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf)
 }
 
 const jschar *
-ScriptSource::chars(JSContext *cx, const SourceDataCache::AutoSuppressPurge &asp)
+ScriptSource::chars(JSContext *cx, SourceDataCache::AutoHoldEntry &holder)
 {
     if (const jschar *chars = getOffThreadCompressionChars(cx))
         return chars;
@@ -1471,9 +1526,9 @@ ScriptSource::chars(JSContext *cx, const SourceDataCache::AutoSuppressPurge &asp
 
 #ifdef USE_ZLIB
     if (compressed()) {
-        if (const jschar *decompressed = cx->runtime()->sourceDataCache.lookup(this, asp))
+        if (const jschar *decompressed = cx->runtime()->sourceDataCache.lookup(this, holder))
             return decompressed;
-      
+
         const size_t nbytes = sizeof(jschar) * (length_ + 1);
         jschar *decompressed = static_cast<jschar *>(js_malloc(nbytes));
         if (!decompressed)
@@ -1488,7 +1543,7 @@ ScriptSource::chars(JSContext *cx, const SourceDataCache::AutoSuppressPurge &asp
 
         decompressed[length_] = 0;
 
-        if (!cx->runtime()->sourceDataCache.put(this, decompressed, asp)) {
+        if (!cx->runtime()->sourceDataCache.put(this, decompressed, holder)) {
             JS_ReportOutOfMemory(cx);
             js_free(decompressed);
             return nullptr;
@@ -1504,8 +1559,8 @@ JSFlatString *
 ScriptSource::substring(JSContext *cx, uint32_t start, uint32_t stop)
 {
     JS_ASSERT(start <= stop);
-    SourceDataCache::AutoSuppressPurge asp(cx);
-    const jschar *chars = this->chars(cx, asp);
+    SourceDataCache::AutoHoldEntry holder;
+    const jschar *chars = this->chars(cx, holder);
     if (!chars)
         return nullptr;
     return js_NewStringCopyN<CanGC>(cx, chars + start, stop - start);
@@ -2370,7 +2425,9 @@ JSScript::fullyInitFromEmitter(ExclusiveContext *cx, HandleScript script, Byteco
 
     uint32_t mainLength = bce->offset();
     uint32_t prologLength = bce->prologOffset();
-    uint32_t nsrcnotes = uint32_t(bce->countFinalSourceNotes());
+    uint32_t nsrcnotes;
+    if (!FinishTakingSrcNotes(cx, bce, &nsrcnotes))
+        return false;
     uint32_t natoms = bce->atomIndices->count();
     if (!partiallyInit(cx, script,
                        bce->constList.length(), bce->objectList.length, bce->regexpList.length,
@@ -2393,8 +2450,7 @@ JSScript::fullyInitFromEmitter(ExclusiveContext *cx, HandleScript script, Byteco
     jsbytecode *code = ssd->data;
     PodCopy<jsbytecode>(code, bce->prolog.code.begin(), prologLength);
     PodCopy<jsbytecode>(code + prologLength, bce->code().begin(), mainLength);
-    if (!FinishTakingSrcNotes(cx, bce, (jssrcnote *)(code + script->length())))
-        return false;
+    CopySrcNotes(bce, (jssrcnote *)(code + script->length()), nsrcnotes);
     InitAtomMap(bce->atomIndices.getMap(), ssd->atoms());
 
     if (!SaveSharedScriptData(cx, script, ssd, nsrcnotes))
@@ -2669,7 +2725,7 @@ js::PCToLineNumber(unsigned startLine, jssrcnote *notes, jsbytecode *code, jsbyt
 unsigned
 js::PCToLineNumber(JSScript *script, jsbytecode *pc, unsigned *columnp)
 {
-    /* Cope with StackFrame.pc value prior to entering js_Interpret. */
+    /* Cope with InterpreterFrame.pc value prior to entering Interpret. */
     if (!pc)
         return 0;
 
@@ -3094,40 +3150,29 @@ JSScript::ensureHasDebugScript(JSContext *cx)
      * debug state is destroyed.
      */
     for (ActivationIterator iter(cx->runtime()); !iter.done(); ++iter) {
-        if (iter.activation()->isInterpreter())
-            iter.activation()->asInterpreter()->enableInterruptsIfRunning(this);
+        if (iter->isInterpreter())
+            iter->asInterpreter()->enableInterruptsIfRunning(this);
     }
 
     return true;
 }
 
 void
-JSScript::recompileForStepMode(FreeOp *fop)
+JSScript::setNewStepMode(FreeOp *fop, uint32_t newValue)
 {
-#ifdef JS_ION
-    if (hasBaselineScript())
-        baseline->toggleDebugTraps(this, nullptr);
-#endif
-}
-
-bool
-JSScript::tryNewStepMode(JSContext *cx, uint32_t newValue)
-{
-    JS_ASSERT(hasDebugScript_);
-
     DebugScript *debug = debugScript();
     uint32_t prior = debug->stepMode;
     debug->stepMode = newValue;
 
     if (!prior != !newValue) {
-        /* Step mode has been enabled or disabled. Alert the methodjit. */
-        recompileForStepMode(cx->runtime()->defaultFreeOp());
+#ifdef JS_ION
+        if (hasBaselineScript())
+            baseline->toggleDebugTraps(this, nullptr);
+#endif
 
         if (!stepModeEnabled() && !debug->numSites)
-            js_free(releaseDebugScript());
+            fop->free_(releaseDebugScript());
     }
-
-    return true;
 }
 
 bool
@@ -3136,25 +3181,40 @@ JSScript::setStepModeFlag(JSContext *cx, bool step)
     if (!ensureHasDebugScript(cx))
         return false;
 
-    return tryNewStepMode(cx, (debugScript()->stepMode & stepCountMask) |
-                               (step ? stepFlagMask : 0));
+    setNewStepMode(cx->runtime()->defaultFreeOp(),
+                   (debugScript()->stepMode & stepCountMask) |
+                   (step ? stepFlagMask : 0));
+    return true;
 }
 
 bool
-JSScript::changeStepModeCount(JSContext *cx, int delta)
+JSScript::incrementStepModeCount(JSContext *cx)
 {
+    assertSameCompartment(cx, this);
+    MOZ_ASSERT(cx->compartment()->debugMode());
+
     if (!ensureHasDebugScript(cx))
         return false;
 
-    assertSameCompartment(cx, this);
-    JS_ASSERT_IF(delta > 0, cx->compartment()->debugMode());
-
     DebugScript *debug = debugScript();
     uint32_t count = debug->stepMode & stepCountMask;
-    JS_ASSERT(((count + delta) & stepCountMask) == count + delta);
-    return tryNewStepMode(cx,
-                          (debug->stepMode & stepFlagMask) |
-                          ((count + delta) & stepCountMask));
+    MOZ_ASSERT(((count + 1) & stepCountMask) == count + 1);
+
+    setNewStepMode(cx->runtime()->defaultFreeOp(),
+                   (debug->stepMode & stepFlagMask) |
+                   ((count + 1) & stepCountMask));
+    return true;
+}
+
+void
+JSScript::decrementStepModeCount(FreeOp *fop)
+{
+    DebugScript *debug = debugScript();
+    uint32_t count = debug->stepMode & stepCountMask;
+
+    setNewStepMode(fop,
+                   (debug->stepMode & stepFlagMask) |
+                   ((count - 1) & stepCountMask));
 }
 
 BreakpointSite *
@@ -3242,7 +3302,7 @@ JSScript::markChildren(JSTracer *trc)
     // JSScript::Create(), but not yet finished initializing it with
     // fullyInitFromEmitter() or fullyInitTrivial().
 
-    JS_ASSERT_IF(trc->runtime->gcStrictCompartmentChecking, zone()->isCollecting());
+    JS_ASSERT_IF(trc->runtime()->gcStrictCompartmentChecking, zone()->isCollecting());
 
     for (uint32_t i = 0; i < natoms(); ++i) {
         if (atoms[i])
@@ -3282,7 +3342,7 @@ JSScript::markChildren(JSTracer *trc)
         compartment()->mark();
 
         if (code())
-            MarkScriptData(trc->runtime, code());
+            MarkScriptData(trc->runtime(), code());
     }
 
     bindings.trace(trc);
@@ -3425,10 +3485,13 @@ js::SetFrameArgumentsObject(JSContext *cx, AbstractFramePtr frame,
         pc += JSOP_ARGUMENTS_LENGTH;
         JS_ASSERT(*pc == JSOP_SETALIASEDVAR);
 
-        if (frame.callObj().as<ScopeObject>().aliasedVar(pc).isMagic(JS_OPTIMIZED_ARGUMENTS))
+        // Note that here and below, it is insufficient to only check for
+        // JS_OPTIMIZED_ARGUMENTS, as Ion could have optimized out the
+        // arguments slot.
+        if (IsOptimizedPlaceholderMagicValue(frame.callObj().as<ScopeObject>().aliasedVar(pc)))
             frame.callObj().as<ScopeObject>().setAliasedVar(cx, pc, cx->names().arguments, ObjectValue(*argsobj));
     } else {
-        if (frame.unaliasedLocal(var).isMagic(JS_OPTIMIZED_ARGUMENTS))
+        if (IsOptimizedPlaceholderMagicValue(frame.unaliasedLocal(var)))
             frame.unaliasedLocal(var) = ObjectValue(*argsobj);
     }
 }
@@ -3482,10 +3545,8 @@ JSScript::argumentsOptimizationFailed(JSContext *cx, HandleScript script)
          * We cannot reliably create an arguments object for Ion activations of
          * this script.  To maintain the invariant that "script->needsArgsObj
          * implies fp->hasArgsObj", the Ion bail mechanism will create an
-         * arguments object right after restoring the StackFrame and before
-         * entering the interpreter (in jit::ThunkToInterpreter).  This delay is
-         * safe since the engine avoids any observation of a StackFrame when it's
-         * runningInJit (see ScriptFrameIter::interpFrame comment).
+         * arguments object right after restoring the BaselineFrame and before
+         * entering Baseline code (in jit::FinishBailoutToBaseline).
          */
         if (i.isIon())
             continue;
@@ -3786,13 +3847,13 @@ LazyScriptHashPolicy::match(JSScript *script, const Lookup &lookup)
         return false;
     }
 
-    SourceDataCache::AutoSuppressPurge asp(cx);
+    SourceDataCache::AutoHoldEntry holder;
 
-    const jschar *scriptChars = script->scriptSource()->chars(cx, asp);
+    const jschar *scriptChars = script->scriptSource()->chars(cx, holder);
     if (!scriptChars)
         return false;
 
-    const jschar *lazyChars = lazy->source()->chars(cx, asp);
+    const jschar *lazyChars = lazy->source()->chars(cx, holder);
     if (!lazyChars)
         return false;
 

@@ -11,12 +11,12 @@ import time
 import traceback
 
 from application_cache import ApplicationCache
-from client import MarionetteClient
 from decorators import do_crash_check
 from emulator import Emulator
 from emulator_screen import EmulatorScreen
 from errors import *
 from keys import Keys
+from marionette_transport import MarionetteTransport
 
 import geckoinstance
 
@@ -511,7 +511,7 @@ class Marionette(object):
             self.port = self.emulator.setup_port_forwarding(self.port)
             assert(self.emulator.wait_for_port()), "Timed out waiting for port!"
 
-        self.client = MarionetteClient(self.host, self.port)
+        self.client = MarionetteTransport(self.host, self.port)
 
         if emulator:
             self.emulator.setup(self,
@@ -522,7 +522,7 @@ class Marionette(object):
         if self.session:
             try:
                 self.delete_session()
-            except (MarionetteException, socket.error):
+            except (MarionetteException, socket.error, IOError):
                 # These exceptions get thrown if the Marionette server
                 # hit an exception/died or the connection died. We can
                 # do no further server-side cleanup in this case.
@@ -608,8 +608,16 @@ class Marionette(object):
 
         # Process any emulator commands that are sent from a script
         # while it's executing.
-        while response.get("emulator_cmd"):
-            response = self._handle_emulator_cmd(response)
+        while True:
+            if response.get("emulator_cmd"):
+                response = self._handle_emulator_cmd(response)
+                continue;
+
+            if response.get("emulator_shell"):
+                response = self._handle_emulator_shell(response)
+                continue;
+
+            break;
 
         if response_key in response:
             return response[response_key]
@@ -622,6 +630,16 @@ class Marionette(object):
                 "No emulator in this test to run command against")
         cmd = cmd.encode("ascii")
         result = self.emulator._run_telnet(cmd)
+        return self.client.send({"name": "emulatorCmdResult",
+                                 "id": response.get("id"),
+                                 "result": result})
+
+    def _handle_emulator_shell(self, response):
+        args = response.get("emulator_shell")
+        if not isinstance(args, list) or not self.emulator:
+            raise MarionetteException(
+                "No emulator in this test to run shell command against")
+        result = self.emulator._run_shell(args)
         return self.client.send({"name": "emulatorCmdResult",
                                  "id": response.get("id"),
                                  "result": result})

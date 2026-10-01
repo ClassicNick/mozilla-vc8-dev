@@ -37,11 +37,6 @@ public:
     AssertIsOnMainThread();
   }
 
-  ~URLProxy()
-  {
-     MOZ_ASSERT(!mURL);
-  }
-
   mozilla::dom::URL* URL()
   {
     return mURL;
@@ -59,6 +54,12 @@ public:
   }
 
 private:
+  // Private destructor, to discourage deletion outside of Release():
+  ~URLProxy()
+  {
+     MOZ_ASSERT(!mURL);
+  }
+
   nsRefPtr<mozilla::dom::URL> mURL;
 };
 
@@ -587,9 +588,9 @@ URL::~URL()
 }
 
 JSObject*
-URL::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope)
+URL::WrapObject(JSContext* aCx)
 {
-  return URLBinding_workers::Wrap(aCx, aScope, this);
+  return URLBinding_workers::Wrap(aCx, this);
 }
 
 void
@@ -838,24 +839,20 @@ URL::SetSearchInternal(const nsAString& aSearch)
 }
 
 mozilla::dom::URLSearchParams*
-URL::GetSearchParams()
+URL::SearchParams()
 {
   CreateSearchParamsIfNeeded();
   return mSearchParams;
 }
 
 void
-URL::SetSearchParams(URLSearchParams* aSearchParams)
+URL::SetSearchParams(URLSearchParams& aSearchParams)
 {
-  if (!aSearchParams) {
-    return;
-  }
-
   if (mSearchParams) {
     mSearchParams->RemoveObserver(this);
   }
 
-  mSearchParams = aSearchParams;
+  mSearchParams = &aSearchParams;
   mSearchParams->AddObserver(this);
 
   nsString search;

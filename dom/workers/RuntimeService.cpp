@@ -12,7 +12,6 @@
 #include "nsIDOMChromeWindow.h"
 #include "nsIEffectiveTLDService.h"
 #include "nsIObserverService.h"
-#include "nsIPlatformCharset.h"
 #include "nsIPrincipal.h"
 #include "nsIScriptContext.h"
 #include "nsIScriptSecurityManager.h"
@@ -334,9 +333,6 @@ LoadRuntimeAndContextOptions(const char* aPrefName, void* /* aClosure */)
   JS::RuntimeOptions runtimeOptions;
   if (GetWorkerPref<bool>(NS_LITERAL_CSTRING("asmjs"))) {
     runtimeOptions.setAsmJS(true);
-  }
-  if (GetWorkerPref<bool>(NS_LITERAL_CSTRING("typeinference"))) {
-    runtimeOptions.setTypeInference(true);
   }
   if (GetWorkerPref<bool>(NS_LITERAL_CSTRING("baselinejit"))) {
     runtimeOptions.setBaseline(true);

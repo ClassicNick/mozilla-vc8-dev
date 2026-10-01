@@ -7,6 +7,7 @@
 #include "jsmath.h"
 
 #include "builtin/TestingFunctions.h"
+#include "builtin/TypedObject.h"
 #include "jit/BaselineInspector.h"
 #include "jit/IonBuilder.h"
 #include "jit/Lowering.h"
@@ -37,6 +38,8 @@ IonBuilder::inlineNativeCall(CallInfo &callInfo, JSNative native)
         return inlineArrayPush(callInfo);
     if (native == js::array_concat)
         return inlineArrayConcat(callInfo);
+    if (native == js::array_splice)
+        return inlineArraySplice(callInfo);
 
     // Math natives.
     if (native == js_math_abs)
@@ -158,12 +161,27 @@ IonBuilder::inlineNativeCall(CallInfo &callInfo, JSNative native)
         return inlineToObject(callInfo);
 
     // TypedObject intrinsics.
+    if (native == intrinsic_ObjectIsTypedObject)
+        return inlineHasClasses(callInfo,
+                                &TransparentTypedObject::class_, &OpaqueTypedObject::class_);
     if (native == intrinsic_ObjectIsTransparentTypedObject)
         return inlineHasClass(callInfo, &TransparentTypedObject::class_);
     if (native == intrinsic_ObjectIsOpaqueTypedObject)
         return inlineHasClass(callInfo, &OpaqueTypedObject::class_);
     if (native == intrinsic_ObjectIsTypeDescr)
         return inlineObjectIsTypeDescr(callInfo);
+    if (native == intrinsic_TypeDescrIsSimpleType)
+        return inlineHasClasses(callInfo,
+                                &ScalarTypeDescr::class_, &ReferenceTypeDescr::class_);
+    if (native == intrinsic_TypeDescrIsArrayType)
+        return inlineHasClasses(callInfo,
+                                &SizedArrayTypeDescr::class_, &UnsizedArrayTypeDescr::class_);
+    if (native == intrinsic_TypeDescrIsSizedArrayType)
+        return inlineHasClass(callInfo, &SizedArrayTypeDescr::class_);
+    if (native == intrinsic_TypeDescrIsUnsizedArrayType)
+        return inlineHasClass(callInfo, &UnsizedArrayTypeDescr::class_);
+    if (native == intrinsic_SetTypedObjectOffset)
+        return inlineSetTypedObjectOffset(callInfo);
 
     // Testing Functions
     if (native == testingFunc_inParallelSection)
@@ -186,7 +204,7 @@ MIRType
 IonBuilder::getInlineReturnType()
 {
     types::TemporaryTypeSet *returnTypes = getInlineReturnTypeSet();
-    return MIRTypeFromValueType(returnTypes->getKnownTypeTag());
+    return returnTypes->getKnownMIRType();
 }
 
 IonBuilder::InliningStatus
@@ -204,8 +222,6 @@ IonBuilder::inlineMathFunction(CallInfo &callInfo, MMathFunction::Function funct
         return InliningStatus_NotInlined;
 
     const MathCache *cache = compartment->runtime()->maybeGetMathCache();
-    if (!cache)
-        return InliningStatus_NotInlined;
 
     callInfo.fun()->setImplicitlyUsedUnchecked();
     callInfo.thisArg()->setImplicitlyUsedUnchecked();
@@ -257,6 +273,12 @@ IonBuilder::inlineArray(CallInfo &callInfo)
         // Negative lengths generate a RangeError, unhandled by the inline path.
         initLength = arg->toConstant()->value().toInt32();
         if (initLength >= JSObject::NELEMENTS_LIMIT)
+            return InliningStatus_NotInlined;
+
+        // Make sure initLength matches the template object's length. This is
+        // not guaranteed to be the case, for instance if we're inlining the
+        // MConstant may come from an outer script.
+        if (initLength != templateObject->as<ArrayObject>().length())
             return InliningStatus_NotInlined;
 
         if (initLength <= ArrayObject::EagerAllocationMaxLength)
@@ -372,6 +394,42 @@ IonBuilder::inlineArrayPopShift(CallInfo &callInfo, MArrayPopShift::Mode mode)
     if (!pushTypeBarrier(ins, returnTypes, barrier))
         return InliningStatus_Error;
 
+    return InliningStatus_Inlined;
+}
+
+IonBuilder::InliningStatus
+IonBuilder::inlineArraySplice(CallInfo &callInfo)
+{
+    if (callInfo.argc() != 2 || callInfo.constructing())
+        return InliningStatus_NotInlined;
+
+    // Ensure |this|, argument and result are objects.
+    if (getInlineReturnType() != MIRType_Object)
+        return InliningStatus_NotInlined;
+    if (callInfo.thisArg()->type() != MIRType_Object)
+        return InliningStatus_NotInlined;
+    if (callInfo.getArg(0)->type() != MIRType_Int32)
+        return InliningStatus_NotInlined;
+    if (callInfo.getArg(1)->type() != MIRType_Int32)
+        return InliningStatus_NotInlined;
+
+    callInfo.setImplicitlyUsedUnchecked();
+
+    // Specialize arr.splice(start, deleteCount) with unused return value and
+    // avoid creating the result array in this case.
+    if (!BytecodeIsPopped(pc))
+        return InliningStatus_NotInlined;
+
+    MArraySplice *ins = MArraySplice::New(alloc(),
+                                          callInfo.thisArg(),
+                                          callInfo.getArg(0),
+                                          callInfo.getArg(1));
+
+    current->add(ins);
+    pushConstant(UndefinedValue());
+
+    if (!resumeAfter(ins))
+        return InliningStatus_Error;
     return InliningStatus_Inlined;
 }
 
@@ -565,13 +623,6 @@ IonBuilder::inlineMathAbs(CallInfo &callInfo)
     MIRType absType = (argType == MIRType_Float32) ? MIRType_Double : argType;
     MInstruction *ins = MAbs::New(alloc(), callInfo.getArg(0), absType);
     current->add(ins);
-
-    if (IsFloatingPointType(argType) && returnType == MIRType_Int32) {
-        MToInt32 *toInt = MToInt32::New(alloc(), ins);
-        toInt->setCanBeNegativeZero(false);
-        current->add(toInt);
-        ins = toInt;
-    }
 
     current->push(ins);
     return InliningStatus_Inlined;
@@ -974,9 +1025,9 @@ IonBuilder::inlineMathMinMax(CallInfo &callInfo, bool max)
         if (!IsNumberType(argType))
             return InliningStatus_NotInlined;
 
-        // We would need to inform TI if we happen to return a double.
+        // When one of the arguments is double, do a double MMinMax.
         if (returnType == MIRType_Int32 && IsFloatingPointType(argType))
-            return InliningStatus_NotInlined;
+            returnType = MIRType_Double;
     }
 
     callInfo.setImplicitlyUsedUnchecked();
@@ -1524,7 +1575,7 @@ IonBuilder::inlineNewDenseArrayForParallelExecution(CallInfo &callInfo)
     // constructed type objects, so we can only perform the inlining if we
     // already have one of these type objects.
     types::TemporaryTypeSet *returnTypes = getInlineReturnTypeSet();
-    if (returnTypes->getKnownTypeTag() != JSVAL_TYPE_OBJECT)
+    if (returnTypes->getKnownMIRType() != MIRType_Object)
         return InliningStatus_NotInlined;
     if (returnTypes->unknownObject() || returnTypes->getObjectCount() != 1)
         return InliningStatus_NotInlined;
@@ -1549,8 +1600,11 @@ IonBuilder::inlineNewDenseArrayForParallelExecution(CallInfo &callInfo)
 }
 
 IonBuilder::InliningStatus
-IonBuilder::inlineHasClass(CallInfo &callInfo, const Class *clasp)
+IonBuilder::inlineHasClasses(CallInfo &callInfo, const Class *clasp1, const Class *clasp2)
 {
+    // Thus far there has been no reason to complicate this beyond two classes,
+    // though it generalizes pretty well.
+    // clasp2 may be NULL.
     if (callInfo.constructing() || callInfo.argc() != 1)
         return InliningStatus_NotInlined;
 
@@ -1562,11 +1616,28 @@ IonBuilder::inlineHasClass(CallInfo &callInfo, const Class *clasp)
     types::TemporaryTypeSet *types = callInfo.getArg(0)->resultTypeSet();
     const Class *knownClass = types ? types->getKnownClass() : nullptr;
     if (knownClass) {
-        pushConstant(BooleanValue(knownClass == clasp));
+        pushConstant(BooleanValue(knownClass == clasp1 || knownClass == clasp2));
     } else {
-        MHasClass *hasClass = MHasClass::New(alloc(), callInfo.getArg(0), clasp);
-        current->add(hasClass);
-        current->push(hasClass);
+        MHasClass *hasClass1 = MHasClass::New(alloc(), callInfo.getArg(0), clasp1);
+        current->add(hasClass1);
+        if (clasp2 == nullptr) {
+            current->push(hasClass1);
+        } else {
+            // The following turns into branch-free, box-free code on x86, and should do so on ARM.
+            MHasClass *hasClass2 = MHasClass::New(alloc(), callInfo.getArg(0), clasp2);
+            current->add(hasClass2);
+            MBitOr *either = MBitOr::New(alloc(), hasClass1, hasClass2);
+            either->infer(inspector, pc);
+            current->add(either);
+            // Convert to bool with the '!!' idiom
+            MNot *resultInverted = MNot::New(alloc(), either);
+            resultInverted->infer();
+            current->add(resultInverted);
+            MNot *result = MNot::New(alloc(), resultInverted);
+            result->infer();
+            current->add(result);
+            current->push(result);
+        }
     }
 
     callInfo.setImplicitlyUsedUnchecked();
@@ -1607,6 +1678,48 @@ IonBuilder::inlineObjectIsTypeDescr(CallInfo &callInfo)
     pushConstant(BooleanValue(result));
 
     callInfo.setImplicitlyUsedUnchecked();
+    return InliningStatus_Inlined;
+}
+
+IonBuilder::InliningStatus
+IonBuilder::inlineSetTypedObjectOffset(CallInfo &callInfo)
+{
+    if (callInfo.argc() != 2 || callInfo.constructing())
+        return InliningStatus_NotInlined;
+
+    MDefinition *typedObj = callInfo.getArg(0);
+    MDefinition *offset = callInfo.getArg(1);
+
+    // Return type should be undefined or something wacky is going on.
+    if (getInlineReturnType() != MIRType_Undefined)
+        return InliningStatus_NotInlined;
+
+    // Check typedObj is a, well, typed object. Go ahead and use TI
+    // data. If this check should fail, that is almost certainly a bug
+    // in self-hosted code -- either because it's not being careful
+    // with TI or because of something else -- but we'll just let it
+    // fall through to the SetTypedObjectOffset intrinsic in such
+    // cases.
+    types::TemporaryTypeSet *types = typedObj->resultTypeSet();
+    if (typedObj->type() != MIRType_Object || !types)
+        return InliningStatus_NotInlined;
+    switch (types->forAllClasses(IsTypedObjectClass)) {
+      case types::TemporaryTypeSet::ForAllResult::ALL_FALSE:
+      case types::TemporaryTypeSet::ForAllResult::EMPTY:
+      case types::TemporaryTypeSet::ForAllResult::MIXED:
+        return InliningStatus_NotInlined;
+      case types::TemporaryTypeSet::ForAllResult::ALL_TRUE:
+        break;
+    }
+
+    // Check type of offset argument is an integer.
+    if (offset->type() != MIRType_Int32)
+        return InliningStatus_NotInlined;
+
+    callInfo.setImplicitlyUsedUnchecked();
+    MInstruction *ins = MSetTypedObjectOffset::New(alloc(), typedObj, offset);
+    current->add(ins);
+    current->push(ins);
     return InliningStatus_Inlined;
 }
 

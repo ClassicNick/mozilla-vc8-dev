@@ -12,12 +12,14 @@ import org.mozilla.gecko.R;
 
 import android.annotation.TargetApi;
 import android.content.Context;
+import android.content.res.TypedArray;
 import android.graphics.drawable.Drawable;
 import android.util.AttributeSet;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
+import android.os.Build;
 
 public class MenuItemActionView extends LinearLayout
                                 implements GeckoMenuItem.Layout {
@@ -36,9 +38,19 @@ public class MenuItemActionView extends LinearLayout
         this(context, attrs, R.attr.menuItemActionViewStyle);
     }
 
-    @TargetApi(11)
+    @TargetApi(14)
     public MenuItemActionView(Context context, AttributeSet attrs, int defStyle) {
-        super(context, attrs, defStyle);
+        super(context, attrs);
+
+        // Set these explicitly, since setting a style isn't supported for LinearLayouts until V11.
+        if (Build.VERSION.SDK_INT >= 11) {
+            setShowDividers(LinearLayout.SHOW_DIVIDER_MIDDLE);
+            setDividerDrawable(getResources().getDrawable(R.drawable.divider_vertical));
+        }
+
+        if (Build.VERSION.SDK_INT >= 14) {
+            setDividerPadding(0);
+        }
 
         LayoutInflater.from(context).inflate(R.layout.menu_item_action_view, this);
         mMenuItem = (MenuItemDefault) findViewById(R.id.menu_item);
@@ -49,7 +61,9 @@ public class MenuItemActionView extends LinearLayout
     @Override
     protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
         View parent = (View) getParent();
-        if ((right - left) < parent.getMeasuredWidth() || mActionButtons.size() != 0) {
+        final int padding = getPaddingLeft() + getPaddingRight();
+        final int parentPadding = parent.getPaddingLeft() + parent.getPaddingRight();
+        if ((right - left - padding) < (parent.getMeasuredWidth() - parentPadding) || mActionButtons.size() != 0) {
             // Use the icon.
             mMenuItem.setVisibility(View.GONE);
             mMenuButton.setVisibility(View.VISIBLE);

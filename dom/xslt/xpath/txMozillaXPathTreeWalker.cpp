@@ -514,7 +514,8 @@ txXPathNodeUtils::appendNodeValue(const txXPathNode& aNode, nsAString& aResult)
     if (aNode.isDocument() ||
         aNode.mNode->IsElement() ||
         aNode.mNode->IsNodeOfType(nsINode::eDOCUMENT_FRAGMENT)) {
-        nsContentUtils::AppendNodeTextContent(aNode.mNode, true, aResult);
+        nsContentUtils::AppendNodeTextContent(aNode.mNode, true, aResult,
+                                              mozilla::fallible_t());
 
         return;
     }
@@ -693,7 +694,8 @@ txXPathNativeNode::createXPathNode(nsIDOMNode* aNode, bool aKeepRootAlive)
         NS_ASSERTION(attr, "doesn't implement nsIAttribute");
 
         nsINodeInfo *nodeInfo = attr->NodeInfo();
-        nsIContent *parent = static_cast<Attr*>(attr.get())->GetElement();
+        mozilla::dom::Element* parent =
+          static_cast<Attr*>(attr.get())->GetElement();
         if (!parent) {
             return nullptr;
         }

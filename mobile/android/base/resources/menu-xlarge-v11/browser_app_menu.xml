@@ -20,30 +20,10 @@
           android:title="@string/forward"
           android:visible="false"/>
 
-    <item android:id="@+id/save"
+    <item android:id="@+id/bookmark"
           android:icon="@drawable/ic_menu_bookmark_add"
-          android:title="@string/save"
-          android:showAsAction="always">
-
-        <menu>
-
-            <item android:id="@+id/bookmark"
-                  android:title="@string/bookmark"
-                  android:checkable="true" />
-
-            <item android:id="@+id/reading_list_add"
-                  android:title="@string/reading_list_add"
-                  android:checkable="true" />
-
-            <item android:id="@+id/launcher_add"
-                  android:title="@string/contextmenu_add_to_launcher" />
-
-            <item android:id="@+id/save_subscribe"
-                  android:title="@string/contextmenu_subscribe" />
-
-        </menu>
-
-    </item>
+          android:title="@string/bookmark"
+          android:showAsAction="always"/>
 
     <item android:id="@+id/share"
           android:icon="@drawable/ic_menu_share"
@@ -77,6 +57,9 @@
             <item android:id="@+id/subscribe"
                   android:title="@string/contextmenu_subscribe"/>
 
+            <item android:id="@+id/save_as_pdf"
+                  android:title="@string/save_as_pdf"/>
+
             <item android:id="@+id/add_search_engine"
                   android:title="@string/contextmenu_add_search_engine"/>
 
@@ -95,10 +78,6 @@
           android:icon="@drawable/ic_menu_tools">
 
         <menu>
-
-            <item android:id="@+id/save_as_pdf"
-                  android:icon="@drawable/ic_menu_save_as_pdf"
-                  android:title="@string/save_as_pdf" />
 
             <item android:id="@+id/downloads"
                   android:icon="@drawable/ic_menu_downloads"

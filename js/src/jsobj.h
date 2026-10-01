@@ -18,6 +18,7 @@
 
 #include "mozilla/MemoryReporting.h"
 
+#include "gc/Barrier.h"
 #include "gc/Marking.h"
 #include "js/GCAPI.h"
 #include "vm/ObjectImpl.h"
@@ -165,31 +166,12 @@ extern const Class IntlClass;
 extern const Class JSONClass;
 extern const Class MathClass;
 
-class ArrayBufferObject;
 class GlobalObject;
 class MapObject;
 class NewObjectCache;
 class NormalArgumentsObject;
 class SetObject;
 class StrictArgumentsObject;
-
-#ifdef JSGC_GENERATIONAL
-class DenseRangeRef : public gc::BufferableRef
-{
-    JSObject *owner;
-    uint32_t start;
-    uint32_t end;
-
-  public:
-    DenseRangeRef(JSObject *obj, uint32_t start, uint32_t end)
-      : owner(obj), start(start), end(end)
-    {
-        JS_ASSERT(start < end);
-    }
-
-    inline void mark(JSTracer *trc);
-};
-#endif
 
 /*
  * NOTE: This is a placeholder for bug 619558.
@@ -203,7 +185,7 @@ DenseRangeWriteBarrierPost(JSRuntime *rt, JSObject *obj, uint32_t start, uint32_
 #ifdef JSGC_GENERATIONAL
     if (count > 0) {
         JS::shadow::Runtime *shadowRuntime = JS::shadow::Runtime::asShadowRuntime(rt);
-        shadowRuntime->gcStoreBufferPtr()->putGeneric(DenseRangeRef(obj, start, start + count));
+        shadowRuntime->gcStoreBufferPtr()->putSlot(obj, HeapSlot::Element, start, count);
     }
 #endif
 }
@@ -252,7 +234,8 @@ class JSObject : public js::ObjectImpl
                                    js::gc::AllocKind kind,
                                    js::gc::InitialHeap heap,
                                    js::HandleShape shape,
-                                   js::HandleTypeObject type);
+                                   js::HandleTypeObject type,
+                                   js::HeapSlot *extantSlots = nullptr);
 
     /* Make an array object with the specified initial state. */
     static inline js::ArrayObject *createArray(js::ExclusiveContext *cx,
@@ -297,7 +280,7 @@ class JSObject : public js::ObjectImpl
         return setFlag(cx, js::BaseShape::WATCHED, GENERATE_SHAPE);
     }
 
-    /* See StackFrame::varObj. */
+    /* See InterpreterFrame::varObj. */
     inline bool isVarObj();
     bool setVarObj(js::ExclusiveContext *cx) {
         return setFlag(cx, js::BaseShape::VAROBJ);
@@ -565,6 +548,7 @@ class JSObject : public js::ObjectImpl
     static bool setMetadata(JSContext *cx, js::HandleObject obj, js::HandleObject newMetadata);
 
     inline js::GlobalObject &global() const;
+    inline bool isOwnGlobal() const;
 
     /* Remove the type (and prototype) or parent from a new object. */
     static inline bool clearType(JSContext *cx, js::HandleObject obj);
@@ -669,10 +653,6 @@ class JSObject : public js::ObjectImpl
                                                         js::HandleObject obj, uint32_t index);
 
     inline js::Value getDenseOrTypedArrayElement(uint32_t idx);
-    inline bool setDenseOrTypedArrayElementIfHasType(js::ThreadSafeContext *cx, uint32_t index,
-                                                     const js::Value &val);
-    inline bool setDenseOrTypedArrayElementWithType(js::ExclusiveContext *cx, uint32_t index,
-                                                    const js::Value &val);
 
     void copyDenseElements(uint32_t dstStart, const js::Value *src, uint32_t count) {
         JS_ASSERT(dstStart + count <= getDenseCapacity());
@@ -701,10 +681,11 @@ class JSObject : public js::ObjectImpl
         JS_ASSERT(dstStart + count <= getDenseCapacity());
 #if defined(DEBUG) && defined(JSGC_GENERATIONAL)
         JS::shadow::Runtime *rt = JS::shadow::Runtime::asShadowRuntime(runtimeFromAnyThread());
+        JS_ASSERT(!js::gc::IsInsideNursery(rt, this));
         for (uint32_t index = 0; index < count; ++index) {
             const JS::Value& value = src[index];
             if (value.isMarkable())
-                JS_ASSERT(js::gc::IsInsideNursery(rt, value.toGCThing()));
+                JS_ASSERT(!js::gc::IsInsideNursery(rt, value.toGCThing()));
         }
 #endif
         memcpy(&elements[dstStart], src, count * sizeof(js::HeapSlot));
@@ -746,13 +727,14 @@ class JSObject : public js::ObjectImpl
         }
     }
 
-    void moveDenseElementsUnbarriered(uint32_t dstStart, uint32_t srcStart, uint32_t count) {
+    void moveDenseElementsNoPreBarrier(uint32_t dstStart, uint32_t srcStart, uint32_t count) {
         JS_ASSERT(!shadowZone()->needsBarrier());
 
         JS_ASSERT(dstStart + count <= getDenseCapacity());
         JS_ASSERT(srcStart + count <= getDenseCapacity());
 
         memmove(elements + dstStart, elements + srcStart, count * sizeof(js::Value));
+        DenseRangeWriteBarrierPost(runtimeFromMainThread(), this, dstStart, count);
     }
 
     bool shouldConvertDoubleElements() {
@@ -1248,19 +1230,6 @@ class ValueArray {
 };
 
 namespace js {
-
-#ifdef JSGC_GENERATIONAL
-inline void
-DenseRangeRef::mark(JSTracer *trc)
-{
-    /* Apply forwarding, if we have already visited owner. */
-    js::gc::IsObjectMarked(&owner);
-    uint32_t initLen = owner->getDenseInitializedLength();
-    uint32_t clampedStart = Min(start, initLen);
-    gc::MarkArraySlots(trc, Min(end, initLen) - clampedStart,
-                       owner->getDenseElements() + clampedStart, "element");
-}
-#endif
 
 /* Set *resultp to tell whether obj has an own property with the given id. */
 bool

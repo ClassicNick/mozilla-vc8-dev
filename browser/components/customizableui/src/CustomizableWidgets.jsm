@@ -73,11 +73,73 @@ function updateCombinedWidgetStyle(aNode, aArea, aModifyCloseMenu) {
   if (aModifyCloseMenu) {
     attrs.closemenu = inPanel ? "none" : null;
   }
+  attrs["cui-areatype"] = aArea ? CustomizableUI.getAreaType(aArea) : null;
   for (let i = 0, l = aNode.childNodes.length; i < l; ++i) {
     if (aNode.childNodes[i].localName == "separator")
       continue;
     setAttributes(aNode.childNodes[i], attrs);
   }
+}
+
+function addShortcut(aNode, aDocument, aItem) {
+  let shortcutId = aNode.getAttribute("key");
+  if (!shortcutId) {
+    return;
+  }
+  let shortcut = aDocument.getElementById(shortcutId);
+  if (!shortcut) {
+    return;
+  }
+  aItem.setAttribute("shortcut", ShortcutUtils.prettifyShortcut(shortcut));
+}
+
+function fillSubviewFromMenuItems(aMenuItems, aSubview) {
+  let attrs = ["oncommand", "onclick", "label", "key", "disabled",
+               "command", "observes", "hidden", "class", "origin",
+               "image", "checked"];
+
+  let doc = aSubview.ownerDocument;
+  let fragment = doc.createDocumentFragment();
+  for (let menuChild of aMenuItems) {
+    if (menuChild.hidden)
+      continue;
+
+    let subviewItem;
+    if (menuChild.localName == "menuseparator") {
+      // Don't insert duplicate or leading separators. This can happen if there are
+      // menus (which we don't copy) above the separator.
+      if (!fragment.lastChild || fragment.lastChild.localName == "menuseparator") {
+        continue;
+      }
+      subviewItem = doc.createElementNS(kNSXUL, "menuseparator");
+    } else if (menuChild.localName == "menuitem") {
+      subviewItem = doc.createElementNS(kNSXUL, "toolbarbutton");
+      subviewItem.setAttribute("class", "subviewbutton");
+      addShortcut(menuChild, doc, subviewItem);
+    } else {
+      continue;
+    }
+    for (let attr of attrs) {
+      let attrVal = menuChild.getAttribute(attr);
+      if (attrVal)
+        subviewItem.setAttribute(attr, attrVal);
+    }
+    fragment.appendChild(subviewItem);
+  }
+  aSubview.appendChild(fragment);
+}
+
+function clearSubview(aSubview) {
+  let parent = aSubview.parentNode;
+  // We'll take the container out of the document before cleaning it out
+  // to avoid reflowing each time we remove something.
+  parent.removeChild(aSubview);
+
+  while (aSubview.firstChild) {
+    aSubview.firstChild.remove();
+  }
+
+  parent.appendChild(aSubview);
 }
 
 const CustomizableWidgets = [{
@@ -222,7 +284,7 @@ const CustomizableWidgets = [{
   }, {
     id: "save-page-button",
     shortcutId: "key_savePage",
-    tooltiptext: "save-page-button.tooltiptext2",
+    tooltiptext: "save-page-button.tooltiptext3",
     defaultArea: CustomizableUI.AREA_PANEL,
     onCommand: function(aEvent) {
       let win = aEvent.target &&
@@ -235,7 +297,7 @@ const CustomizableWidgets = [{
   }, {
     id: "find-button",
     shortcutId: "key_find",
-    tooltiptext: "find-button.tooltiptext2",
+    tooltiptext: "find-button.tooltiptext3",
     defaultArea: CustomizableUI.AREA_PANEL,
     onCommand: function(aEvent) {
       let win = aEvent.target &&
@@ -248,7 +310,7 @@ const CustomizableWidgets = [{
   }, {
     id: "open-file-button",
     shortcutId: "openFileKb",
-    tooltiptext: "open-file-button.tooltiptext2",
+    tooltiptext: "open-file-button.tooltiptext3",
     defaultArea: CustomizableUI.AREA_PANEL,
     onCommand: function(aEvent) {
       let win = aEvent.target
@@ -263,6 +325,7 @@ const CustomizableWidgets = [{
     type: "view",
     viewId: "PanelUI-developer",
     shortcutId: "key_devToolboxMenuItem",
+    tooltiptext: "developer-button.tooltiptext2",
     defaultArea: CustomizableUI.AREA_PANEL,
     onViewShowing: function(aEvent) {
       // Populate the subview with whatever menuitems are in the developer
@@ -271,58 +334,24 @@ const CustomizableWidgets = [{
       let doc = aEvent.target.ownerDocument;
       let win = doc.defaultView;
 
-      let items = doc.getElementById("PanelUI-developerItems");
       let menu = doc.getElementById("menuWebDeveloperPopup");
-      let attrs = ["oncommand", "onclick", "label", "key", "disabled",
-                   "command", "observes"];
 
-      let fragment = doc.createDocumentFragment();
       let itemsToDisplay = [...menu.children];
       // Hardcode the addition of the "work offline" menuitem at the bottom:
       itemsToDisplay.push({localName: "menuseparator", getAttribute: () => {}});
       itemsToDisplay.push(doc.getElementById("goOfflineMenuitem"));
-      for (let node of itemsToDisplay) {
-        if (node.hidden)
-          continue;
-
-        let item;
-        if (node.localName == "menuseparator") {
-          item = doc.createElementNS(kNSXUL, "menuseparator");
-        } else if (node.localName == "menuitem") {
-          item = doc.createElementNS(kNSXUL, "toolbarbutton");
-          item.setAttribute("class", "subviewbutton");
-        } else {
-          continue;
-        }
-        for (let attr of attrs) {
-          let attrVal = node.getAttribute(attr);
-          if (attrVal)
-            item.setAttribute(attr, attrVal);
-        }
-        fragment.appendChild(item);
-      }
-      items.appendChild(fragment);
+      fillSubviewFromMenuItems(itemsToDisplay, doc.getElementById("PanelUI-developerItems"));
 
     },
     onViewHiding: function(aEvent) {
       let doc = aEvent.target.ownerDocument;
-      let win = doc.defaultView;
-      let items = doc.getElementById("PanelUI-developerItems");
-      let parent = items.parentNode;
-      // We'll take the container out of the document before cleaning it out
-      // to avoid reflowing each time we remove something.
-      parent.removeChild(items);
-
-      while (items.firstChild) {
-        items.firstChild.remove();
-      }
-
-      parent.appendChild(items);
+      clearSubview(doc.getElementById("PanelUI-developerItems"));
     }
   }, {
     id: "sidebar-button",
     type: "view",
     viewId: "PanelUI-sidebar",
+    tooltiptext: "sidebar-button.tooltiptext2",
     onViewShowing: function(aEvent) {
       // Largely duplicated from the developer-button above with a couple minor
       // alterations.
@@ -331,8 +360,6 @@ const CustomizableWidgets = [{
       // of dealing with those right now.
       let doc = aEvent.target.ownerDocument;
       let win = doc.defaultView;
-
-      let items = doc.getElementById("PanelUI-sidebarItems");
       let menu = doc.getElementById("viewSidebarMenu");
 
       // First clear any existing menuitems then populate. Social sidebar
@@ -343,54 +370,16 @@ const CustomizableWidgets = [{
       if (providerMenuSeps.length > 0)
         win.SocialSidebar.populateProviderMenu(providerMenuSeps[0]);
 
-      let attrs = ["oncommand", "onclick", "label", "key", "disabled",
-                   "command", "observes", "hidden", "class", "origin",
-                   "image", "checked"];
-
-      let fragment = doc.createDocumentFragment();
-      let itemsToDisplay = [...menu.children];
-      for (let node of itemsToDisplay) {
-        if (node.hidden)
-          continue;
-
-        let item;
-        if (node.localName == "menuseparator") {
-          item = doc.createElementNS(kNSXUL, "menuseparator");
-        } else if (node.localName == "menuitem") {
-          item = doc.createElementNS(kNSXUL, "toolbarbutton");
-        } else {
-          continue;
-        }
-        for (let attr of attrs) {
-          let attrVal = node.getAttribute(attr);
-          if (attrVal)
-            item.setAttribute(attr, attrVal);
-        }
-        if (node.localName == "menuitem")
-          item.classList.add("subviewbutton");
-        fragment.appendChild(item);
-      }
-
-      items.appendChild(fragment);
+      fillSubviewFromMenuItems([...menu.children], doc.getElementById("PanelUI-sidebarItems"));
     },
     onViewHiding: function(aEvent) {
       let doc = aEvent.target.ownerDocument;
-      let items = doc.getElementById("PanelUI-sidebarItems");
-      let parent = items.parentNode;
-      // We'll take the container out of the document before cleaning it out
-      // to avoid reflowing each time we remove something.
-      parent.removeChild(items);
-
-      while (items.firstChild) {
-        items.firstChild.remove();
-      }
-
-      parent.appendChild(items);
+      clearSubview(doc.getElementById("PanelUI-sidebarItems"));
     }
   }, {
     id: "add-ons-button",
     shortcutId: "key_openAddons",
-    tooltiptext: "add-ons-button.tooltiptext2",
+    tooltiptext: "add-ons-button.tooltiptext3",
     defaultArea: CustomizableUI.AREA_PANEL,
     onCommand: function(aEvent) {
       let win = aEvent.target &&
@@ -425,38 +414,28 @@ const CustomizableWidgets = [{
   }, {
     id: "zoom-controls",
     type: "custom",
+    tooltiptext: "zoom-controls.tooltiptext2",
     defaultArea: CustomizableUI.AREA_PANEL,
     onBuild: function(aDocument) {
       const kPanelId = "PanelUI-popup";
       let areaType = CustomizableUI.getAreaType(this.currentArea);
       let inPanel = areaType == CustomizableUI.TYPE_MENU_PANEL;
       let inToolbar = areaType == CustomizableUI.TYPE_TOOLBAR;
-      let closeMenu = inPanel ? "none" : null;
-      let cls = inPanel ? "panel-combined-button" : "toolbarbutton-1 toolbarbutton-combined";
-
-      if (!this.currentArea)
-        cls = null;
 
       let buttons = [{
         id: "zoom-out-button",
-        closemenu: closeMenu,
         command: "cmd_fullZoomReduce",
-        class: cls,
         label: true,
         tooltiptext: "tooltiptext2",
         shortcutId: "key_fullZoomReduce",
       }, {
         id: "zoom-reset-button",
-        closemenu: closeMenu,
         command: "cmd_fullZoomReset",
-        class: cls,
         tooltiptext: "tooltiptext2",
         shortcutId: "key_fullZoomReset",
       }, {
         id: "zoom-in-button",
-        closemenu: closeMenu,
         command: "cmd_fullZoomEnlarge",
-        class: cls,
         label: true,
         tooltiptext: "tooltiptext2",
         shortcutId: "key_fullZoomEnlarge",
@@ -493,7 +472,7 @@ const CustomizableWidgets = [{
         // tabbrowser. This breaks the zoom toolkit code (see bug 897410). Don't let that happen:
         let zoomFactor = 100;
         try {
-          zoomFactor = Math.floor(window.ZoomManager.zoom * 100);
+          zoomFactor = Math.round(window.ZoomManager.zoom * 100);
         } catch (e) {}
         zoomResetButton.setAttribute("label", CustomizableUI.getLocalizedProperty(
           buttons[1], "label", [updateDisplay ? zoomFactor : 100]
@@ -515,6 +494,7 @@ const CustomizableWidgets = [{
         }
         updateZoomResetButton();
       }
+      updateCombinedWidgetStyle(node, this.currentArea, true);
 
       let listener = {
         onWidgetAdded: function(aWidgetId, aArea, aPosition) {
@@ -607,32 +587,24 @@ const CustomizableWidgets = [{
   }, {
     id: "edit-controls",
     type: "custom",
+    tooltiptext: "edit-controls.tooltiptext2",
     defaultArea: CustomizableUI.AREA_PANEL,
     onBuild: function(aDocument) {
-      let inPanel = (this.currentArea == CustomizableUI.AREA_PANEL);
-      let cls = inPanel ? "panel-combined-button" : "toolbarbutton-1 toolbarbutton-combined";
-
-      if (!this.currentArea)
-        cls = null;
-
       let buttons = [{
         id: "cut-button",
         command: "cmd_cut",
-        class: cls,
         label: true,
         tooltiptext: "tooltiptext2",
         shortcutId: "key_cut",
       }, {
         id: "copy-button",
         command: "cmd_copy",
-        class: cls,
         label: true,
         tooltiptext: "tooltiptext2",
         shortcutId: "key_copy",
       }, {
         id: "paste-button",
         command: "cmd_paste",
-        class: cls,
         label: true,
         tooltiptext: "tooltiptext2",
         shortcutId: "key_paste",
@@ -655,6 +627,8 @@ const CustomizableWidgets = [{
         setAttributes(btnNode, aButton);
         node.appendChild(btnNode);
       });
+
+      updateCombinedWidgetStyle(node, this.currentArea);
 
       let listener = {
         onWidgetAdded: function(aWidgetId, aArea, aPosition) {
@@ -705,6 +679,7 @@ const CustomizableWidgets = [{
     id: "feed-button",
     type: "view",
     viewId: "PanelUI-feeds",
+    tooltiptext: "feed-button.tooltiptext2",
     defaultArea: CustomizableUI.AREA_PANEL,
     onClick: function(aEvent) {
       let win = aEvent.target.ownerDocument.defaultView;
@@ -907,7 +882,7 @@ const CustomizableWidgets = [{
     }
   }, {
     id: "email-link-button",
-    tooltiptext: "email-link-button.tooltiptext2",
+    tooltiptext: "email-link-button.tooltiptext3",
     onCommand: function(aEvent) {
       let win = aEvent.view;
       win.MailIntegration.sendLinkForWindow(win.content);

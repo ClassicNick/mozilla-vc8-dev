@@ -90,7 +90,7 @@
 #include <string.h>
 
 #include "xpcpublic.h"
-#include "js/Tracer.h"
+#include "js/TracingAPI.h"
 #include "js/WeakMapPtr.h"
 #include "pldhash.h"
 #include "nscore.h"
@@ -557,7 +557,8 @@ public:
     AutoMarkingPtr**  GetAutoRootsAdr() {return &mAutoRoots;}
 
     JSObject* GetJunkScope();
-    void DeleteJunkScope();
+    JSObject* GetCompilationScope();
+    void DeleteSingletonScopes();
 
     PRTime GetWatchdogTimestamp(WatchdogTimestampCategory aCategory);
     void OnAfterProcessNextEvent() { mSlowScriptCheckpoint = mozilla::TimeStamp(); }
@@ -597,7 +598,8 @@ private:
     nsTArray<xpcContextCallback> extraContextCallbacks;
     nsRefPtr<WatchdogManager> mWatchdogManager;
     JS::GCSliceCallback mPrevGCSliceCallback;
-    JSObject* mJunkScope;
+    JS::PersistentRootedObject mJunkScope;
+    JS::PersistentRootedObject mCompilationScope;
     nsRefPtr<AsyncFreeSnowWhite> mAsyncSnowWhiteFreer;
 
     mozilla::TimeStamp mSlowScriptCheckpoint;
@@ -2047,7 +2049,6 @@ public:
     static nsresult
     WrapNewGlobal(xpcObjectHelper &nativeHelper,
                   nsIPrincipal *principal, bool initStandardClasses,
-                  bool fireOnNewGlobalHook,
                   JS::CompartmentOptions& aOptions,
                   XPCWrappedNative **wrappedGlobal);
 
@@ -2132,6 +2133,8 @@ public:
                                        "XPCWrappedNative::mFlatJSObject");
         }
     }
+
+    static void Trace(JSTracer *trc, JSObject *obj);
 
     void AutoTrace(JSTracer *trc) {
         TraceSelf(trc);
@@ -2767,6 +2770,7 @@ public:
     XPCJSContextStack(XPCJSRuntime *aRuntime)
       : mRuntime(aRuntime)
       , mSafeJSContext(nullptr)
+      , mSafeJSContextGlobal(aRuntime->Runtime(), nullptr)
     { }
 
     virtual ~XPCJSContextStack();
@@ -2783,6 +2787,7 @@ public:
 
     JSContext *InitSafeJSContext();
     JSContext *GetSafeJSContext();
+    JSObject *GetSafeJSContextGlobal();
     bool HasJSContext(JSContext *cx);
 
     const InfallibleTArray<XPCJSContextInfo>* GetStack()
@@ -2801,6 +2806,7 @@ private:
     AutoInfallibleTArray<XPCJSContextInfo, 16> mStack;
     XPCJSRuntime* mRuntime;
     JSContext*  mSafeJSContext;
+    JS::PersistentRootedObject mSafeJSContextGlobal;
 };
 
 /***************************************************************************/
@@ -3286,9 +3292,13 @@ nsresult
 ThrowAndFail(nsresult errNum, JSContext *cx, bool *retval);
 
 struct GlobalProperties {
-    GlobalProperties() { mozilla::PodZero(this); }
+    GlobalProperties(bool aPromise) {
+      mozilla::PodZero(this);
+      Promise = true;
+    }
     bool Parse(JSContext *cx, JS::HandleObject obj);
     bool Define(JSContext *cx, JS::HandleObject obj);
+    bool Promise : 1;
     bool indexedDB : 1;
     bool XMLHttpRequest : 1;
     bool TextDecoder : 1;
@@ -3339,6 +3349,8 @@ public:
         , proto(cx)
         , sameZoneAs(cx)
         , invisibleToDebugger(false)
+        , discardSource(false)
+        , globalProperties(true)
         , metadata(cx)
     { }
 
@@ -3351,6 +3363,7 @@ public:
     nsCString sandboxName;
     JS::RootedObject sameZoneAs;
     bool invisibleToDebugger;
+    bool discardSource;
     GlobalProperties globalProperties;
     JS::RootedValue metadata;
 
@@ -3387,6 +3400,10 @@ public:
 JSObject *
 CreateGlobalObject(JSContext *cx, const JSClass *clasp, nsIPrincipal *principal,
                    JS::CompartmentOptions& aOptions);
+
+bool
+InitGlobalObject(JSContext* aJSContext, JS::Handle<JSObject*> aGlobal,
+                 uint32_t aFlags);
 
 // Helper for creating a sandbox object to use for evaluating
 // untrusted code completely separated from all other code in the
@@ -3436,7 +3453,11 @@ EvalInWindow(JSContext *cx, const nsAString &source, JS::HandleObject scope,
 
 bool
 ExportFunction(JSContext *cx, JS::HandleValue vscope, JS::HandleValue vfunction,
-               JS::HandleValue vname, JS::MutableHandleValue rval);
+               JS::HandleValue voptions, JS::MutableHandleValue rval);
+
+bool
+CloneInto(JSContext *cx, JS::HandleValue vobj, JS::HandleValue vscope,
+          JS::HandleValue voptions, JS::MutableHandleValue rval);
 
 } /* namespace xpc */
 

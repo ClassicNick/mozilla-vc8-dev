@@ -36,8 +36,6 @@
 #include "pratom.h"                     // For PR_ATOMIC_INCREMENT/DECREMENT
 #include "gfxPrefs.h"
 
-class gfxImageSurface;
-
 namespace mozilla {
 namespace layers {
 
@@ -47,10 +45,12 @@ class ClientLayerManager;
 
 
 // A class to help implement copy-on-write semantics for shared tiles.
-class gfxSharedReadLock : public AtomicRefCounted<gfxSharedReadLock> {
-public:
-  MOZ_DECLARE_REFCOUNTED_TYPENAME(gfxSharedReadLock)
+class gfxSharedReadLock {
+protected:
   virtual ~gfxSharedReadLock() {}
+
+public:
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(gfxSharedReadLock)
 
   virtual int32_t ReadLock() = 0;
   virtual int32_t ReadUnlock() = 0;
@@ -244,41 +244,46 @@ struct BasicTiledLayerPaintData {
    * The scroll offset of the content from the nearest ancestor layer that
    * represents scrollable content with a display port set.
    */
-  ScreenPoint mScrollOffset;
+  ParentLayerPoint mScrollOffset;
 
   /*
    * The scroll offset of the content from the nearest ancestor layer that
    * represents scrollable content with a display port set, for the last
    * layer update transaction.
    */
-  ScreenPoint mLastScrollOffset;
+  ParentLayerPoint mLastScrollOffset;
 
   /*
-   * The transform matrix to go from ParentLayer units to transformed
-   * LayoutDevice units.
+   * The transform matrix to go from Screen units to ParentLayer units.
    */
-  gfx3DMatrix mTransformParentLayerToLayout;
+  gfx3DMatrix mTransformParentLayerToLayoutDevice;
 
   /*
    * The critical displayport of the content from the nearest ancestor layer
    * that represents scrollable content with a display port set. Empty if a
    * critical displayport is not set.
    *
-   * This is in transformed LayoutDevice coordinates, but is stored as an
-   * nsIntRect for convenience when intersecting with the layer's mValidRegion.
+   * This is in LayoutDevice coordinates, but is stored as an nsIntRect for
+   * convenience when intersecting with the layer's mValidRegion.
    */
-  nsIntRect mLayoutCriticalDisplayPort;
+  nsIntRect mCriticalDisplayPort;
+
+  /*
+   * The viewport of the content from the nearest ancestor layer that
+   * represents scrollable content with a display port set.
+   */
+  LayoutDeviceRect mViewport;
 
   /*
    * The render resolution of the document that the content this layer
    * represents is in.
    */
-  CSSToScreenScale mResolution;
+  CSSToParentLayerScale mResolution;
 
   /*
-   * The composition bounds of the primary scrollable layer, in transformed
-   * layout device coordinates. This is used to make sure that tiled updates to
-   * regions that are visible to the user are grouped coherently.
+   * The composition bounds of the layer, in LayoutDevice coordinates. This is
+   * used to make sure that tiled updates to regions that are visible to the
+   * user are grouped coherently.
    */
   LayoutDeviceRect mCompositionBounds;
 
@@ -381,9 +386,9 @@ public:
 
   void DiscardBackBuffers();
 
-  const CSSToScreenScale& GetFrameResolution() { return mFrameResolution; }
+  const CSSToParentLayerScale& GetFrameResolution() { return mFrameResolution; }
 
-  void SetFrameResolution(const CSSToScreenScale& aResolution) { mFrameResolution = aResolution; }
+  void SetFrameResolution(const CSSToParentLayerScale& aResolution) { mFrameResolution = aResolution; }
 
   bool HasFormatChanged() const;
 
@@ -424,7 +429,7 @@ private:
   ClientLayerManager* mManager;
   LayerManager::DrawThebesLayerCallback mCallback;
   void* mCallbackData;
-  CSSToScreenScale mFrameResolution;
+  CSSToParentLayerScale mFrameResolution;
   bool mLastPaintOpaque;
 
   // The DrawTarget we use when UseSinglePaintBuffer() above is true.

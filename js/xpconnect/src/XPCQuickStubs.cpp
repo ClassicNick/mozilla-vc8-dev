@@ -122,10 +122,10 @@ xpc_qsDefineQuickStubs(JSContext *cx, JSObject *protoArg, unsigned flags,
                 for ( ; ps < ps_end; ++ps) {
                     if (!JS_DefineProperty(cx, proto,
                                            stringTable + ps->name_index,
-                                           JSVAL_VOID,
+                                           JS::UndefinedHandleValue,
+                                           flags | JSPROP_SHARED | JSPROP_NATIVE_ACCESSORS,
                                            (JSPropertyOp)ps->getter,
-                                           (JSStrictPropertyOp)ps->setter,
-                                           flags | JSPROP_SHARED | JSPROP_NATIVE_ACCESSORS))
+                                           (JSStrictPropertyOp)ps->setter))
                         return false;
                 }
 
@@ -205,12 +205,13 @@ GetMemberInfo(JSObject *obj, jsid memberId, const char **ifaceName)
 static void
 GetMethodInfo(JSContext *cx, jsval *vp, const char **ifaceNamep, jsid *memberIdp)
 {
-    RootedObject funobj(cx, JSVAL_TO_OBJECT(JS_CALLEE(cx, vp)));
+    CallReceiver call = CallReceiverFromVp(vp);
+    RootedObject funobj(cx, &call.callee());
     MOZ_ASSERT(JS_ObjectIsFunction(cx, funobj),
                "JSNative callee should be Function object");
     RootedString str(cx, JS_GetFunctionId(JS_GetObjectFunction(funobj)));
     RootedId methodId(cx, str ? INTERNED_STRING_TO_JSID(cx, str) : JSID_VOID);
-    GetMemberInfo(JSVAL_TO_OBJECT(vp[1]), methodId, ifaceNamep);
+    GetMemberInfo(&call.thisv().toObject(), methodId, ifaceNamep);
     *memberIdp = methodId;
 }
 

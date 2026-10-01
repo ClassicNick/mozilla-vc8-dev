@@ -15,6 +15,7 @@
 #include "frontend/Parser.h"
 #include "jit/AsmJSLink.h"
 #include "vm/GlobalObject.h"
+#include "vm/TraceLogging.h"
 
 #include "jsobjinlines.h"
 #include "jsscriptinlines.h"
@@ -145,7 +146,8 @@ CanLazilyParse(ExclusiveContext *cx, const ReadOnlyCompileOptions &options)
 {
     return options.canLazilyParse &&
         options.compileAndGo &&
-        options.sourcePolicy == CompileOptions::SAVE_SOURCE &&
+        !cx->compartment()->options().discardSource() &&
+        !options.sourceIsLazy &&
         !(cx->compartment()->debugMode() &&
           cx->compartment()->runtimeFromAnyThread()->debugHooks.newScriptHook);
 }
@@ -188,14 +190,15 @@ frontend::CompileScript(ExclusiveContext *cx, LifoAlloc *alloc, HandleObject sco
                         SourceCompressionTask *extraSct /* = nullptr */)
 {
     RootedString source(cx, source_);
-    SkipRoot skip(cx, &chars);
 
-#if JS_TRACE_LOGGING
-        js::AutoTraceLog logger(js::TraceLogging::defaultLogger(),
-                                js::TraceLogging::PARSER_COMPILE_SCRIPT_START,
-                                js::TraceLogging::PARSER_COMPILE_SCRIPT_STOP,
-                                options);
-#endif
+    js::TraceLogger *logger = nullptr;
+    if (cx->isJSContext())
+        logger = TraceLoggerForMainThread(cx->asJSContext()->runtime());
+    else
+        logger = TraceLoggerForCurrentThread();
+    uint32_t logId = js::TraceLogCreateTextId(logger, options);
+    js::AutoTraceLog scriptLogger(logger, logId);
+    js::AutoTraceLog typeLogger(logger, TraceLogger::ParserCompileScript);
 
     if (cx->isJSContext())
         MaybeCallSourceHandler(cx->asJSContext(), options, chars, length);
@@ -210,7 +213,7 @@ frontend::CompileScript(ExclusiveContext *cx, LifoAlloc *alloc, HandleObject sco
 
     if (!CheckLength(cx, length))
         return nullptr;
-    JS_ASSERT_IF(staticLevel != 0, options.sourcePolicy != CompileOptions::LAZY_SOURCE);
+    JS_ASSERT_IF(staticLevel != 0, !options.sourceIsLazy);
 
     RootedScriptSource sourceObject(cx, CreateScriptSourceObject(cx, options));
     if (!sourceObject)
@@ -221,16 +224,11 @@ frontend::CompileScript(ExclusiveContext *cx, LifoAlloc *alloc, HandleObject sco
     SourceCompressionTask mysct(cx);
     SourceCompressionTask *sct = extraSct ? extraSct : &mysct;
 
-    switch (options.sourcePolicy) {
-      case CompileOptions::SAVE_SOURCE:
-        if (!ss->setSourceCopy(cx, chars, length, false, sct))
+    if (!cx->compartment()->options().discardSource()) {
+        if (options.sourceIsLazy)
+            ss->setSourceRetrievable();
+        else if (!ss->setSourceCopy(cx, chars, length, false, sct))
             return nullptr;
-        break;
-      case CompileOptions::LAZY_SOURCE:
-        ss->setSourceRetrievable();
-        break;
-      case CompileOptions::NO_SOURCE:
-        break;
     }
 
     bool canLazilyParse = CanLazilyParse(cx, options);
@@ -438,12 +436,10 @@ frontend::CompileLazyFunction(JSContext *cx, Handle<LazyScript*> lazy, const jsc
            .setNoScriptRval(false)
            .setSelfHostingMode(false);
 
-#if JS_TRACE_LOGGING
-        js::AutoTraceLog logger(js::TraceLogging::defaultLogger(),
-                                js::TraceLogging::PARSER_COMPILE_LAZY_START,
-                                js::TraceLogging::PARSER_COMPILE_LAZY_STOP,
-                                options);
-#endif
+    js::TraceLogger *logger = js::TraceLoggerForMainThread(cx->runtime());
+    uint32_t logId = js::TraceLogCreateTextId(logger, options);
+    js::AutoTraceLog scriptLogger(logger, logId);
+    js::AutoTraceLog typeLogger(logger, TraceLogger::ParserCompileLazy);
 
     Parser<FullParseHandler> parser(cx, &cx->tempLifoAlloc(), options, chars, length,
                                     /* foldConstants = */ true, nullptr, lazy);
@@ -498,16 +494,13 @@ CompileFunctionBody(JSContext *cx, MutableHandleFunction fun, const ReadOnlyComp
                     const AutoNameVector &formals, const jschar *chars, size_t length,
                     GeneratorKind generatorKind)
 {
-#if JS_TRACE_LOGGING
-        js::AutoTraceLog logger(js::TraceLogging::defaultLogger(),
-                                js::TraceLogging::PARSER_COMPILE_FUNCTION_START,
-                                js::TraceLogging::PARSER_COMPILE_FUNCTION_STOP,
-                                options);
-#endif
+    js::TraceLogger *logger = js::TraceLoggerForMainThread(cx->runtime());
+    uint32_t logId = js::TraceLogCreateTextId(logger, options);
+    js::AutoTraceLog scriptLogger(logger, logId);
+    js::AutoTraceLog typeLogger(logger, TraceLogger::ParserCompileFunction);
 
     // FIXME: make Function pass in two strings and parse them as arguments and
     // ProgramElements respectively.
-    SkipRoot skip(cx, &chars);
 
     MaybeCallSourceHandler(cx, options, chars, length);
 
@@ -520,8 +513,8 @@ CompileFunctionBody(JSContext *cx, MutableHandleFunction fun, const ReadOnlyComp
     ScriptSource *ss = sourceObject->source();
 
     SourceCompressionTask sct(cx);
-    JS_ASSERT(options.sourcePolicy != CompileOptions::LAZY_SOURCE);
-    if (options.sourcePolicy == CompileOptions::SAVE_SOURCE) {
+    JS_ASSERT(!options.sourceIsLazy);
+    if (!cx->compartment()->options().discardSource()) {
         if (!ss->setSourceCopy(cx, chars, length, true, &sct))
             return false;
     }

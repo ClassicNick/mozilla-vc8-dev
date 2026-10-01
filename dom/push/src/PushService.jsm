@@ -22,7 +22,7 @@ Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/IndexedDBHelper.jsm");
 Cu.import("resource://gre/modules/Timer.jsm");
 Cu.import("resource://gre/modules/Preferences.jsm");
-Cu.import("resource://gre/modules/commonjs/sdk/core/promise.js");
+Cu.import("resource://gre/modules/Promise.jsm");
 Cu.importGlobalProperties(["indexedDB"]);
 
 XPCOMUtils.defineLazyModuleGetter(this, "AlarmService",
@@ -366,6 +366,11 @@ this.PushService = {
         let data = aSubject.QueryInterface(Ci.mozIApplicationClearPrivateDataParams);
         if (!data) {
           debug("webapps-clear-data: Failed to get information about application");
+          return;
+        }
+
+        // Only remove push registrations for apps.
+        if (data.browserOnly) {
           return;
         }
 

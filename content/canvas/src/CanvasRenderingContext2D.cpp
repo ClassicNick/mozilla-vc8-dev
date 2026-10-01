@@ -73,6 +73,7 @@
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/ImageData.h"
 #include "mozilla/dom/PBrowserParent.h"
+#include "mozilla/dom/ToJSValue.h"
 #include "mozilla/dom/TypedArray.h"
 #include "mozilla/Endian.h"
 #include "mozilla/gfx/2D.h"
@@ -94,10 +95,13 @@
 #include "nsGlobalWindow.h"
 #include "GLContext.h"
 #include "GLContextProvider.h"
+#include "SVGContentUtils.h"
+#include "nsIScreenManager.h"
 
 #ifdef USE_SKIA_GPU
 #undef free // apparently defined by some windows header, clashing with a free()
             // method in SkTypes.h
+#ifdef USE_SKIA
 #include "SkiaGLGlue.h"
 #include "SurfaceStream.h"
 #include "SurfaceTypes.h"
@@ -562,9 +566,9 @@ CanvasRenderingContext2D::~CanvasRenderingContext2D()
 }
 
 JSObject*
-CanvasRenderingContext2D::WrapObject(JSContext *cx, JS::Handle<JSObject*> scope)
+CanvasRenderingContext2D::WrapObject(JSContext *cx)
 {
-  return CanvasRenderingContext2DBinding::Wrap(cx, scope, this);
+  return CanvasRenderingContext2DBinding::Wrap(cx, this);
 }
 
 bool
@@ -823,8 +827,48 @@ CanvasRenderingContext2D::RemoveDemotableContext(CanvasRenderingContext2D* conte
 
 bool
 CheckSizeForSkiaGL(IntSize size) {
+  MOZ_ASSERT(NS_IsMainThread());
+
   int minsize = Preferences::GetInt("gfx.canvas.min-size-for-skia-gl", 128);
-  return size.width >= minsize && size.height >= minsize;
+  if (size.width < minsize || size.height < minsize) {
+    return false;
+  }
+
+  // Maximum pref allows 3 different options:
+  //  0   means unlimited size
+  //  > 0 means use value as an absolute threshold
+  //  < 0 means use the number of screen pixels as a threshold
+  int maxsize = Preferences::GetInt("gfx.canvas.max-size-for-skia-gl", 0);
+
+  // unlimited max size
+  if (!maxsize) {
+    return true;
+  }
+
+  // absolute max size threshold
+  if (maxsize > 0) {
+    return size.width <= maxsize && size.height <= maxsize;
+  }
+
+  // Cache the number of pixels on the primary screen
+  static int32_t gScreenPixels = -1;
+  if (gScreenPixels < 0) {
+    nsCOMPtr<nsIScreenManager> screenManager =
+      do_GetService("@mozilla.org/gfx/screenmanager;1");
+    if (screenManager) {
+      nsCOMPtr<nsIScreen> primaryScreen;
+      screenManager->GetPrimaryScreen(getter_AddRefs(primaryScreen));
+      if (primaryScreen) {
+        int32_t x, y, width, height;
+        primaryScreen->GetRect(&x, &y, &width, &height);
+
+        gScreenPixels = width * height;
+      }
+    }
+  }
+
+  // screen size acts as max threshold
+  return gScreenPixels < 0 || (size.width * size.height) <= gScreenPixels;
 }
 
 void
@@ -1011,51 +1055,6 @@ CanvasRenderingContext2D::SetIsIPC(bool isIPC)
 }
 
 NS_IMETHODIMP
-CanvasRenderingContext2D::Render(gfxContext *ctx, GraphicsFilter aFilter, uint32_t aFlags)
-{
-  nsresult rv = NS_OK;
-
-  EnsureTarget();
-  if (!IsTargetValid()) {
-    return NS_ERROR_FAILURE;
-  }
-
-  nsRefPtr<gfxASurface> surface;
-
-  if (NS_FAILED(GetThebesSurface(getter_AddRefs(surface)))) {
-    return NS_ERROR_FAILURE;
-  }
-
-  nsRefPtr<gfxPattern> pat = new gfxPattern(surface);
-
-  pat->SetFilter(aFilter);
-  pat->SetExtend(gfxPattern::EXTEND_PAD);
-
-  gfxContext::GraphicsOperator op = ctx->CurrentOperator();
-  if (mOpaque)
-      ctx->SetOperator(gfxContext::OPERATOR_SOURCE);
-
-  // XXX I don't want to use PixelSnapped here, but layout doesn't guarantee
-  // pixel alignment for this stuff!
-  ctx->NewPath();
-  ctx->PixelSnappedRectangleAndSetPattern(gfxRect(0, 0, mWidth, mHeight), pat);
-  ctx->Fill();
-
-  if (mOpaque)
-      ctx->SetOperator(op);
-
-  if (!(aFlags & RenderFlagPremultAlpha)) {
-      nsRefPtr<gfxASurface> curSurface = ctx->CurrentSurface();
-      nsRefPtr<gfxImageSurface> gis = curSurface->GetAsImageSurface();
-      MOZ_ASSERT(gis, "If non-premult alpha, must be able to get image surface!");
-
-      gfxUtils::UnpremultiplyImageSurface(gis);
-  }
-
-  return rv;
-}
-
-NS_IMETHODIMP
 CanvasRenderingContext2D::SetContextOptions(JSContext* aCx, JS::Handle<JS::Value> aOptions)
 {
   if (aOptions.isNullOrUndefined()) {
@@ -1235,17 +1234,18 @@ CanvasRenderingContext2D::SetTransform(double m11, double m12,
 JSObject*
 MatrixToJSObject(JSContext* cx, const Matrix& matrix, ErrorResult& error)
 {
-  JS::AutoValueArray<6> elts(cx);
-  elts[0].setDouble(matrix._11); elts[1].setDouble(matrix._12);
-  elts[2].setDouble(matrix._21); elts[3].setDouble(matrix._22);
-  elts[4].setDouble(matrix._31); elts[5].setDouble(matrix._32);
+  double elts[6] = { matrix._11, matrix._12,
+                     matrix._21, matrix._22,
+                     matrix._31, matrix._32 };
 
   // XXX Should we enter GetWrapper()'s compartment?
-  JSObject* obj = JS_NewArrayObject(cx, elts);
-  if  (!obj) {
+  JS::Rooted<JS::Value> val(cx);
+  if (!ToJSValue(cx, elts, &val)) {
     error.Throw(NS_ERROR_OUT_OF_MEMORY);
+    return nullptr;
   }
-  return obj;
+
+  return &val.toObject();
 }
 
 static bool
@@ -1695,6 +1695,29 @@ CanvasRenderingContext2D::Fill(const CanvasWindingRule& winding)
   Redraw();
 }
 
+void CanvasRenderingContext2D::Fill(const CanvasPath& path, const CanvasWindingRule& winding)
+{
+  EnsureTarget();
+
+  RefPtr<gfx::Path> gfxpath = path.GetPath(winding, mTarget);
+
+  if (!gfxpath) {
+    return;
+  }
+
+  mgfx::Rect bounds;
+
+  if (NeedToDrawShadow()) {
+    bounds = gfxpath->GetBounds(mTarget->GetTransform());
+  }
+
+  AdjustedTarget(this, bounds.IsEmpty() ? nullptr : &bounds)->
+    Fill(gfxpath, CanvasGeneralPattern().ForStyle(this, STYLE_FILL, mTarget),
+         DrawOptions(CurrentState().globalAlpha, UsedOperation()));
+
+  Redraw();
+}
+
 void
 CanvasRenderingContext2D::Stroke()
 {
@@ -1719,6 +1742,37 @@ CanvasRenderingContext2D::Stroke()
 
   AdjustedTarget(this, bounds.IsEmpty() ? nullptr : &bounds)->
     Stroke(mPath, CanvasGeneralPattern().ForStyle(this, STYLE_STROKE, mTarget),
+           strokeOptions, DrawOptions(state.globalAlpha, UsedOperation()));
+
+  Redraw();
+}
+
+void
+CanvasRenderingContext2D::Stroke(const CanvasPath& path)
+{
+  EnsureTarget();
+
+  RefPtr<gfx::Path> gfxpath = path.GetPath(CanvasWindingRule::Nonzero, mTarget);
+
+  if (!gfxpath) {
+    return;
+  }
+
+  const ContextState &state = CurrentState();
+
+  StrokeOptions strokeOptions(state.lineWidth, state.lineJoin,
+                              state.lineCap, state.miterLimit,
+                              state.dash.Length(), state.dash.Elements(),
+                              state.dashOffset);
+
+  mgfx::Rect bounds;
+  if (NeedToDrawShadow()) {
+    bounds =
+      gfxpath->GetStrokedBounds(strokeOptions, mTarget->GetTransform());
+  }
+
+  AdjustedTarget(this, bounds.IsEmpty() ? nullptr : &bounds)->
+    Stroke(gfxpath, CanvasGeneralPattern().ForStyle(this, STYLE_STROKE, mTarget),
            strokeOptions, DrawOptions(state.globalAlpha, UsedOperation()));
 
   Redraw();
@@ -1802,6 +1856,21 @@ CanvasRenderingContext2D::Clip(const CanvasWindingRule& winding)
 
   mTarget->PushClip(mPath);
   CurrentState().clipsPushed.push_back(mPath);
+}
+
+void
+CanvasRenderingContext2D::Clip(const CanvasPath& path, const CanvasWindingRule& winding)
+{
+  EnsureTarget();
+
+  RefPtr<gfx::Path> gfxpath = path.GetPath(winding, mTarget);
+
+  if (!gfxpath) {
+    return;
+  }
+
+  mTarget->PushClip(gfxpath);
+  CurrentState().clipsPushed.push_back(gfxpath);
 }
 
 void
@@ -2345,20 +2414,6 @@ CanvasRenderingContext2D::MeasureText(const nsAString& rawText,
   return new TextMetrics(width);
 }
 
-#ifdef ACCESSIBILITY
-// Callback function, for freeing hit regions bounds values stored in property table
-static void
-ReleaseBBoxPropertyValue(void*    aObject,       /* unused */
-                            nsIAtom* aPropertyName, /* unused */
-                            void*    aPropertyValue,
-                            void*    aData          /* unused */)
-{
-  nsRect* valPtr =
-    static_cast<nsRect*>(aPropertyValue);
-  delete valPtr;
-}
-#endif
-
 void
 CanvasRenderingContext2D::AddHitRegion(const HitRegionOptions& options, ErrorResult& error)
 {
@@ -2400,7 +2455,7 @@ CanvasRenderingContext2D::AddHitRegion(const HitRegionOptions& options, ErrorRes
     *nsBounds = nsLayoutUtils::RoundGfxRectToAppRect(rect, AppUnitsPerCSSPixel());
     options.mControl->DeleteProperty(nsGkAtoms::hitregion);
     options.mControl->SetProperty(nsGkAtoms::hitregion, nsBounds,
-                                  ReleaseBBoxPropertyValue);
+                                  nsINode::DeleteProperty<nsRect>);
   }
 #endif
 
@@ -3065,6 +3120,18 @@ CanvasRenderingContext2D::IsPointInPath(double x, double y, const CanvasWindingR
   return mPath->ContainsPoint(Point(x, y), mTarget->GetTransform());
 }
 
+bool CanvasRenderingContext2D::IsPointInPath(const CanvasPath& mPath, double x, double y, const CanvasWindingRule& mWinding)
+{
+  if (!FloatValidate(x,y)) {
+    return false;
+  }
+
+  EnsureTarget();
+  RefPtr<gfx::Path> tempPath = mPath.GetPath(mWinding, mTarget);
+
+  return tempPath->ContainsPoint(Point(x, y), mTarget->GetTransform());
+}
+
 bool
 CanvasRenderingContext2D::IsPointInStroke(double x, double y)
 {
@@ -3091,6 +3158,28 @@ CanvasRenderingContext2D::IsPointInStroke(double x, double y)
     return mPath->StrokeContainsPoint(strokeOptions, Point(x, y), mPathToDS);
   }
   return mPath->StrokeContainsPoint(strokeOptions, Point(x, y), mTarget->GetTransform());
+}
+
+bool CanvasRenderingContext2D::IsPointInStroke(const CanvasPath& mPath, double x, double y)
+{
+  if (!FloatValidate(x,y)) {
+    return false;
+  }
+
+  EnsureTarget();
+  RefPtr<gfx::Path> tempPath = mPath.GetPath(CanvasWindingRule::Nonzero, mTarget);
+
+  const ContextState &state = CurrentState();
+
+  StrokeOptions strokeOptions(state.lineWidth,
+                              state.lineJoin,
+                              state.lineCap,
+                              state.miterLimit,
+                              state.dash.Length(),
+                              state.dash.Elements(),
+                              state.dashOffset);
+
+  return tempPath->StrokeContainsPoint(strokeOptions, Point(x, y), mTarget->GetTransform());
 }
 
 //
@@ -3132,28 +3221,6 @@ CanvasRenderingContext2D::DrawImage(const HTMLImageOrCanvasOrVideoElement& image
     if (size.width == 0 || size.height == 0) {
       error.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
       return;
-    }
-
-    // Special case for Canvas, which could be an Azure canvas!
-    nsICanvasRenderingContextInternal *srcCanvas = canvas->GetContextAtIndex(0);
-    if (srcCanvas == this) {
-      // Self-copy.
-      srcSurf = mTarget->Snapshot();
-      imgSize = gfxIntSize(mWidth, mHeight);
-    } else if (srcCanvas) {
-      // This might not be an Azure canvas!
-      srcSurf = srcCanvas->GetSurfaceSnapshot();
-
-      if (srcSurf) {
-        if (mCanvasElement) {
-          // Do security check here.
-          CanvasUtils::DoDrawImageSecurityCheck(mCanvasElement,
-                                                element->NodePrincipal(),
-                                                canvas->IsWriteOnly(),
-                                                false);
-        }
-        imgSize = gfxIntSize(srcSurf->GetSize().width, srcSurf->GetSize().height);
-      }
     }
   } else {
     if (image.IsHTMLImageElement()) {
@@ -3506,13 +3573,12 @@ CanvasRenderingContext2D::DrawWindow(nsGlobalWindow& window, double x,
     return;
   }
   nsRefPtr<gfxContext> thebes;
-  nsRefPtr<gfxASurface> drawSurf;
   RefPtr<DrawTarget> drawDT;
   if (gfxPlatform::GetPlatform()->SupportsAzureContentForDrawTarget(mTarget)) {
     thebes = new gfxContext(mTarget);
     thebes->SetMatrix(gfxMatrix(matrix._11, matrix._12, matrix._21,
                                 matrix._22, matrix._31, matrix._32));
-  } else if (gfxPlatform::GetPlatform()->SupportsAzureContent()) {
+  } else {
     drawDT =
       gfxPlatform::GetPlatform()->CreateOffscreenContentDrawTarget(IntSize(ceil(sw), ceil(sh)),
                                                                    SurfaceFormat::B8G8R8A8);
@@ -3523,49 +3589,19 @@ CanvasRenderingContext2D::DrawWindow(nsGlobalWindow& window, double x,
 
     thebes = new gfxContext(drawDT);
     thebes->Scale(matrix._11, matrix._22);
-  } else {
-    drawSurf =
-      gfxPlatform::GetPlatform()->CreateOffscreenSurface(IntSize(ceil(sw), ceil(sh)),
-                                                         gfxContentType::COLOR_ALPHA);
-    if (!drawSurf) {
-      error.Throw(NS_ERROR_FAILURE);
-      return;
-    }
-
-    thebes = new gfxContext(drawSurf);
-    thebes->Scale(matrix._11, matrix._22);
   }
 
   nsCOMPtr<nsIPresShell> shell = presContext->PresShell();
   unused << shell->RenderDocument(r, renderDocFlags, backgroundColor, thebes);
-  if (drawSurf || drawDT) {
-    RefPtr<SourceSurface> source;
+  if (drawDT) {
+    RefPtr<SourceSurface> snapshot = drawDT->Snapshot();
+    RefPtr<DataSourceSurface> data = snapshot->GetDataSurface();
 
-    if (drawSurf) {
-      gfxIntSize size = drawSurf->GetSize();
-
-      drawSurf->SetDeviceOffset(gfxPoint(0, 0));
-      nsRefPtr<gfxImageSurface> img = drawSurf->GetAsReadableARGB32ImageSurface();
-      if (!img || !img->Data()) {
-        error.Throw(NS_ERROR_FAILURE);
-        return;
-      }
-
-      source =
-        mTarget->CreateSourceSurfaceFromData(img->Data(),
-                                             IntSize(size.width, size.height),
-                                             img->Stride(),
-                                             SurfaceFormat::B8G8R8A8);
-    } else {
-      RefPtr<SourceSurface> snapshot = drawDT->Snapshot();
-      RefPtr<DataSourceSurface> data = snapshot->GetDataSurface();
-
-      source =
-        mTarget->CreateSourceSurfaceFromData(data->GetData(),
-                                             data->GetSize(),
-                                             data->Stride(),
-                                             data->GetFormat());
-    }
+    RefPtr<SourceSurface> source =
+      mTarget->CreateSourceSurfaceFromData(data->GetData(),
+                                           data->GetSize(),
+                                           data->Stride(),
+                                           data->GetFormat());
 
     if (!source) {
       error.Throw(NS_ERROR_FAILURE);
@@ -3576,7 +3612,8 @@ CanvasRenderingContext2D::DrawWindow(nsGlobalWindow& window, double x,
     mgfx::Rect sourceRect(0, 0, sw, sh);
     mTarget->DrawSurface(source, destRect, sourceRect,
                          DrawSurfaceOptions(mgfx::Filter::POINT),
-                         DrawOptions(1.0f, CompositionOp::OP_SOURCE, AntialiasMode::NONE));
+                         DrawOptions(1.0f, CompositionOp::OP_OVER,
+                                     AntialiasMode::NONE));
     mTarget->Flush();
   } else {
     mTarget->SetTransform(matrix);
@@ -4044,27 +4081,6 @@ CanvasRenderingContext2D::PutImageData_explicit(int32_t x, int32_t y, uint32_t w
   return NS_OK;
 }
 
-NS_IMETHODIMP
-CanvasRenderingContext2D::GetThebesSurface(gfxASurface **surface)
-{
-  EnsureTarget();
-  if (!IsTargetValid()) {
-    return NS_ERROR_FAILURE;
-  }
-
-  nsRefPtr<gfxASurface> thebesSurface =
-      gfxPlatform::GetPlatform()->GetThebesSurfaceForDrawTarget(mTarget);
-
-  if (!thebesSurface) {
-    return NS_ERROR_FAILURE;
-  }
-
-  *surface = thebesSurface;
-  NS_ADDREF(*surface);
-
-  return NS_OK;
-}
-
 static already_AddRefed<ImageData>
 CreateImageData(JSContext* cx, CanvasRenderingContext2D* context,
                 uint32_t w, uint32_t h, ErrorResult& error)
@@ -4232,6 +4248,260 @@ bool
 CanvasRenderingContext2D::ShouldForceInactiveLayer(LayerManager *aManager)
 {
   return !aManager->CanUseCanvasLayerForSize(IntSize(mWidth, mHeight));
+}
+
+NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(CanvasPath, AddRef)
+NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(CanvasPath, Release)
+
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_0(CanvasPath)
+
+CanvasPath::CanvasPath(nsCOMPtr<nsISupports> aParent) : mParent(aParent)
+{
+  SetIsDOMBinding();
+
+  mPathBuilder = gfxPlatform::GetPlatform()->ScreenReferenceDrawTarget()->CreatePathBuilder();
+}
+
+CanvasPath::CanvasPath(nsCOMPtr<nsISupports> aParent, RefPtr<PathBuilder> aPathBuilder): mParent(aParent), mPathBuilder(aPathBuilder)
+{
+  SetIsDOMBinding();
+
+  if (!mPathBuilder) {
+    mPathBuilder = gfxPlatform::GetPlatform()->ScreenReferenceDrawTarget()->CreatePathBuilder();
+  }
+}
+
+JSObject*
+CanvasPath::WrapObject(JSContext* aCx)
+{
+  return Path2DBinding::Wrap(aCx, this);
+}
+
+already_AddRefed<CanvasPath>
+CanvasPath::Constructor(const GlobalObject& aGlobal, ErrorResult& aRv)
+{
+  nsRefPtr<CanvasPath> path = new CanvasPath(aGlobal.GetAsSupports());
+  return path.forget();
+}
+
+already_AddRefed<CanvasPath>
+CanvasPath::Constructor(const GlobalObject& aGlobal, CanvasPath& aCanvasPath, ErrorResult& aRv)
+{
+  RefPtr<gfx::Path> tempPath = aCanvasPath.GetPath(CanvasWindingRule::Nonzero,
+                                                   gfxPlatform::GetPlatform()->ScreenReferenceDrawTarget());
+
+  nsRefPtr<CanvasPath> path = new CanvasPath(aGlobal.GetAsSupports(), tempPath->CopyToBuilder());
+  return path.forget();
+}
+
+already_AddRefed<CanvasPath>
+CanvasPath::Constructor(const GlobalObject& aGlobal, const nsAString& aPathString, ErrorResult& aRv)
+{
+  RefPtr<gfx::Path> tempPath = SVGContentUtils::GetPath(aPathString);
+  if (!tempPath) {
+    return Constructor(aGlobal, aRv);
+  }
+
+  nsRefPtr<CanvasPath> path = new CanvasPath(aGlobal.GetAsSupports(), tempPath->CopyToBuilder());
+  return path.forget();
+}
+
+void
+CanvasPath::ClosePath()
+{
+  EnsurePathBuilder();
+
+  mPathBuilder->Close();
+}
+
+void
+CanvasPath::MoveTo(double x, double y)
+{
+  EnsurePathBuilder();
+
+  mPathBuilder->MoveTo(Point(ToFloat(x), ToFloat(y)));
+}
+
+void
+CanvasPath::LineTo(double x, double y)
+{
+  EnsurePathBuilder();
+
+  mPathBuilder->LineTo(Point(ToFloat(x), ToFloat(y)));
+}
+
+void
+CanvasPath::QuadraticCurveTo(double cpx, double cpy, double x, double y)
+{
+  EnsurePathBuilder();
+
+  mPathBuilder->QuadraticBezierTo(gfx::Point(ToFloat(cpx), ToFloat(cpy)),
+                                  gfx::Point(ToFloat(x), ToFloat(y)));
+}
+
+void
+CanvasPath::BezierCurveTo(double cp1x, double cp1y,
+                          double cp2x, double cp2y,
+                          double x, double y)
+{
+  BezierTo(gfx::Point(ToFloat(cp1x), ToFloat(cp1y)),
+             gfx::Point(ToFloat(cp2x), ToFloat(cp2y)),
+             gfx::Point(ToFloat(x), ToFloat(y)));
+}
+
+void
+CanvasPath::ArcTo(double x1, double y1, double x2, double y2, double radius,
+                  ErrorResult& error)
+{
+  if (radius < 0) {
+    error.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
+    return;
+  }
+
+  // Current point in user space!
+  Point p0 = mPathBuilder->CurrentPoint();
+  Point p1(x1, y1);
+  Point p2(x2, y2);
+
+  // Execute these calculations in double precision to avoid cumulative
+  // rounding errors.
+  double dir, a2, b2, c2, cosx, sinx, d, anx, any,
+         bnx, bny, x3, y3, x4, y4, cx, cy, angle0, angle1;
+  bool anticlockwise;
+
+  if (p0 == p1 || p1 == p2 || radius == 0) {
+    LineTo(p1.x, p1.y);
+    return;
+  }
+
+  // Check for colinearity
+  dir = (p2.x - p1.x) * (p0.y - p1.y) + (p2.y - p1.y) * (p1.x - p0.x);
+  if (dir == 0) {
+    LineTo(p1.x, p1.y);
+    return;
+  }
+
+
+  // XXX - Math for this code was already available from the non-azure code
+  // and would be well tested. Perhaps converting to bezier directly might
+  // be more efficient longer run.
+  a2 = (p0.x-x1)*(p0.x-x1) + (p0.y-y1)*(p0.y-y1);
+  b2 = (x1-x2)*(x1-x2) + (y1-y2)*(y1-y2);
+  c2 = (p0.x-x2)*(p0.x-x2) + (p0.y-y2)*(p0.y-y2);
+  cosx = (a2+b2-c2)/(2*sqrt(a2*b2));
+
+  sinx = sqrt(1 - cosx*cosx);
+  d = radius / ((1 - cosx) / sinx);
+
+  anx = (x1-p0.x) / sqrt(a2);
+  any = (y1-p0.y) / sqrt(a2);
+  bnx = (x1-x2) / sqrt(b2);
+  bny = (y1-y2) / sqrt(b2);
+  x3 = x1 - anx*d;
+  y3 = y1 - any*d;
+  x4 = x1 - bnx*d;
+  y4 = y1 - bny*d;
+  anticlockwise = (dir < 0);
+  cx = x3 + any*radius*(anticlockwise ? 1 : -1);
+  cy = y3 - anx*radius*(anticlockwise ? 1 : -1);
+  angle0 = atan2((y3-cy), (x3-cx));
+  angle1 = atan2((y4-cy), (x4-cx));
+
+
+  LineTo(x3, y3);
+
+  Arc(cx, cy, radius, angle0, angle1, anticlockwise, error);
+}
+
+void
+CanvasPath::Rect(double x, double y, double w, double h)
+{
+  MoveTo(x, y);
+  LineTo(x + w, y);
+  LineTo(x + w, y + h);
+  LineTo(x, y + h);
+  ClosePath();
+}
+
+void
+CanvasPath::Arc(double x, double y, double radius,
+                double startAngle, double endAngle, bool anticlockwise,
+                ErrorResult& error)
+{
+  if (radius < 0.0) {
+    error.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
+    return;
+  }
+
+  ArcToBezier(this, Point(x, y), Size(radius, radius), startAngle, endAngle, anticlockwise);
+}
+
+void
+CanvasPath::LineTo(const gfx::Point& aPoint)
+{
+  EnsurePathBuilder();
+
+  mPathBuilder->LineTo(aPoint);
+}
+
+void
+CanvasPath::BezierTo(const gfx::Point& aCP1,
+                     const gfx::Point& aCP2,
+                     const gfx::Point& aCP3)
+{
+  EnsurePathBuilder();
+
+  mPathBuilder->BezierTo(aCP1, aCP2, aCP3);
+}
+
+RefPtr<gfx::Path>
+CanvasPath::GetPath(const CanvasWindingRule& winding, const mozilla::RefPtr<mozilla::gfx::DrawTarget>& mTarget) const
+{
+  FillRule fillRule = FillRule::FILL_WINDING;
+  if (winding == CanvasWindingRule::Evenodd) {
+    fillRule = FillRule::FILL_EVEN_ODD;
+  }
+
+  if (mPath &&
+      (mPath->GetBackendType() == mTarget->GetType()) &&
+      (mPath->GetFillRule() == fillRule)) {
+    return mPath;
+  }
+
+  if (!mPath) {
+    // if there is no path, there must be a pathbuilder
+    MOZ_ASSERT(mPathBuilder);
+    mPath = mPathBuilder->Finish();
+    if (!mPath)
+      return mPath;
+
+    mPathBuilder = nullptr;
+  }
+
+  // retarget our backend if we're used with a different backend
+  if (mPath->GetBackendType() != mTarget->GetType()) {
+    RefPtr<PathBuilder> tmpPathBuilder = mTarget->CreatePathBuilder(fillRule);
+    mPath->StreamToSink(tmpPathBuilder);
+    mPath = tmpPathBuilder->Finish();
+  } else if (mPath->GetFillRule() != fillRule) {
+    RefPtr<PathBuilder> tmpPathBuilder = mPath->CopyToBuilder(fillRule);
+    mPath = tmpPathBuilder->Finish();
+  }
+
+  return mPath;
+}
+
+void
+CanvasPath::EnsurePathBuilder() const
+{
+  if (mPathBuilder) {
+    return;
+  }
+
+  // if there is not pathbuilder, there must be a path
+  MOZ_ASSERT(mPath);
+  mPathBuilder = mPath->CopyToBuilder();
+  mPath = nullptr;
 }
 
 }

@@ -6,15 +6,14 @@
 #include "ClientLayerManager.h"
 #include "CompositorChild.h"            // for CompositorChild
 #include "GeckoProfiler.h"              // for PROFILER_LABEL
-#include "gfxASurface.h"                // for gfxASurface, etc
-#include "ipc/AutoOpenSurface.h"        // for AutoOpenSurface
+#include "gfxPrefs.h"                   // for gfxPrefs::LayersTileWidth/Height
 #include "mozilla/Assertions.h"         // for MOZ_ASSERT, etc
 #include "mozilla/Hal.h"
 #include "mozilla/dom/ScreenOrientation.h"  // for ScreenOrientation
 #include "mozilla/dom/TabChild.h"       // for TabChild
 #include "mozilla/hal_sandbox/PHal.h"   // for ScreenConfiguration
-#include "mozilla/layers/CompositableClient.h"  // for CompositableChild, etc
-#include "mozilla/layers/ContentClient.h"  // for ContentClientRemote
+#include "mozilla/layers/CompositableClient.h"
+#include "mozilla/layers/ContentClient.h"
 #include "mozilla/layers/ISurfaceAllocator.h"
 #include "mozilla/layers/LayersMessages.h"  // for EditReply, etc
 #include "mozilla/layers/LayersSurfaces.h"  // for SurfaceDescriptor
@@ -24,6 +23,7 @@
 #include "mozilla/layers/SimpleTextureClientPool.h" // for SimpleTextureClientPool
 #include "nsAString.h"
 #include "nsIWidget.h"                  // for nsIWidget
+#include "nsIWidgetListener.h"
 #include "nsTArray.h"                   // for AutoInfallibleTArray
 #include "nsXULAppAPI.h"                // for XRE_GetProcessType, etc
 #include "TiledLayerBuffer.h"
@@ -36,11 +36,6 @@ using namespace mozilla::gfx;
 
 namespace mozilla {
 namespace layers {
-
-  TextureClientPoolMember::TextureClientPoolMember(SurfaceFormat aFormat, TextureClientPool* aTexturePool)
-  : mFormat(aFormat)
-  , mTexturePool(aTexturePool)
-{}
 
 ClientLayerManager::ClientLayerManager(nsIWidget* aWidget)
   : mPhase(PHASE_NONE)
@@ -61,8 +56,6 @@ ClientLayerManager::~ClientLayerManager()
   mRoot = nullptr;
 
   MOZ_COUNT_DTOR(ClientLayerManager);
-
-  mTexturePools.clear();
 }
 
 int32_t
@@ -233,9 +226,8 @@ ClientLayerManager::EndTransaction(DrawThebesLayerCallback aCallback,
     MakeSnapshotIfRequired();
   }
 
-  for (const TextureClientPoolMember* item = mTexturePools.getFirst();
-       item; item = item->getNext()) {
-    item->mTexturePool->ReturnDeferredClients();
+  for (size_t i = 0; i < mTexturePools.Length(); i++) {
+    mTexturePools[i]->ReturnDeferredClients();
   }
 }
 
@@ -279,6 +271,20 @@ ClientLayerManager::Composite()
   }
 }
 
+void
+ClientLayerManager::DidComposite()
+{
+  MOZ_ASSERT(mWidget);
+  nsIWidgetListener *listener = mWidget->GetWidgetListener();
+  if (listener) {
+    listener->DidCompositeWindow();
+  }
+  listener = mWidget->GetAttachedWidgetListener();
+  if (listener) {
+    listener->DidCompositeWindow();
+  }
+}
+
 void 
 ClientLayerManager::MakeSnapshotIfRequired()
 {
@@ -289,18 +295,21 @@ ClientLayerManager::MakeSnapshotIfRequired()
     if (CompositorChild* remoteRenderer = GetRemoteRenderer()) {
       nsIntRect bounds;
       mWidget->GetBounds(bounds);
+      IntSize widgetSize = bounds.Size().ToIntSize();
       SurfaceDescriptor inSnapshot, snapshot;
-      if (mForwarder->AllocSurfaceDescriptor(bounds.Size().ToIntSize(),
+      if (mForwarder->AllocSurfaceDescriptor(widgetSize,
                                              gfxContentType::COLOR_ALPHA,
                                              &inSnapshot) &&
           // The compositor will usually reuse |snapshot| and return
           // it through |outSnapshot|, but if it doesn't, it's
           // responsible for freeing |snapshot|.
           remoteRenderer->SendMakeSnapshot(inSnapshot, &snapshot)) {
-        AutoOpenSurface opener(OPEN_READ_ONLY, snapshot);
-        gfxASurface* source = opener.Get();
-
-        mShadowTarget->DrawSurface(source, source->GetSize());
+        RefPtr<DataSourceSurface> surf = GetSurfaceForDescriptor(snapshot);
+        DrawTarget* dt = mShadowTarget->GetDrawTarget();
+        Rect widgetRect(Point(0, 0), Size(widgetSize.width, widgetSize.height));
+        dt->DrawSurface(surf, widgetRect, widgetRect,
+                        DrawSurfaceOptions(),
+                        DrawOptions(1.0f, CompositionOp::OP_OVER));
       }
       if (IsSurfaceDescriptorValid(snapshot)) {
         mForwarder->DestroySharedSurface(&snapshot);
@@ -360,7 +369,7 @@ ClientLayerManager::ForwardTransaction(bool aScheduleComposite)
   // forward this transaction's changeset to our LayerManagerComposite
   bool sent;
   AutoInfallibleTArray<EditReply, 10> replies;
-  if (HasShadowManager() && mForwarder->EndTransaction(&replies, aScheduleComposite, &sent)) {
+  if (HasShadowManager() && mForwarder->EndTransaction(&replies, mRegionToClear, aScheduleComposite, &sent)) {
     for (nsTArray<EditReply>::size_type i = 0; i < replies.Length(); ++i) {
       const EditReply& reply = replies[i];
 
@@ -370,10 +379,10 @@ ClientLayerManager::ForwardTransaction(bool aScheduleComposite)
 
         const OpContentBufferSwap& obs = reply.get_OpContentBufferSwap();
 
-        CompositableChild* compositableChild =
-          static_cast<CompositableChild*>(obs.compositableChild());
+        CompositableClient* compositable =
+          CompositableClient::FromIPDLActor(obs.compositableChild());
         ContentClientRemote* contentClient =
-          static_cast<ContentClientRemote*>(compositableChild->GetCompositableClient());
+          static_cast<ContentClientRemote*>(compositable);
         MOZ_ASSERT(contentClient);
 
         contentClient->SwapBuffers(obs.frontUpdatedRegion());
@@ -385,12 +394,10 @@ ClientLayerManager::ForwardTransaction(bool aScheduleComposite)
 
         const OpTextureSwap& ots = reply.get_OpTextureSwap();
 
-        CompositableChild* compositableChild =
-          static_cast<CompositableChild*>(ots.compositableChild());
-        MOZ_ASSERT(compositableChild);
-
-        compositableChild->GetCompositableClient()
-          ->SetDescriptorFromReply(ots.textureId(), ots.image());
+        CompositableClient* compositable =
+          CompositableClient::FromIPDLActor(ots.compositableChild());
+        MOZ_ASSERT(compositable);
+        compositable->SetDescriptorFromReply(ots.textureId(), ots.image());
         break;
       }
       case EditReply::TReturnReleaseFence: {
@@ -458,21 +465,18 @@ ClientLayerManager::SetIsFirstPaint()
 TextureClientPool*
 ClientLayerManager::GetTexturePool(SurfaceFormat aFormat)
 {
-  for (const TextureClientPoolMember* item = mTexturePools.getFirst();
-       item; item = item->getNext()) {
-    if (item->mFormat == aFormat) {
-      return item->mTexturePool;
+  for (size_t i = 0; i < mTexturePools.Length(); i++) {
+    if (mTexturePools[i]->GetFormat() == aFormat) {
+      return mTexturePools[i];
     }
   }
 
-  TextureClientPoolMember* texturePoolMember =
-    new TextureClientPoolMember(aFormat,
-      new TextureClientPool(aFormat, IntSize(TILEDLAYERBUFFER_TILE_SIZE,
-                                             TILEDLAYERBUFFER_TILE_SIZE),
+  mTexturePools.AppendElement(
+      new TextureClientPool(aFormat, IntSize(gfxPrefs::LayersTileWidth(),
+                                             gfxPrefs::LayersTileHeight()),
                             mForwarder));
-  mTexturePools.insertBack(texturePoolMember);
 
-  return texturePoolMember->mTexturePool;
+  return mTexturePools.LastElement();
 }
 
 SimpleTextureClientPool*
@@ -482,8 +486,8 @@ ClientLayerManager::GetSimpleTileTexturePool(SurfaceFormat aFormat)
   mSimpleTilePools.EnsureLengthAtLeast(index+1);
 
   if (mSimpleTilePools[index].get() == nullptr) {
-    mSimpleTilePools[index] = new SimpleTextureClientPool(aFormat, IntSize(TILEDLAYERBUFFER_TILE_SIZE,
-                                                                           TILEDLAYERBUFFER_TILE_SIZE),
+    mSimpleTilePools[index] = new SimpleTextureClientPool(aFormat, IntSize(gfxPrefs::LayersTileWidth(),
+                                                                           gfxPrefs::LayersTileHeight()),
                                                           mForwarder);
   }
 
@@ -502,9 +506,8 @@ ClientLayerManager::ClearCachedResources(Layer* aSubtree)
   } else if (mRoot) {
     ClearLayer(mRoot);
   }
-  for (const TextureClientPoolMember* item = mTexturePools.getFirst();
-       item; item = item->getNext()) {
-    item->mTexturePool->Clear();
+  for (size_t i = 0; i < mTexturePools.Length(); i++) {
+    mTexturePools[i]->Clear();
   }
 }
 
