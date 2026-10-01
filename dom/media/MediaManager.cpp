@@ -753,7 +753,7 @@ static SourceSet *
 
   // Apply constraints to the list of sources.
 
-  const MediaTrackConstraintSet& c = aConstraints;
+  ConstraintsType& c = aConstraints;
   if (c.mUnsupportedRequirement) {
     // Check upfront the names of required constraints that are unsupported for
     // this media-type. The spec requires these to fail, so getting them out of
