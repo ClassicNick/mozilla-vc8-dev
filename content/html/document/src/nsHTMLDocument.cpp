@@ -2563,12 +2563,6 @@ nsHTMLDocument::All()
   return mAll;
 }
 
-JSObject*
-nsHTMLDocument::GetAll(JSContext* aCx, ErrorResult& aRv)
-{
-  return All()->GetObject(aCx, aRv);
-}
-
 static void
 NotifyEditableStateChange(nsINode *aNode, nsIDocument *aDocument)
 {
@@ -2848,7 +2842,7 @@ nsHTMLDocument::SetDesignMode(const nsAString & aDesignMode)
 void
 nsHTMLDocument::SetDesignMode(const nsAString& aDesignMode, ErrorResult& rv)
 {
-  if (!nsContentUtils::GetSubjectPrincipal()->Subsumes(NodePrincipal())) {
+  if (!nsContentUtils::SubjectPrincipal()->Subsumes(NodePrincipal())) {
     rv.Throw(NS_ERROR_DOM_PROP_ACCESS_DENIED);
     return;
   }

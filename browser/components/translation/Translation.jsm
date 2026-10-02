@@ -56,6 +56,7 @@ this.Translation = {
  */
 function TranslationUI(aBrowser) {
   this.browser = aBrowser;
+  aBrowser.messageManager.addMessageListener("Translation:Finished", this);
 }
 
 TranslationUI.prototype = {
@@ -64,12 +65,15 @@ TranslationUI.prototype = {
   STATE_TRANSLATED: 2,
   STATE_ERROR: 3,
 
-  get doc() this.browser.contentDocument,
-
   translate: function(aFrom, aTo) {
     this.state = this.STATE_TRANSLATING;
     this.translatedFrom = aFrom;
     this.translatedTo = aTo;
+
+    this.browser.messageManager.sendAsyncMessage(
+      "Translation:TranslateDocument",
+      { from: aFrom, to: aTo }
+    );
   },
 
   showURLBarIcon: function(aTranslated) {
@@ -84,7 +88,10 @@ TranslationUI.prototype = {
     let callback = aTopic => {
       if (aTopic != "showing")
         return false;
-      if (!this.notificationBox.getNotificationWithValue("translation"))
+      let notification = this.notificationBox.getNotificationWithValue("translation");
+      if (notification)
+        notification.close();
+      else
         this.showTranslationInfoBar();
       return true;
     };
@@ -108,11 +115,13 @@ TranslationUI.prototype = {
   showOriginalContent: function() {
     this.showURLBarIcon();
     this.originalShown = true;
+    this.browser.messageManager.sendAsyncMessage("Translation:ShowOriginal");
   },
 
   showTranslatedContent: function() {
     this.showURLBarIcon(true);
     this.originalShown = false;
+    this.browser.messageManager.sendAsyncMessage("Translation:ShowTranslation");
   },
 
   get notificationBox() this.browser.ownerGlobal.gBrowser.getNotificationBox(),
@@ -125,6 +134,18 @@ TranslationUI.prototype = {
     return notif;
   },
 
+  shouldShowInfoBar: function(aURI, aDetectedLanguage) {
+    // Check if we should never show the infobar for this language.
+    let neverForLangs =
+      Services.prefs.getCharPref("browser.translation.neverForLanguages");
+    if (neverForLangs.split(",").indexOf(aDetectedLanguage) != -1)
+      return false;
+
+    // or if we should never show the infobar for this domain.
+    let perms = Services.perms;
+    return perms.testExactPermission(aURI, "translate") != perms.DENY_ACTION;
+  },
+
   showTranslationUI: function(aDetectedLanguage) {
     this.detectedLanguage = aDetectedLanguage;
 
@@ -135,6 +156,24 @@ TranslationUI.prototype = {
     this.originalShown = true;
 
     this.showURLBarIcon();
+
+    if (!this.shouldShowInfoBar(this.browser.currentURI, aDetectedLanguage))
+      return null;
+
     return this.showTranslationInfoBar();
+  },
+
+  receiveMessage: function(msg) {
+    switch (msg.name) {
+      case "Translation:Finished":
+        if (msg.data.success) {
+          this.state = this.STATE_TRANSLATED;
+          this.showURLBarIcon(true);
+          this.originalShown = false;
+        } else {
+          this.state = this.STATE_ERROR;
+        }
+        break;
+    }
   }
 };

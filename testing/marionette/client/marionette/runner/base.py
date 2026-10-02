@@ -214,6 +214,7 @@ class MarionetteTestResult(unittest._TextTestResult, TestResultCollection):
                 self.stream.writeln('END LOG:')
 
     def printErrorList(self, flavour, errors):
+        TIMEOUT_MESSAGE = "ScriptTimeoutException: ScriptTimeoutException: timed out"
         for error in errors:
             err = error.output
             self.stream.writeln(self.separator1)
@@ -228,7 +229,8 @@ class MarionetteTestResult(unittest._TextTestResult, TestResultCollection):
                     fail_present = True
             for line in err:
                 if line != lastline or fail_present:
-                    self.stream.writeln("%s" % line)
+                    if error.reason != TIMEOUT_MESSAGE:
+                        self.stream.writeln("%s" % line)
                 else:
                     self.stream.writeln("TEST-UNEXPECTED-FAIL | %s | %s" %
                                         (self.getInfo(error), error.reason))
@@ -479,6 +481,13 @@ class BaseMarionetteOptions(OptionParser):
                         dest='server_root',
                         action='store',
                         help='sets the web server\'s root directory to the given path')
+        self.add_option('--gecko-log',
+                        dest='gecko_log',
+                        action='store',
+                        help="Define the path to store log file. If the path is"
+                             " a directory, the real log file will be created"
+                             " given the format gecko-(timestamp).log. If it is"
+                             " a file, if will be used directly. Default: 'gecko.log'")
 
     def parse_args(self, args=None, values=None):
         options, tests = OptionParser.parse_args(self, args, values)
@@ -550,6 +559,7 @@ class BaseMarionetteTestRunner(object):
                  testvars=None, tree=None, type=None, device_serial=None,
                  symbols_path=None, timeout=None, es_servers=None, shuffle=False,
                  sdcard=None, this_chunk=1, total_chunks=1, sources=None, server_root=None,
+                 gecko_log=None,
                  **kwargs):
         self.address = address
         self.emulator = emulator
@@ -589,6 +599,7 @@ class BaseMarionetteTestRunner(object):
         self.server_root = server_root
         self.this_chunk = this_chunk
         self.total_chunks = total_chunks
+        self.gecko_log = gecko_log
         self.mixin_run_tests = []
         self.manifest_skipped_tests = []
         self.tests = []
@@ -685,6 +696,7 @@ class BaseMarionetteTestRunner(object):
                 'app_args': self.app_args,
                 'bin': self.bin,
                 'profile': self.profile,
+                'gecko_log': self.gecko_log,
             })
 
         if self.emulator:

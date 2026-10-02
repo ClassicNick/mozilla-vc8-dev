@@ -35,11 +35,10 @@ pref("general.warnOnAboutConfig", true);
 pref("browser.bookmarks.max_backups",       5);
 
 // Preference for switching the cache backend, can be changed freely at runtime
-// 0 - use the old (Darin's) cache [DEFAULT]
+// 0 - use the old (Darin's) cache
 // 1 - use the new cache back-end (cache v2)
-// 2 - do a random choise for A/B testing (browser chooses old or new back-end at startup
-//     and keeps it per session)
 pref("browser.cache.use_new_backend",       0);
+pref("browser.cache.use_new_backend_temp",  true);
 
 pref("browser.cache.disk.enable",           true);
 // Is this the first-time smartsizing has been introduced?
@@ -62,9 +61,12 @@ pref("browser.cache.memory.max_entry_size",  5120);
 pref("browser.cache.disk_cache_ssl",        true);
 // 0 = once-per-session, 1 = each-time, 2 = never, 3 = when-appropriate/automatically
 pref("browser.cache.check_doc_frequency",   3);
-
 // Limit of recent metadata we keep in memory for faster access, in Kb
 pref("browser.cache.disk.metadata_memory_limit", 250); // 0.25 MB
+// The number of chunks we preload ahead of read.  One chunk has currently 256kB.
+pref("browser.cache.disk.preload_chunk_count", 4); // 1 MB of read ahead
+// The half life used to re-compute cache entries frecency in hours.
+pref("browser.cache.frecency_half_life_hours", 6);
 
 pref("browser.cache.offline.enable",           true);
 // enable offline apps by default, disable prompt
@@ -101,6 +103,9 @@ pref("dom.workers.maxPerDomain", 20);
 
 // Whether or not Shared Web Workers are enabled.
 pref("dom.workers.sharedWorkers.enabled", true);
+
+// Service workers
+pref("dom.serviceWorkers.enabled", false);
 
 // Whether nonzero values can be returned from performance.timing.*
 pref("dom.enable_performance", true);
@@ -315,6 +320,7 @@ pref("media.mediasource.enabled", false);
 
 #ifdef MOZ_WEBSPEECH
 pref("media.webspeech.recognition.enable", false);
+pref("media.webspeech.synth.enabled", false);
 #endif
 #ifdef MOZ_WEBM_ENCODER
 pref("media.encoder.webm.enabled", true);
@@ -760,6 +766,8 @@ pref("dom.webapps.useCurrentProfile", false);
 
 pref("dom.cycle_collector.incremental", true);
 
+pref("dom.window_experimental_bindings", false);
+
 // Parsing perf prefs. For now just mimic what the old code did.
 #ifndef XP_WIN
 pref("content.sink.pending_event_mode", 0);
@@ -790,6 +798,7 @@ pref("javascript.options.strict.debug",     true);
 pref("javascript.options.baselinejit",      true);
 pref("javascript.options.ion",              true);
 pref("javascript.options.asmjs",            true);
+pref("javascript.options.native_regexp",    true);
 pref("javascript.options.parallel_parsing", true);
 pref("javascript.options.ion.parallel_compilation", true);
 // This preference instructs the JS engine to discard the
@@ -1411,6 +1420,7 @@ pref("network.proxy.socks",                 "");
 pref("network.proxy.socks_port",            0);
 pref("network.proxy.socks_version",         5);
 pref("network.proxy.socks_remote_dns",      false);
+pref("network.proxy.proxy_over_tls",        true);
 pref("network.proxy.no_proxies_on",         "localhost, 127.0.0.1");
 pref("network.proxy.failover_timeout",      1800); // 30 minutes
 pref("network.online",                      true); //online/offline
@@ -1549,6 +1559,7 @@ pref("security.notification_enable_delay", 500);
 pref("security.csp.enable", true);
 pref("security.csp.debug", false);
 pref("security.csp.experimentalEnabled", false);
+pref("security.csp.newbackend.enable", false);
 
 // Mixed content blocking
 pref("security.mixed_content.block_active_content", false);
@@ -2049,6 +2060,10 @@ pref("dom.ipc.plugins.java.enabled", false);
 
 pref("dom.ipc.plugins.flash.subprocess.crashreporter.enabled", true);
 pref("dom.ipc.plugins.reportCrashURL", true);
+
+// How long we wait before unloading an idle plugin process.
+// Defaults to 30 seconds.
+pref("dom.ipc.plugins.unloadTimeoutSecs", 30);
 
 pref("dom.ipc.processCount", 1);
 
@@ -3720,8 +3735,12 @@ pref("layers.offmainthreadcomposition.frame-rate", -1);
 #ifndef XP_WIN
 // Asynchonous video compositing using the ImageBridge IPDL protocol.
 // requires off-main-thread compositing.
-// Never works on Windows, so no point pref'ing it on.
 pref("layers.async-video.enabled",false);
+#endif
+
+#ifdef XP_WIN
+pref("layers.offmainthreadcomposition.enabled", true);
+pref("layers.async-video.enabled", true);
 #endif
 
 #ifdef MOZ_X11

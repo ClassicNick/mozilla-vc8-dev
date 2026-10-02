@@ -57,8 +57,8 @@ typedef any Transferable;
   //[Throws] readonly attribute WindowProxy parent;
   [Replaceable, Throws, CrossOriginReadable] readonly attribute WindowProxy? parent;
   [Throws] readonly attribute Element? frameElement;
-  //[Throws] WindowProxy open(optional DOMString url = "about:blank", optional DOMString target = "_blank", optional DOMString features = "", optional boolean replace = false);
-  [Throws] WindowProxy? open(optional DOMString url = "", optional DOMString target = "", optional DOMString features = "");
+  //[Throws] WindowProxy open(optional DOMString url = "about:blank", optional DOMString target = "_blank", [TreatNullAs=EmptyString] optional DOMString features = "", optional boolean replace = false);
+  [Throws] WindowProxy? open(optional DOMString url = "", optional DOMString target = "", [TreatNullAs=EmptyString] optional DOMString features = "");
   // We think the indexed getter is a bug in the spec, it actually needs to live
   // on the WindowProxy
   //getter WindowProxy (unsigned long index);
@@ -72,7 +72,8 @@ typedef any Transferable;
   [Throws] readonly attribute ApplicationCache applicationCache;
 
   // user prompts
-  [Throws] void alert(optional DOMString message = "");
+  [Throws] void alert();
+  [Throws] void alert(DOMString message);
   [Throws] boolean confirm(optional DOMString message = "");
   [Throws] DOMString? prompt(optional DOMString message = "", optional DOMString default = "");
   [Throws] void print();
@@ -294,9 +295,9 @@ partial interface Window {
 
   [Throws] attribute boolean                            fullScreen;
 
-  [Throws] void             back();
-  [Throws] void             forward();
-  [Throws] void             home();
+  [Throws, ChromeOnly] void             back();
+  [Throws, ChromeOnly] void             forward();
+  [Throws, ChromeOnly] void             home();
 
   // XXX Should this be in nsIDOMChromeWindow?
   void                      updateCommands(DOMString action);

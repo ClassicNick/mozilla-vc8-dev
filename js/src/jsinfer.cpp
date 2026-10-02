@@ -2120,12 +2120,9 @@ types::UseNewType(JSContext *cx, JSScript *script, jsbytecode *pc)
      * Sub2 lets us continue to distinguish the two subclasses and any extra
      * properties added to those prototype objects.
      */
-    if (JSOp(*pc) == JSOP_NEW)
-        pc += JSOP_NEW_LENGTH;
-    else if (JSOp(*pc) == JSOP_SPREADNEW)
-        pc += JSOP_SPREADNEW_LENGTH;
-    else
+    if (JSOp(*pc) != JSOP_NEW)
         return false;
+    pc += JSOP_NEW_LENGTH;
     if (JSOp(*pc) == JSOP_SETPROP) {
         jsid id = GetAtomId(cx, script, pc, 0);
         if (id == id_prototype(cx))
@@ -3360,7 +3357,9 @@ types::AddClearDefiniteFunctionUsesInScript(JSContext *cx, TypeObject *type,
     // |script|, and add constraints to ensure that if the type sets' contents
     // change then the definite properties are cleared from the type.
     // This ensures that the inlining performed when the definite properties
-    // analysis was done is stable.
+    // analysis was done is stable. We only need to look at type sets which
+    // contain a single object, as IonBuilder does not inline polymorphic sites
+    // during the definite properties analysis.
 
     TypeObjectKey *calleeKey = Type::ObjectType(calleeScript->functionNonDelazifying()).objectKey();
 

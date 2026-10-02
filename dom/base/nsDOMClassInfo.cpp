@@ -35,7 +35,6 @@
 #include "nsXPCOM.h"
 #include "nsISupportsPrimitives.h"
 #include "nsIXPConnect.h"
-#include "nsIXPCSecurityManager.h"
 #include "xptcall.h"
 #include "nsTArray.h"
 #include "nsDocument.h" // nsDOMStyleSheetList
@@ -143,10 +142,6 @@
 #include "nsIDOMSmsFilter.h"
 #include "nsIDOMSmsSegmentInfo.h"
 #include "nsIDOMMozMobileMessageThread.h"
-
-#ifdef MOZ_B2G_RIL
-#include "nsIDOMMobileConnection.h"
-#endif // MOZ_B2G_RIL
 
 #ifdef MOZ_B2G_FM
 #include "FMRadio.h"
@@ -413,11 +408,6 @@ static nsDOMClassInfoData sClassInfoData[] = {
   NS_DEFINE_CLASSINFO_DATA(MozMobileMessageThread, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
 
-#ifdef MOZ_B2G_RIL
-  NS_DEFINE_CLASSINFO_DATA(MozMobileConnection, nsDOMGenericSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
-#endif
-
   NS_DEFINE_CLASSINFO_DATA(CSSFontFaceRule, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
 
@@ -495,10 +485,6 @@ bool nsDOMClassInfo::sIsInitialized = false;
 
 jsid nsDOMClassInfo::sLocation_id        = JSID_VOID;
 jsid nsDOMClassInfo::sConstructor_id     = JSID_VOID;
-jsid nsDOMClassInfo::sLength_id          = JSID_VOID;
-jsid nsDOMClassInfo::sItem_id            = JSID_VOID;
-jsid nsDOMClassInfo::sNamedItem_id       = JSID_VOID;
-jsid nsDOMClassInfo::sEnumerate_id       = JSID_VOID;
 jsid nsDOMClassInfo::sTop_id             = JSID_VOID;
 jsid nsDOMClassInfo::sDocument_id        = JSID_VOID;
 jsid nsDOMClassInfo::sWrappedJSObject_id = JSID_VOID;
@@ -605,10 +591,6 @@ nsDOMClassInfo::DefineStaticJSVals(JSContext *cx)
 
   SET_JSID_TO_STRING(sLocation_id,        cx, "location");
   SET_JSID_TO_STRING(sConstructor_id,     cx, "constructor");
-  SET_JSID_TO_STRING(sLength_id,          cx, "length");
-  SET_JSID_TO_STRING(sItem_id,            cx, "item");
-  SET_JSID_TO_STRING(sNamedItem_id,       cx, "namedItem");
-  SET_JSID_TO_STRING(sEnumerate_id,       cx, "enumerateProperties");
   SET_JSID_TO_STRING(sTop_id,             cx, "top");
   SET_JSID_TO_STRING(sDocument_id,        cx, "document");
   SET_JSID_TO_STRING(sWrappedJSObject_id, cx, "wrappedJSObject");
@@ -1049,13 +1031,6 @@ nsDOMClassInfo::Init()
   DOM_CLASSINFO_MAP_BEGIN(MozMobileMessageThread, nsIDOMMozMobileMessageThread)
      DOM_CLASSINFO_MAP_ENTRY(nsIDOMMozMobileMessageThread)
   DOM_CLASSINFO_MAP_END
-
-#ifdef MOZ_B2G_RIL
-  DOM_CLASSINFO_MAP_BEGIN(MozMobileConnection, nsIDOMMozMobileConnection)
-     DOM_CLASSINFO_MAP_ENTRY(nsIDOMMozMobileConnection)
-     DOM_CLASSINFO_MAP_ENTRY(nsIDOMEventTarget)
-  DOM_CLASSINFO_MAP_END
-#endif // MOZ_B2G_RIL
 
   DOM_CLASSINFO_MAP_BEGIN(CSSFontFaceRule, nsIDOMCSSFontFaceRule)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMCSSFontFaceRule)
@@ -1734,9 +1709,6 @@ nsDOMClassInfo::ShutDown()
 
   sLocation_id        = JSID_VOID;
   sConstructor_id     = JSID_VOID;
-  sLength_id          = JSID_VOID;
-  sItem_id            = JSID_VOID;
-  sEnumerate_id       = JSID_VOID;
   sTop_id             = JSID_VOID;
   sDocument_id        = JSID_VOID;
   sWrappedJSObject_id = JSID_VOID;
@@ -1813,8 +1785,17 @@ nsWindowSH::PostCreate(nsIXPConnectWrappedNative *wrapper,
   const NativeProperties* eventTargetProperties =
     EventTargetBinding::sNativePropertyHooks->mNativeProperties.regular;
 
-  return DefineWebIDLBindingPropertiesOnXPCObject(cx, window, windowProperties, true) &&
-         DefineWebIDLBindingPropertiesOnXPCObject(cx, window, eventTargetProperties, true) ?
+  if (!DefineWebIDLBindingUnforgeablePropertiesOnXPCObject(cx, window, windowProperties) ||
+      !DefineWebIDLBindingUnforgeablePropertiesOnXPCObject(cx, window, eventTargetProperties)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  if (!GlobalPropertiesAreOwn()) {
+    return NS_OK;
+  }
+
+  return DefineWebIDLBindingPropertiesOnXPCObject(cx, window, windowProperties) &&
+         DefineWebIDLBindingPropertiesOnXPCObject(cx, window, eventTargetProperties) ?
          NS_OK : NS_ERROR_FAILURE;
 }
 
@@ -2702,6 +2683,18 @@ nsWindowSH::NameStructEnabled(JSContext* aCx, nsGlobalWindow *aWin,
          OldBindingConstructorEnabled(nameStruct, aWin, aCx);
 }
 
+#ifdef RELEASE_BUILD
+#define USE_CONTROLLERS_SHIM
+#endif
+
+#ifdef USE_CONTROLLERS_SHIM
+static const JSClass ControllersShimClass = {
+    "XULControllers", 0,
+    JS_PropertyStub,   JS_DeletePropertyStub, JS_PropertyStub, JS_StrictPropertyStub,
+    JS_EnumerateStub, JS_ResolveStub, JS_ConvertStub, nullptr
+};
+#endif
+
 // static
 nsresult
 nsWindowSH::GlobalResolve(nsGlobalWindow *aWin, JSContext *cx,
@@ -2711,6 +2704,23 @@ nsWindowSH::GlobalResolve(nsGlobalWindow *aWin, JSContext *cx,
   if (id == XPCJSRuntime::Get()->GetStringID(XPCJSRuntime::IDX_COMPONENTS)) {
     return LookupComponentsShim(cx, obj, aWin, desc);
   }
+
+#ifdef USE_CONTROLLERS_SHIM
+  if (id == XPCJSRuntime::Get()->GetStringID(XPCJSRuntime::IDX_CONTROLLERS) &&
+      !xpc::IsXrayWrapper(obj) &&
+      !nsContentUtils::IsSystemPrincipal(aWin->GetPrincipal()))
+  {
+    if (aWin->GetDoc()) {
+      aWin->GetDoc()->WarnOnceAbout(nsIDocument::eWindow_Controllers);
+    }
+    JS::Rooted<JSObject*> shim(cx, JS_NewObject(cx, &ControllersShimClass, JS::NullPtr(), obj));
+    if (NS_WARN_IF(!shim)) {
+      return NS_ERROR_OUT_OF_MEMORY;
+    }
+    FillPropertyDescriptor(desc, obj, JS::ObjectValue(*shim), /* readOnly = */ false);
+    return NS_OK;
+  }
+#endif
 
   nsScriptNameSpaceManager *nameSpaceManager = GetNameSpaceManager();
   NS_ENSURE_TRUE(nameSpaceManager, NS_ERROR_NOT_INITIALIZED);

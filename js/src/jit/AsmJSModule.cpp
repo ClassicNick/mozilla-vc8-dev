@@ -58,15 +58,12 @@ AsmJSModule::initHeap(Handle<ArrayBufferObject*> heap, JSContext *cx)
         JS_ASSERT(disp <= INT32_MAX);
         JSC::X86Assembler::setPointer(addr, (void *)(heapOffset + disp));
     }
-#elif defined(JS_CODEGEN_ARM)
+#elif defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_MIPS)
     uint32_t heapLength = heap->byteLength();
     for (unsigned i = 0; i < heapAccesses_.length(); i++) {
         jit::Assembler::updateBoundsCheck(heapLength,
                                           (jit::Instruction*)(heapAccesses_[i].offset() + code_));
     }
-    // We already know the exact extent of areas that need to be patched, just make sure we
-    // flush all of them at once.
-    jit::AutoFlushCache::updateTop(uintptr_t(code_), pod.codeBytes_);
 #endif
 }
 
@@ -186,7 +183,7 @@ FuncCast(F *pf)
 static void *
 RedirectCall(void *fun, ABIFunctionType type)
 {
-#ifdef JS_ARM_SIMULATOR
+#if defined(JS_ARM_SIMULATOR) || defined(JS_MIPS_SIMULATOR)
     fun = Simulator::RedirectNativeFunction(fun, type);
 #endif
     return fun;
@@ -299,6 +296,12 @@ AsmJSModule::restoreToInitialState(ArrayBufferObject *maybePrevBuffer, Exclusive
         }
 #endif
     }
+}
+
+void
+AsmJSModule::setAutoFlushICacheRange()
+{
+    AutoFlushICache::setRange(uintptr_t(code_), pod.codeBytes_);
 }
 
 void
@@ -870,6 +873,7 @@ AsmJSModule::deserialize(ExclusiveContext *cx, const uint8_t *cursor)
     (cursor = staticLinkData_.deserialize(cx, cursor));
 
     loadedFromCache_ = true;
+
     return cursor;
 }
 
@@ -939,6 +943,10 @@ AsmJSModule::clone(JSContext *cx, ScopedJSDeletePtr<AsmJSModule> *moduleOut) con
     }
 
     out.loadedFromCache_ = loadedFromCache_;
+
+    // We already know the exact extent of areas that need to be patched, just make sure we
+    // flush all of them at once.
+    out.setAutoFlushICacheRange();
 
     out.restoreToInitialState(maybeHeap_, cx);
     return true;
@@ -1352,6 +1360,13 @@ js::LookupAsmJSModuleInCache(ExclusiveContext *cx,
     if (!module)
         return false;
     cursor = module->deserialize(cx, cursor);
+
+    // No need to flush the instruction cache now, it will be flushed when dynamically linking.
+    AutoFlushICache afc("LookupAsmJSModuleInCache", /* inhibit= */ true);
+    // We already know the exact extent of areas that need to be patched, just make sure we
+    // flush all of them at once.
+    module->setAutoFlushICacheRange();
+
     if (!cursor)
         return false;
 

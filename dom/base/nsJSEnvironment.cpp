@@ -277,13 +277,11 @@ nsJSEnvironmentObserver::Observe(nsISupports* aSubject, const char* aTopic,
     }
     nsJSContext::GarbageCollectNow(JS::gcreason::MEM_PRESSURE,
                                    nsJSContext::NonIncrementalGC,
-                                   nsJSContext::NonCompartmentGC,
                                    nsJSContext::ShrinkingGC);
     nsJSContext::CycleCollectNow();
     if (NeedsGCAfterCC()) {
       nsJSContext::GarbageCollectNow(JS::gcreason::MEM_PRESSURE,
                                      nsJSContext::NonIncrementalGC,
-                                     nsJSContext::NonCompartmentGC,
                                      nsJSContext::ShrinkingGC);
     }
   } else if (!nsCRT::strcmp(aTopic, "quit-application")) {
@@ -388,10 +386,8 @@ AsyncErrorReporter::AsyncErrorReporter(JSRuntime* aRuntime,
                                NS_LITERAL_CSTRING("content javascript");
 
   mInnerWindowID = 0;
-  if (aWindow && aWindow->IsOuterWindow()) {
-    aWindow = aWindow->GetCurrentInnerWindow();
-  }
   if (aWindow) {
+    MOZ_ASSERT(aWindow->IsInnerWindow());
     mInnerWindowID = aWindow->WindowID();
   }
 }
@@ -429,8 +425,7 @@ AsyncErrorReporter::ReportError()
 class ScriptErrorEvent : public AsyncErrorReporter
 {
 public:
-  ScriptErrorEvent(nsIScriptGlobalObject* aScriptGlobal,
-                   JSRuntime* aRuntime,
+  ScriptErrorEvent(JSRuntime* aRuntime,
                    JSErrorReport* aErrorReport,
                    const char* aFallbackMessage,
                    nsIPrincipal* aScriptOriginPrincipal,
@@ -442,20 +437,21 @@ public:
     : AsyncErrorReporter(aRuntime, aErrorReport, aFallbackMessage,
                          nsContentUtils::IsSystemPrincipal(aGlobalPrincipal),
                          aWindow)
-    , mScriptGlobal(aScriptGlobal)
     , mOriginPrincipal(aScriptOriginPrincipal)
     , mDispatchEvent(aDispatchEvent)
     , mError(aRuntime, aError)
+    , mWindow(aWindow)
   {
+    MOZ_ASSERT_IF(mWindow, mWindow->IsInnerWindow());
   }
 
   NS_IMETHOD Run()
   {
     nsEventStatus status = nsEventStatus_eIgnore;
-    // First, notify the DOM that we have a script error.
-    if (mDispatchEvent) {
-      nsCOMPtr<nsPIDOMWindow> win(do_QueryInterface(mScriptGlobal));
-      nsIDocShell* docShell = win ? win->GetDocShell() : nullptr;
+    // First, notify the DOM that we have a script error, but only if
+    // our window is still the current inner, if we're associated with a window.
+    if (mDispatchEvent && (!mWindow || mWindow->IsCurrentInnerWindow())) {
+      nsIDocShell* docShell = mWindow ? mWindow->GetDocShell() : nullptr;
       if (docShell &&
           !JSREPORT_IS_WARNING(mFlags) &&
           !sHandlingScriptError) {
@@ -471,7 +467,7 @@ public:
         init.mFilename = mFileName;
         init.mBubbles = true;
 
-        nsCOMPtr<nsIScriptObjectPrincipal> sop(do_QueryInterface(win));
+        nsCOMPtr<nsIScriptObjectPrincipal> sop(do_QueryInterface(mWindow));
         NS_ENSURE_STATE(sop);
         nsIPrincipal* p = sop->GetPrincipal();
         NS_ENSURE_STATE(p);
@@ -497,11 +493,11 @@ public:
         }
 
         nsRefPtr<ErrorEvent> event =
-          ErrorEvent::Constructor(static_cast<nsGlobalWindow*>(win.get()),
+          ErrorEvent::Constructor(static_cast<nsGlobalWindow*>(mWindow.get()),
                                   NS_LITERAL_STRING("error"), init);
         event->SetTrusted(true);
 
-        EventDispatcher::DispatchDOMEvent(win, nullptr, event, presContext,
+        EventDispatcher::DispatchDOMEvent(mWindow, nullptr, event, presContext,
                                           &status);
       }
     }
@@ -514,10 +510,10 @@ public:
   }
 
 private:
-  nsCOMPtr<nsIScriptGlobalObject> mScriptGlobal;
   nsCOMPtr<nsIPrincipal>          mOriginPrincipal;
   bool                            mDispatchEvent;
   JS::PersistentRootedValue       mError;
+  nsCOMPtr<nsPIDOMWindow>         mWindow;
 
   static bool sHandlingScriptError;
 };
@@ -575,13 +571,15 @@ NS_ScriptErrorReporter(JSContext *cx,
     if (globalObject) {
 
       nsCOMPtr<nsPIDOMWindow> win = do_QueryInterface(globalObject);
+      if (win) {
+        win = win->GetCurrentInnerWindow();
+      }
       nsCOMPtr<nsIScriptObjectPrincipal> scriptPrincipal =
         do_QueryInterface(globalObject);
       NS_ASSERTION(scriptPrincipal, "Global objects must implement "
                    "nsIScriptObjectPrincipal");
       nsContentUtils::AddScriptRunner(
-        new ScriptErrorEvent(globalObject,
-                             JS_GetRuntime(cx),
+        new ScriptErrorEvent(JS_GetRuntime(cx),
                              report,
                              message,
                              nsJSPrincipals::get(report->originPrincipals),
@@ -1714,7 +1712,6 @@ FullGCTimerFired(nsITimer* aTimer, void* aClosure)
 void
 nsJSContext::GarbageCollectNow(JS::gcreason::Reason aReason,
                                IsIncremental aIncremental,
-                               IsCompartment aCompartment,
                                IsShrinking aShrinking,
                                int64_t aSliceMillis)
 {
@@ -1983,6 +1980,21 @@ nsJSContext::RunCycleCollectorSlice()
   gCCStats.FinishCycleCollectionSlice();
 }
 
+//static
+void
+nsJSContext::RunCycleCollectorWorkSlice(int64_t aWorkBudget)
+{
+  if (!NS_IsMainThread()) {
+    return;
+  }
+
+  PROFILER_LABEL("CC", "RunCycleCollectorWorkSlice");
+
+  gCCStats.PrepareForCycleCollectionSlice();
+  nsCycleCollector_collectSliceWork(aWorkBudget);
+  gCCStats.FinishCycleCollectionSlice();
+}
+
 static void
 ICCTimerFired(nsITimer* aTimer, void* aClosure)
 {
@@ -2035,6 +2047,8 @@ nsJSContext::BeginCycleCollectionCallback()
   }
 }
 
+static_assert(NS_GC_DELAY > kMaxICCDuration, "A max duration ICC shouldn't reduce GC delay to 0");
+
 //static
 void
 nsJSContext::EndCycleCollectionCallback(CycleCollectorResults &aResults)
@@ -2050,11 +2064,13 @@ nsJSContext::EndCycleCollectionCallback(CycleCollectorResults &aResults)
 
   sCCollectedWaitingForGC += aResults.mFreedRefCounted + aResults.mFreedGCed;
 
-  if (NeedsGCAfterCC()) {
-    PokeGC(JS::gcreason::CC_WAITING);
-  }
-
   TimeStamp endCCTimeStamp = TimeStamp::Now();
+  uint32_t ccNowDuration = TimeBetween(gCCStats.mBeginTime, endCCTimeStamp);
+
+  if (NeedsGCAfterCC()) {
+    PokeGC(JS::gcreason::CC_WAITING,
+           NS_GC_DELAY - std::min(ccNowDuration, kMaxICCDuration));
+  }
 
   PRTime endCCTime;
   if (sPostGCEventsToObserver) {
@@ -2062,14 +2078,14 @@ nsJSContext::EndCycleCollectionCallback(CycleCollectorResults &aResults)
   }
 
   // Log information about the CC via telemetry, JSON and the console.
-  uint32_t ccNowDuration = TimeBetween(gCCStats.mBeginTime, endCCTimeStamp);
   Telemetry::Accumulate(Telemetry::CYCLE_COLLECTOR_FINISH_IGC, gCCStats.mAnyLockedOut);
   Telemetry::Accumulate(Telemetry::CYCLE_COLLECTOR_SYNC_SKIPPABLE, gCCStats.mRanSyncForgetSkippable);
   Telemetry::Accumulate(Telemetry::CYCLE_COLLECTOR_FULL, ccNowDuration);
   Telemetry::Accumulate(Telemetry::CYCLE_COLLECTOR_MAX_PAUSE, gCCStats.mMaxSliceTime);
 
   if (!sLastCCEndTime.IsNull()) {
-    uint32_t timeBetween = TimeBetween(sLastCCEndTime, gCCStats.mBeginTime);
+    // TimeBetween returns milliseconds, but we want to report seconds.
+    uint32_t timeBetween = TimeBetween(sLastCCEndTime, gCCStats.mBeginTime) / 1000;
     Telemetry::Accumulate(Telemetry::CYCLE_COLLECTOR_TIME_BETWEEN, timeBetween);
   }
   sLastCCEndTime = endCCTimeStamp;
@@ -2188,7 +2204,6 @@ InterSliceGCTimerFired(nsITimer *aTimer, void *aClosure)
   nsJSContext::KillInterSliceGCTimer();
   nsJSContext::GarbageCollectNow(JS::gcreason::INTER_SLICE_GC,
                                  nsJSContext::IncrementalGC,
-                                 nsJSContext::CompartmentGC,
                                  nsJSContext::NonShrinkingGC,
                                  NS_INTERSLICE_GC_BUDGET);
 }
@@ -2200,8 +2215,7 @@ GCTimerFired(nsITimer *aTimer, void *aClosure)
   nsJSContext::KillGCTimer();
   uintptr_t reason = reinterpret_cast<uintptr_t>(aClosure);
   nsJSContext::GarbageCollectNow(static_cast<JS::gcreason::Reason>(reason),
-                                 nsJSContext::IncrementalGC,
-                                 nsJSContext::CompartmentGC);
+                                 nsJSContext::IncrementalGC);
 }
 
 void
@@ -2220,17 +2234,6 @@ ShouldTriggerCC(uint32_t aSuspected)
           TimeUntilNow(sLastCCEndTime) > NS_CC_FORCED);
 }
 
-static uint32_t
-TimeToNextCC()
-{
-  if (sIncrementalCC) {
-    return NS_CC_DELAY - kMaxICCDuration;
-  }
-  return NS_CC_DELAY;
-}
-
-static_assert(NS_CC_DELAY > kMaxICCDuration, "ICC shouldn't reduce CC delay to 0");
-
 static void
 CCTimerFired(nsITimer *aTimer, void *aClosure)
 {
@@ -2240,7 +2243,7 @@ CCTimerFired(nsITimer *aTimer, void *aClosure)
 
   static uint32_t ccDelay = NS_CC_DELAY;
   if (sCCLockedOut) {
-    ccDelay = TimeToNextCC() / 3;
+    ccDelay = NS_CC_DELAY / 3;
 
     PRTime now = PR_Now();
     if (sCCLockedOutTime == 0) {
@@ -2287,7 +2290,7 @@ CCTimerFired(nsITimer *aTimer, void *aClosure)
   }
 
   if (isLateTimerFire) {
-    ccDelay = TimeToNextCC();
+    ccDelay = NS_CC_DELAY;
 
     // We have either just run the CC or decided we don't want to run the CC
     // next time, so kill the timer.
@@ -2873,7 +2876,8 @@ AsmJSCacheOpenEntryForRead(JS::Handle<JSObject*> aGlobal,
                            const uint8_t** aMemory,
                            intptr_t *aHandle)
 {
-  nsIPrincipal* principal = nsContentUtils::GetObjectPrincipal(aGlobal);
+  nsIPrincipal* principal =
+    nsJSPrincipals::get(JS_GetCompartmentPrincipals(js::GetObjectCompartment(aGlobal)));
   return asmjscache::OpenEntryForRead(principal, aBegin, aLimit, aSize, aMemory,
                                       aHandle);
 }
@@ -2887,7 +2891,8 @@ AsmJSCacheOpenEntryForWrite(JS::Handle<JSObject*> aGlobal,
                             uint8_t** aMemory,
                             intptr_t* aHandle)
 {
-  nsIPrincipal* principal = nsContentUtils::GetObjectPrincipal(aGlobal);
+  nsIPrincipal* principal =
+    nsJSPrincipals::get(JS_GetCompartmentPrincipals(js::GetObjectCompartment(aGlobal)));
   return asmjscache::OpenEntryForWrite(principal, aInstalled, aBegin, aEnd,
                                        aSize, aMemory, aHandle);
 }
