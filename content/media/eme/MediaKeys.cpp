@@ -234,7 +234,7 @@ MediaKeys::CreateSession(const nsAString& initDataType,
                                                           this,
                                                           mKeySystem,
                                                           aSessionType);
-  auto pid = StorePromise(promise);
+  PromiseId pid = StorePromise(promise);
   // Hang onto session until the CDM has finished setting it up.
   mPendingSessions.Put(pid, session);
   mProxy->CreateSession(aSessionType,

@@ -14,6 +14,7 @@
 #include "jsprf.h"
 #include "jsscript.h"
 #include "jsutil.h"
+#include "jscompartment.h"
 #include "NamespaceImports.h"
 
 #include "gc/GCInternals.h"

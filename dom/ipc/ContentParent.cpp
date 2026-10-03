@@ -2555,7 +2555,7 @@ ContentParent::GetOrCreateActorForBlob(nsIDOMBlob* aBlob)
     // XXX This is only safe so long as all blob implementations in our tree
     //     inherit nsDOMFileBase. If that ever changes then this will need to grow
     //     a real interface or something.
-    const auto* blob = static_cast<nsDOMFileBase*>(aBlob);
+    const nsDOMFileBase* blob = static_cast<nsDOMFileBase*>(aBlob);
 
     ChildBlobConstructorParams params;
 

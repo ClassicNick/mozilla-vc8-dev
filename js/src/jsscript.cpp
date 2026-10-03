@@ -2054,8 +2054,8 @@ static bool
 SaveSharedScriptData(ExclusiveContext *cx, Handle<JSScript *> script, SharedScriptData *ssd,
                      uint32_t nsrcnotes)
 {
-    ASSERT(script != nullptr);
-    ASSERT(ssd != nullptr);
+    MOZ_ASSERT(script != nullptr);
+    MOZ_ASSERT(ssd != nullptr);
 
     AutoLockForExclusiveAccess lock(cx);
 

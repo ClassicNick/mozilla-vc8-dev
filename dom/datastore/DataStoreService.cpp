@@ -173,7 +173,7 @@ DeleteDataStoresAppEnumerator(
   AssertIsInMainProcess();
   MOZ_ASSERT(NS_IsMainThread());
 
-  auto* appId = static_cast<uint32_t*>(aUserData);
+  uint32_t* appId = static_cast<uint32_t*>(aUserData);
   if (*appId != aAppId) {
     return PL_DHASH_NEXT;
   }
@@ -344,7 +344,7 @@ GetDataStoreInfosEnumerator(const uint32_t& aAppId,
   AssertIsInMainProcess();
   MOZ_ASSERT(NS_IsMainThread());
 
-  auto* data = static_cast<GetDataStoreInfosData*>(aUserData);
+  GetDataStoreInfosData* data = static_cast<GetDataStoreInfosData*>(aUserData);
   if (aAppId == data->mAppId) {
     return PL_DHASH_NEXT;
   }
@@ -391,7 +391,7 @@ AddPermissionsEnumerator(const uint32_t& aAppId,
   AssertIsInMainProcess();
   MOZ_ASSERT(NS_IsMainThread());
 
-  auto* data = static_cast<AddPermissionsData*>(userData);
+  AddPermissionsData* data = static_cast<AddPermissionsData*>(userData);
 
   // ReadOnly is decided by the owner first.
   bool readOnly = data->mReadOnly || aInfo->mReadOnly;
@@ -431,7 +431,7 @@ AddAccessPermissionsEnumerator(const uint32_t& aAppId,
   AssertIsInMainProcess();
   MOZ_ASSERT(NS_IsMainThread());
 
-  auto* data = static_cast<AddAccessPermissionsData*>(userData);
+  AddAccessPermissionsData* data = static_cast<AddAccessPermissionsData*>(userData);
 
   nsString permission;
   GeneratePermissionName(permission, data->mName, aInfo->mManifestURL);

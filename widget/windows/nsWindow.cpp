@@ -616,6 +616,7 @@ nsWindow::Create(nsIWidget *aParent,
 
   SubclassWindow(TRUE);
 
+#if defined (_MSC_VER) && _MSC_VER >= 1600
   // Starting with Windows XP, a process always runs within a terminal services
   // session. In order to play nicely with RDP, fast user switching, and the
   // lock screen, we should be handling WM_WTSSESSION_CHANGE. We must register
@@ -623,6 +624,7 @@ nsWindow::Create(nsIWidget *aParent,
   DebugOnly<BOOL> wtsRegistered = ::WTSRegisterSessionNotification(mWnd,
                                                        NOTIFY_FOR_THIS_SESSION);
   NS_ASSERTION(wtsRegistered, "WTSRegisterSessionNotification failed!\n");
+#endif
 
   IMEHandler::InitInputContext(this, mInputContext);
 
@@ -4624,6 +4626,7 @@ nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
     }
     break;
 
+#if defined (_MSC_VER) && _MSC_VER >= 1600
     case WM_WTSSESSION_CHANGE:
     {
       switch (wParam) {
@@ -4638,6 +4641,7 @@ nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
       }
     }
     break;
+#endif
 
     case WM_FONTCHANGE:
     {
@@ -6578,8 +6582,10 @@ void nsWindow::OnDestroy()
   mWidgetListener = nullptr;
   mAttachedWidgetListener = nullptr;
 
+#if defined (_MSC_VER) && _MSC_VER >= 1600
   // Unregister notifications from terminal services
   ::WTSUnRegisterSessionNotification(mWnd);
+#endif
 
   // Free our subclass and clear |this| stored in the window props. We will no longer
   // receive events from Windows after this point.
