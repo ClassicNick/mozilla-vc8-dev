@@ -18,7 +18,7 @@
 #define ANDROID_VECTOR_H
 
 #include <new>
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 #include <sys/types.h>
 
 #include <cutils/log.h>

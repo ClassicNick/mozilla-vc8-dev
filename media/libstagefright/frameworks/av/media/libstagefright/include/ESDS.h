@@ -18,7 +18,7 @@
 
 #define ESDS_H_
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 #include <media/stagefright/MediaErrors.h>
 

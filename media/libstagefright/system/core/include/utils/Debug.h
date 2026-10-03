@@ -17,7 +17,7 @@
 #ifndef ANDROID_UTILS_DEBUG_H
 #define ANDROID_UTILS_DEBUG_H
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 #include <sys/types.h>
 
 namespace stagefright {

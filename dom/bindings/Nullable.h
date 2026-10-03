@@ -34,9 +34,9 @@ public:
     , mValue(aValue)
   {}
 
-  explicit Nullable(Nullable<T>&& aOther)
-    : mIsNull(aOther.mIsNull)
-    , mValue(mozilla::Move(aOther.mValue))
+  Nullable(mozilla::MoveRef<Nullable<T> > aOther)
+    : mIsNull(aOther->mIsNull)
+    , mValue(mozilla::OldMove(aOther->mValue))
   {}
 
   Nullable(const Nullable<T>& aOther)

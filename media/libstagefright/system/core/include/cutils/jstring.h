@@ -17,7 +17,7 @@
 #ifndef __CUTILS_STRING16_H
 #define __CUTILS_STRING16_H
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 #include <stddef.h>
 
 #ifdef __cplusplus

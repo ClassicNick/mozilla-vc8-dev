@@ -19,7 +19,7 @@
 #define A_BUFFER_H_
 
 #include <sys/types.h>
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 #include <media/stagefright/foundation/ABase.h>
 #include <utils/RefBase.h>

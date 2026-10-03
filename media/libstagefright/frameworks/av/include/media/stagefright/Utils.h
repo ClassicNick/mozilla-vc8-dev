@@ -19,7 +19,7 @@
 #define UTILS_H_
 
 #include <media/stagefright/foundation/AString.h>
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 #include <utils/Errors.h>
 #include <utils/RefBase.h>
 #include <system/audio.h>

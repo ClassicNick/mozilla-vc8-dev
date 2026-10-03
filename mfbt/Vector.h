@@ -319,7 +319,7 @@ class VectorBase : private AllocPolicy
 
     typedef T ElementType;
 
-    VectorBase(AllocPolicy = AllocPolicy());
+    explicit VectorBase(AllocPolicy = AllocPolicy());
     VectorBase(MoveRef<ThisVector>); /* Move constructor. */
     ThisVector& operator=(MoveRef<ThisVector>); /* Move assignment. */
     ~VectorBase();
@@ -1202,7 +1202,7 @@ class Vector
     typedef VectorBase<T, MinInlineCapacity, AllocPolicy, Vector> Base;
 
   public:
-    Vector(AllocPolicy alloc = AllocPolicy()) : Base(alloc) {}
+    explicit Vector(AllocPolicy alloc = AllocPolicy()) : Base(alloc) {}
     Vector(mozilla::MoveRef<Vector> vec) : Base(vec) {}
     Vector& operator=(mozilla::MoveRef<Vector> vec) {
       return Base::operator=(vec);

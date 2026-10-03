@@ -20,7 +20,7 @@
 
 #include <sys/types.h>
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 #include <utils/RefBase.h>
 #include <utils/KeyedVector.h>

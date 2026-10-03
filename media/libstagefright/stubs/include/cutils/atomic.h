@@ -4,7 +4,7 @@
 #ifndef ATOMIC_H_
 #define ATOMIC_H_
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 // This implements the atomic primatives without any atomicity guarantees. This
 // makes the totally unsafe. However we're only using the demuxer in a single

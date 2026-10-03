@@ -738,8 +738,8 @@ class ReadBarriered
 
   public:
     ReadBarriered() : value(nullptr) {}
-    explicit ReadBarriered(T value) : value(value) {}
-    explicit ReadBarriered(const Rooted<T> &rooted) : value(rooted) {}
+    ReadBarriered(T value) : value(value) {}
+    ReadBarriered(const Rooted<T> &rooted) : value(rooted) {}
 
     T get() const {
         if (!InternalGCMethods<T>::isMarkable(value))

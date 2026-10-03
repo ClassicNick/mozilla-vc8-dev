@@ -6,7 +6,7 @@
 #ifndef GreekCasing_h_
 #define GreekCasing_h_
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 namespace mozilla {
 

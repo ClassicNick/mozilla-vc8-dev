@@ -24,7 +24,7 @@
 #      define MOZ_HAVE_CXX11_NULLPTR
 #    endif
 #  endif
-#elif defined(_MSC_VER)
+#elif defined(_MSC_VER) && _MSC_VER >= 1600
    // The minimum supported MSVC (10, _MSC_VER 1600) supports nullptr.
 #  define MOZ_HAVE_CXX11_NULLPTR
 #endif
@@ -105,6 +105,15 @@ struct IsNullPointer { static const bool value = false; };
   // nullptr are the majority now, so they should detect mistakes.  If you're
   // feeling paranoid, check/assert that your NullptrT equals nullptr.
   namespace mozilla { typedef void* NullptrT; }
+#elif defined(_MSC_VER) && _MSC_VER <= 1500
+  namespace mozilla { typedef void* NullptrT; }
+#ifdef _WIN64
+#define nullptr 0LL
+#elif defined _WIN32
+#define nullptr 0L
+#else
+#error "No support for nullptr on your Windows platform"
+#endif
 #else
 #  error "No compiler support for nullptr or its emulation."
 #endif

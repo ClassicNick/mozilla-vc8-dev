@@ -25,7 +25,7 @@
 #include "AString.h"
 
 #include <ctype.h>
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 #include <stdio.h>
 
 namespace stagefright {

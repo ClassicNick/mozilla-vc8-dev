@@ -18,7 +18,7 @@
 #define ANDROID_VECTOR_IMPL_H
 
 #include <assert.h>
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 #include <sys/types.h>
 #include <utils/Errors.h>
 

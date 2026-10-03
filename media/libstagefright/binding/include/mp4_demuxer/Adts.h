@@ -5,7 +5,7 @@
 #ifndef ADTS_H_
 #define ADTS_H_
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 namespace mp4_demuxer
 {

@@ -10,7 +10,7 @@
 #ifndef _UTILS_LOGGER_H
 #define _UTILS_LOGGER_H
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 /*
  * The userspace structure for version 1 of the logger_entry ABI.

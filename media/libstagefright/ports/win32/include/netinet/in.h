@@ -4,7 +4,7 @@
 #ifndef IN_H_
 #define IN_H_
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 #if defined(_M_IX86) || defined(_M_AMD64)
 

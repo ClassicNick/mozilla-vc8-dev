@@ -302,6 +302,7 @@ typedef union jsval_layout
             uint32_t       boo;     // Don't use |bool| -- it must be four bytes.
             JSString       *str;
             JSObject       *obj;
+            js::gc::Cell   *cell;
             void           *ptr;
             JSWhyMagic     why;
             size_t         word;
@@ -1549,14 +1550,12 @@ namespace js {
 template <> struct GCMethods<const JS::Value>
 {
     static JS::Value initial() { return JS::UndefinedValue(); }
-    static ThingRootKind kind() { return THING_ROOT_VALUE; }
     static bool poisoned(const JS::Value &v) { return JS::IsPoisonedValue(v); }
 };
 
 template <> struct GCMethods<JS::Value>
 {
     static JS::Value initial() { return JS::UndefinedValue(); }
-    static ThingRootKind kind() { return THING_ROOT_VALUE; }
     static bool poisoned(const JS::Value &v) { return JS::IsPoisonedValue(v); }
     static bool needsPostBarrier(const JS::Value &v) {
         return v.isObject() && gc::IsInsideNursery(reinterpret_cast<gc::Cell*>(&v.toObject()));

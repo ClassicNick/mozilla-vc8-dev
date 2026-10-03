@@ -21,7 +21,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <stdlib.h>
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 #include <string.h>
 #include <assert.h>
 #include <arpa/inet.h>
@@ -37,7 +37,12 @@
  * conflicts */
 #define UNINDENTED_BLOCK_START {
 #define UNINDENTED_BLOCK_END }
+#else
+#define UNINDENTED_BLOCK_START
+#define UNINDENTED_BLOCK_END
+#endif
 
+#ifdef WIN32
 static char *
 strsep(char **stringp, const char *delim)
 {
@@ -53,9 +58,6 @@ strsep(char **stringp, const char *delim)
     }
     return res;
 }
-#else
-#define UNINDENTED_BLOCK_START
-#define UNINDENTED_BLOCK_END
 #endif
 
 typedef struct FilterInfo_t {

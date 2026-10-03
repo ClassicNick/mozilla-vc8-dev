@@ -67,6 +67,12 @@ public:
   // nsISupports
   NS_DECL_ISUPPORTS
 
+  // Touch caret preference
+  static bool TouchCaretPrefEnabled();
+
+  // Selection caret preference
+  static bool SelectionCaretPrefEnabled();
+
   void Init(nsIDocument* aDocument, nsPresContext* aPresContext,
             nsViewManager* aViewManager, nsStyleSet* aStyleSet,
             nsCompatibility aCompatMode);
@@ -90,6 +96,7 @@ public:
   virtual nsresult ResizeReflow(nscoord aWidth, nscoord aHeight) MOZ_OVERRIDE;
   virtual nsresult ResizeReflowOverride(nscoord aWidth, nscoord aHeight) MOZ_OVERRIDE;
   virtual nsIPageSequenceFrame* GetPageSequenceFrame() const MOZ_OVERRIDE;
+  virtual nsCanvasFrame* GetCanvasFrame() const MOZ_OVERRIDE;
   virtual nsIFrame* GetRealPrimaryFrameFor(nsIContent* aContent) const MOZ_OVERRIDE;
 
   virtual nsIFrame* GetPlaceholderFrameFor(nsIFrame* aFrame) const MOZ_OVERRIDE;
@@ -207,6 +214,15 @@ public:
   virtual void ClearMouseCaptureOnView(nsView* aView) MOZ_OVERRIDE;
   virtual bool IsVisible() MOZ_OVERRIDE;
 
+  // touch caret
+  virtual already_AddRefed<mozilla::TouchCaret> GetTouchCaret() const MOZ_OVERRIDE;
+  virtual mozilla::dom::Element* GetTouchCaretElement() const MOZ_OVERRIDE;
+  virtual void SetMayHaveTouchCaret(bool aSet) MOZ_OVERRIDE;
+  virtual bool MayHaveTouchCaret() MOZ_OVERRIDE;
+  // selection caret
+  virtual NS_HIDDEN_(already_AddRefed<mozilla::SelectionCarets>) GetSelectionCarets() const MOZ_OVERRIDE;
+  virtual NS_HIDDEN_(mozilla::dom::Element*) GetSelectionCaretsStartElement() const MOZ_OVERRIDE;
+  virtual NS_HIDDEN_(mozilla::dom::Element*) GetSelectionCaretsEndElement() const MOZ_OVERRIDE;
   // caret handling
   virtual already_AddRefed<nsCaret> GetCaret() const MOZ_OVERRIDE;
   virtual void MaybeInvalidateCaretPosition() MOZ_OVERRIDE;
@@ -341,7 +357,8 @@ public:
 
   virtual void ScheduleImageVisibilityUpdate() MOZ_OVERRIDE;
 
-  virtual void RebuildImageVisibility(const nsDisplayList& aList) MOZ_OVERRIDE;
+  virtual void RebuildImageVisibilityDisplayList(const nsDisplayList& aList) MOZ_OVERRIDE;
+  virtual void RebuildImageVisibility(nsRect* aRect = nullptr) MOZ_OVERRIDE;
 
   virtual void EnsureImageInVisibleList(nsIImageLoadingContent* aImage) MOZ_OVERRIDE;
 
@@ -349,7 +366,7 @@ public:
 
   virtual bool AssumeAllImagesVisible() MOZ_OVERRIDE;
 
-  virtual void RestyleShadowRoot(mozilla::dom::ShadowRoot* aShadowRoot);
+  virtual void RecordShadowStyleChange(mozilla::dom::ShadowRoot* aShadowRoot);
 
   void SetNextPaintCompressed() { mNextPaintCompressed = true; }
 
@@ -707,6 +724,7 @@ protected:
   void ClearVisibleImagesList();
   static void ClearImageVisibilityVisited(nsView* aView, bool aClear);
   static void MarkImagesInListVisible(const nsDisplayList& aList);
+  void MarkImagesInSubtreeVisible(nsIFrame* aFrame, const nsRect& aRect);
 
   void EvictTouches();
 
@@ -759,6 +777,10 @@ protected:
   nsRefPtr<nsCaret>         mOriginalCaret;
   nsCallbackEventRequest*   mFirstCallbackEventRequest;
   nsCallbackEventRequest*   mLastCallbackEventRequest;
+
+  // TouchCaret
+  nsRefPtr<mozilla::TouchCaret> mTouchCaret;
+  nsRefPtr<mozilla::SelectionCarets> mSelectionCarets;
 
   // This timer controls painting suppression.  Until it fires
   // or all frames are constructed, we won't paint anything but

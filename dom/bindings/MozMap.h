@@ -33,9 +33,9 @@ public:
   }
 
   // Move constructor so we can do MozMaps of MozMaps.
-  MozMapEntry(MozMapEntry<DataType>&& aOther)
+  MozMapEntry(MoveRef<MozMapEntry<DataType> > aOther)
     : nsStringHashKey(aOther),
-      mData(Move(aOther.mData))
+      mData(OldMove(aOther->mData))
   {
   }
 
@@ -56,8 +56,8 @@ public:
   }
 
   // Move constructor so we can do MozMap of MozMap.
-  MozMap(SelfType&& aOther) :
-    Base(Move(aOther))
+  MozMap(MoveRef<SelfType> aOther) :
+    Base(aOther)
   {
   }
 

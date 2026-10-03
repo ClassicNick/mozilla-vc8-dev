@@ -9,7 +9,7 @@
 #include "mp4_demuxer/Adts.h"
 #include "mp4_demuxer/mp4_demuxer.h"
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 using namespace stagefright;
 

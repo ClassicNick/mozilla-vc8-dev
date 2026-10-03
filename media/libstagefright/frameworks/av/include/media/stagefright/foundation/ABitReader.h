@@ -21,7 +21,7 @@
 #include <media/stagefright/foundation/ABase.h>
 
 #include <sys/types.h>
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 namespace stagefright {
 
