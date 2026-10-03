@@ -100,7 +100,7 @@ GMPVideoDecoderParent::Decode(GMPVideoEncodedFrame* aInputFrame,
 
   MOZ_ASSERT(mPlugin->GMPThread() == NS_GetCurrentThread());
 
-  auto inputFrameImpl = static_cast<GMPVideoEncodedFrameImpl*>(aInputFrame);
+  GMPVideoEncodedFrameImpl* inputFrameImpl = static_cast<GMPVideoEncodedFrameImpl*>(aInputFrame);
 
   GMPVideoEncodedFrameData frameData;
   inputFrameImpl->RelinquishFrameData(frameData);
@@ -193,7 +193,7 @@ GMPVideoDecoderParent::RecvDecoded(const GMPVideoi420FrameData& aDecodedFrame)
     return false;
   }
 
-  auto f = new GMPVideoi420FrameImpl(aDecodedFrame, &mVideoHost);
+  GMPVideoi420FrameImpl* f = new GMPVideoi420FrameImpl(aDecodedFrame, &mVideoHost);
 
   // Ignore any return code. It is OK for this to fail without killing the process.
   mCallback->Decoded(f);

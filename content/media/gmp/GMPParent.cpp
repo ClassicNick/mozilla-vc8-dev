@@ -386,12 +386,12 @@ GMPParent::ReadGMPMetaData()
       continue;
     }
 
-    auto cap = new GMPCapability();
+    GMPCapability* cap = new GMPCapability();
     if (tagsStart == -1) {
       // No tags.
       cap->mAPIName.Assign(api);
     } else {
-      auto tagsEnd = api.FindChar(']');
+      int32_t tagsEnd = api.FindChar(']');
       if (tagsEnd == -1 || tagsEnd < tagsStart) {
         // Invalid syntax, skip whole capability.
         delete cap;

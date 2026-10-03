@@ -38,7 +38,7 @@
 #include "gmp-video-frame-i420.h"
 #include "gmp-video-frame-encoded.h"
 #include "gmp-video-codec.h"
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 // ALL METHODS MUST BE CALLED ON THE MAIN THREAD
 class GMPDecoderCallback

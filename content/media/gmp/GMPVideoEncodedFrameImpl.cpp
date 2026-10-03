@@ -124,7 +124,7 @@ GMPVideoEncodedFrameImpl::CreateEmptyFrame(uint32_t aSize)
 GMPVideoErr
 GMPVideoEncodedFrameImpl::CopyFrame(const GMPVideoEncodedFrame& aFrame)
 {
-  auto& f = static_cast<const GMPVideoEncodedFrameImpl&>(aFrame);
+  const GMPVideoEncodedFrameImpl& f = static_cast<const GMPVideoEncodedFrameImpl&>(aFrame);
 
   if (f.mSize != 0) {
     GMPVideoErr err = CreateEmptyFrame(f.mSize);

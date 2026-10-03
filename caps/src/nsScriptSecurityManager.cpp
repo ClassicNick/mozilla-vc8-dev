@@ -1322,14 +1322,14 @@ nsScriptSecurityManager::ScriptSecurityPrefChanged()
     //
 
     mFileURIWhitelist.Clear();
-    auto policies = mozilla::Preferences::GetCString("capability.policy.policynames");
+    nsAdoptingCString policies = mozilla::Preferences::GetCString("capability.policy.policynames");
     for (uint32_t base = SkipPast<IsWhitespaceOrComma>(policies, 0), bound = 0;
          base < policies.Length();
          base = SkipPast<IsWhitespaceOrComma>(policies, bound))
     {
         // Grab the current policy name.
         bound = SkipUntil<IsWhitespaceOrComma>(policies, base);
-        auto policyName = Substring(policies, base, bound - base);
+        const nsDependentCSubstring policyName = Substring(policies, base, bound - base);
 
         // Figure out if this policy allows loading file:// URIs. If not, we can skip it.
         nsCString checkLoadURIPrefName = NS_LITERAL_CSTRING("capability.policy.") +
@@ -1343,7 +1343,7 @@ nsScriptSecurityManager::ScriptSecurityPrefChanged()
         nsCString domainPrefName = NS_LITERAL_CSTRING("capability.policy.") +
                                    policyName +
                                    NS_LITERAL_CSTRING(".sites");
-        auto siteList = Preferences::GetCString(domainPrefName.get());
+        nsAdoptingCString siteList = Preferences::GetCString(domainPrefName.get());
         AddSitesToFileURIWhitelist(siteList);
     }
 }
@@ -1357,7 +1357,7 @@ nsScriptSecurityManager::AddSitesToFileURIWhitelist(const nsCString& aSiteList)
     {
         // Grab the current site.
         bound = SkipUntil<IsWhitespace>(aSiteList, base);
-        auto site = Substring(aSiteList, base, bound - base);
+        const nsDependentCSubstring site = Substring(aSiteList, base, bound - base);
 
         // Convert it to a URI and add it to our list.
         nsCOMPtr<nsIURI> uri;

@@ -147,7 +147,7 @@ template<class KeyClass, class RefPtr>
 void
 nsRefPtrHashtable<KeyClass,RefPtr>::Put(KeyType aKey, already_AddRefed<RefPtr> aData)
 {
-  if (!Put(aKey, mozilla::Move(aData), mozilla::fallible_t())) {
+  if (!Put(aKey, aData, mozilla::fallible_t())) {
     NS_ABORT_OOM(this->mTable.entrySize * this->mTable.entryCount);
   }
 }

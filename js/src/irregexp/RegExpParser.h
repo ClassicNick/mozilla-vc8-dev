@@ -70,7 +70,7 @@ class BufferedVector
     void Add(LifoAlloc *alloc, T* value) {
         if (last_ != nullptr) {
             if (list_ == nullptr) {
-                list_ = alloc->newInfallible<VectorType>(*alloc);
+                list_ = alloc->newInfallible<VectorType>(mozilla::OldMove((VectorType) *alloc));
                 list_->reserve(initial_size);
             }
             list_->append(last_);
@@ -120,7 +120,7 @@ class BufferedVector
 
     VectorType *GetList(LifoAlloc *alloc) {
         if (list_ == nullptr)
-            list_ = alloc->newInfallible<VectorType>(*alloc);
+            list_ = alloc->newInfallible<VectorType>(mozilla::OldMove((VectorType) *alloc));
         if (last_ != nullptr) {
             list_->append(last_);
             last_ = nullptr;

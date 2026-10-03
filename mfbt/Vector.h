@@ -973,7 +973,7 @@ VectorBase<T, N, AP, TV>::erase(T* it)
   MOZ_ASSERT(begin() <= it);
   MOZ_ASSERT(it < end());
   while (it + 1 < end()) {
-    *it = Move(*(it + 1));
+    *it = *(it + 1);
     ++it;
   }
   popBack();
@@ -987,7 +987,7 @@ VectorBase<T, N, AP, TV>::erase(T* b, T *e)
   MOZ_ASSERT(b <= e);
   MOZ_ASSERT(e <= end());
   while (e < end())
-    *b++ = Move(*e++);
+    *b++ = *e++;
   shrinkBy(e - b);
 }
 

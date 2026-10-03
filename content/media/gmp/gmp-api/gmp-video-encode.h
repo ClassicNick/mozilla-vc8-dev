@@ -35,7 +35,7 @@
 #define GMP_VIDEO_ENCODE_h_
 
 #include <vector>
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 #include "gmp-video-errors.h"
 #include "gmp-video-frame-i420.h"

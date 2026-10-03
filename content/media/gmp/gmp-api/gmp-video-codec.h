@@ -34,7 +34,7 @@
 #ifndef GMP_VIDEO_CODEC_h_
 #define GMP_VIDEO_CODEC_h_
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 enum { kGMPPayloadNameSize = 32};
 enum { kGMPMaxSimulcastStreams = 4};

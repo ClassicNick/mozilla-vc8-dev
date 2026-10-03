@@ -752,7 +752,7 @@ class TextNode : public SeqRegExpNode
     TextNode(RegExpCharacterClass* that,
              RegExpNode* on_success)
       : SeqRegExpNode(on_success),
-        elements_(alloc()->newInfallible<TextElementVector>(*alloc()))
+        elements_(alloc()->newInfallible<TextElementVector>(mozilla::OldMove((TextElementVector) *alloc())))
     {
         elements_->append(TextElement::CharClass(that));
     }

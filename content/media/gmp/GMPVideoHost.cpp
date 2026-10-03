@@ -58,7 +58,7 @@ GMPVideoHostImpl::CreatePlane(GMPPlane** aPlane)
   }
   *aPlane = nullptr;
 
-  auto p = new GMPPlaneImpl(this);
+  GMPPlaneImpl* p = new GMPPlaneImpl(this);
 
   *aPlane = p;
 

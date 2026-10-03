@@ -46,7 +46,7 @@ NS_IMPL_ISUPPORTS_INHERITED(SVGIFrameElement, SVGIFrameElementBase,
 //----------------------------------------------------------------------
 // Implementation
 
-SVGIFrameElement::SVGIFrameElement(already_AddRefed<nsINodeInfo>& aNodeInfo,
+SVGIFrameElement::SVGIFrameElement(already_AddRefed<nsINodeInfo> aNodeInfo,
                                    FromParser aFromParser)
   : SVGIFrameElementBase(aNodeInfo)
   , nsElementFrameLoaderOwner(aFromParser)

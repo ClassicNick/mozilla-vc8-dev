@@ -896,7 +896,7 @@ public:
   nsRefPtr(const nsCOMPtr_helper& helper )
   {
     void* newRawPtr;
-    if (NS_FAILED(aHelper(NS_GET_TEMPLATE_IID(T), &newRawPtr))) {
+    if (NS_FAILED(helper(NS_GET_TEMPLATE_IID(T), &newRawPtr))) {
       newRawPtr = 0;
     }
     mRawPtr = static_cast<T*>(newRawPtr);

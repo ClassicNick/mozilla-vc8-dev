@@ -78,7 +78,7 @@ GMPChild::LoadPluginLibrary(const std::string& aPluginPath)
     return false;
   }
 
-  auto platformAPI = new GMPPlatformAPI();
+  GMPPlatformAPI* platformAPI = new GMPPlatformAPI();
   InitPlatformAPI(*platformAPI);
 
   if (initFunc(platformAPI) != GMPNoErr) {
@@ -169,7 +169,7 @@ GMPChild::DeallocPGMPVideoEncoderChild(PGMPVideoEncoderChild* aActor)
 bool
 GMPChild::RecvPGMPVideoDecoderConstructor(PGMPVideoDecoderChild* aActor)
 {
-  auto vdc = static_cast<GMPVideoDecoderChild*>(aActor);
+  GMPVideoDecoderChild* vdc = static_cast<GMPVideoDecoderChild*>(aActor);
 
   void* vd = nullptr;
   GMPErr err = mGetAPIFunc("decode-video", &vdc->Host(), &vd);
@@ -185,7 +185,7 @@ GMPChild::RecvPGMPVideoDecoderConstructor(PGMPVideoDecoderChild* aActor)
 bool
 GMPChild::RecvPGMPVideoEncoderConstructor(PGMPVideoEncoderChild* aActor)
 {
-  auto vec = static_cast<GMPVideoEncoderChild*>(aActor);
+  GMPVideoEncoderChild* vec = static_cast<GMPVideoEncoderChild*>(aActor);
 
   void* ve = nullptr;
   GMPErr err = mGetAPIFunc("encode-video", &vec->Host(), &ve);

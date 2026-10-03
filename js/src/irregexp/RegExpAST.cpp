@@ -193,7 +193,7 @@ CharacterRangeVector &
 CharacterSet::ranges(LifoAlloc *alloc)
 {
     if (ranges_ == nullptr) {
-        ranges_ = alloc->newInfallible<CharacterRangeVector>(*alloc);
+        ranges_ = alloc->newInfallible<CharacterRangeVector>(mozilla::OldMove((CharacterRangeVector) *alloc));
         CharacterRange::AddClassEscape(alloc, standard_set_type_, ranges_);
     }
     return *ranges_;

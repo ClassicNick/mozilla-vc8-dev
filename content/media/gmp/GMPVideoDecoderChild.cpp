@@ -47,7 +47,7 @@ GMPVideoDecoderChild::Decoded(GMPVideoi420Frame* aDecodedFrame)
     MOZ_CRASH("Not given a decoded frame!");
   }
 
-  auto df = static_cast<GMPVideoi420FrameImpl*>(aDecodedFrame);
+  GMPVideoi420FrameImpl* df = static_cast<GMPVideoi420FrameImpl*>(aDecodedFrame);
 
   GMPVideoi420FrameData frameData;
   df->InitFrameData(frameData);
@@ -122,7 +122,7 @@ GMPVideoDecoderChild::RecvDecode(const GMPVideoEncodedFrameData& aInputFrame,
     return false;
   }
 
-  auto f = new GMPVideoEncodedFrameImpl(aInputFrame, &mVideoHost);
+  GMPVideoEncodedFrameImpl* f = new GMPVideoEncodedFrameImpl(aInputFrame, &mVideoHost);
 
   // Ignore any return code. It is OK for this to fail without killing the process.
   mVideoDecoder->Decode(f, aMissingFrames, aCodecSpecificInfo, aRenderTimeMs);

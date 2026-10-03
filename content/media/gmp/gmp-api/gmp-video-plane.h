@@ -35,7 +35,7 @@
 #define GMP_VIDEO_PLANE_h_
 
 #include "gmp-video-errors.h"
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 // The implementation backing this interface uses shared memory for the
 // buffer(s). This means it can only be used by the "owning" process.

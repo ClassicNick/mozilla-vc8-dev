@@ -34,7 +34,7 @@
 #define GMP_PLATFORM_h_
 
 #include "gmp-errors.h"
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 /* Platform helper API. */
 

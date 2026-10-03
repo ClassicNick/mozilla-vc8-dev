@@ -23,7 +23,6 @@ static const char kAddTrust_Public_Services_RootFingerprint[] =
 static const char kAddTrust_Qualified_Certificates_RootFingerprint[] =
   "xzr8Lrp3DQy8HuQfJStS6Kk9ErctzOwDHY2DnL+Bink=";
 
->>>>>>> 85464fc
 /* Baltimore CyberTrust Root */
 static const char kBaltimore_CyberTrust_RootFingerprint[] =
   "Y9mvm0exBk1JoQ57f9Vm28jKo5lFm/woKcVxrYxu80o=";

@@ -34,7 +34,7 @@
 #ifndef GMP_VIDEO_FRAME_ENCODED_h_
 #define GMP_VIDEO_FRAME_ENCODED_h_
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 enum GMPVideoFrameType
 {

@@ -38,7 +38,7 @@
 #include "gmp-video-frame.h"
 #include "gmp-video-plane.h"
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 enum GMPPlaneType {
   kGMPYPlane = 0,

@@ -130,7 +130,7 @@ GMPPlaneImpl::CreateEmptyPlane(int32_t aAllocatedSize, int32_t aStride, int32_t 
 GMPVideoErr
 GMPPlaneImpl::Copy(const GMPPlane& aPlane)
 {
-  auto& planeimpl = static_cast<const GMPPlaneImpl&>(aPlane);
+  const GMPPlaneImpl& planeimpl = static_cast<const GMPPlaneImpl&>(aPlane);
 
   GMPVideoErr err = MaybeResize(planeimpl.mSize);
   if (err != GMPVideoNoErr) {
@@ -168,7 +168,7 @@ GMPPlaneImpl::Copy(int32_t aSize, int32_t aStride, const uint8_t* aBuffer)
 void
 GMPPlaneImpl::Swap(GMPPlane& aPlane)
 {
-  auto& planeimpl = static_cast<GMPPlaneImpl&>(aPlane);
+  GMPPlaneImpl& planeimpl = static_cast<GMPPlaneImpl&>(aPlane);
 
   std::swap(mStride, planeimpl.mStride);
   std::swap(mSize, planeimpl.mSize);

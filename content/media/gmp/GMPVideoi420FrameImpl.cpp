@@ -181,7 +181,7 @@ GMPVideoi420FrameImpl::CreateFrame(int32_t aSize_y, const uint8_t* aBuffer_y,
 GMPVideoErr
 GMPVideoi420FrameImpl::CopyFrame(const GMPVideoi420Frame& aFrame)
 {
-  auto& f = static_cast<const GMPVideoi420FrameImpl&>(aFrame);
+  const GMPVideoi420FrameImpl& f = static_cast<const GMPVideoi420FrameImpl&>(aFrame);
 
   GMPVideoErr err = mYPlane.Copy(f.mYPlane);
   if (err != GMPVideoNoErr) {
@@ -209,7 +209,7 @@ GMPVideoi420FrameImpl::CopyFrame(const GMPVideoi420Frame& aFrame)
 void
 GMPVideoi420FrameImpl::SwapFrame(GMPVideoi420Frame* aFrame)
 {
-  auto f = static_cast<GMPVideoi420FrameImpl*>(aFrame);
+  GMPVideoi420FrameImpl* f = static_cast<GMPVideoi420FrameImpl*>(aFrame);
   mYPlane.Swap(f->mYPlane);
   mUPlane.Swap(f->mUPlane);
   mVPlane.Swap(f->mVPlane);

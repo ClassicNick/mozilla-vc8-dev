@@ -44,7 +44,7 @@ GMPVideoEncoderChild::Encoded(GMPVideoEncodedFrame* aEncodedFrame,
 {
   MOZ_ASSERT(mPlugin->GMPMessageLoop() == MessageLoop::current());
 
-  auto ef = static_cast<GMPVideoEncodedFrameImpl*>(aEncodedFrame);
+  GMPVideoEncodedFrameImpl* ef = static_cast<GMPVideoEncodedFrameImpl*>(aEncodedFrame);
 
   GMPVideoEncodedFrameData frameData;
   ef->RelinquishFrameData(frameData);
@@ -96,7 +96,7 @@ GMPVideoEncoderChild::RecvEncode(const GMPVideoi420FrameData& aInputFrame,
     return false;
   }
 
-  auto f = new GMPVideoi420FrameImpl(aInputFrame, &mVideoHost);
+  GMPVideoi420FrameImpl* f = new GMPVideoi420FrameImpl(aInputFrame, &mVideoHost);
 
   std::vector<GMPVideoFrameType> frameTypes(aFrameTypes.Length());
   for (uint32_t i = 0; i < aFrameTypes.Length(); i++) {
