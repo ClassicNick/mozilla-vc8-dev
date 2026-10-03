@@ -1773,6 +1773,7 @@ nsNSSCertListEnumerator::GetNext(nsISupports** _retval)
   return NS_OK;
 }
 
+// NB: This serialization must match that of nsNSSCertificateFakeTransport.
 NS_IMETHODIMP
 nsNSSCertificate::Write(nsIObjectOutputStream* aStream)
 {

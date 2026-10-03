@@ -4096,7 +4096,9 @@ nsCycleCollector_forgetSkippable(bool aRemoveChildlessNodes,
   MOZ_ASSERT(data);
   MOZ_ASSERT(data->mCollector);
 
-  PROFILER_LABEL("CC", "nsCycleCollector_forgetSkippable");
+  PROFILER_LABEL("nsCycleCollector", "forgetSkippable",
+    js::ProfileEntry::Category::CC);
+
   TimeLog timeLog;
   data->mCollector->ForgetSkippable(aRemoveChildlessNodes,
                                     aAsyncSnowWhiteFreeing);
@@ -4144,7 +4146,9 @@ nsCycleCollector_collect(nsICycleCollectorListener* aManualListener)
   MOZ_ASSERT(data);
   MOZ_ASSERT(data->mCollector);
 
-  PROFILER_LABEL("CC", "nsCycleCollector_collect");
+  PROFILER_LABEL("nsCycleCollector", "collect",
+    js::ProfileEntry::Category::CC);
+
   SliceBudget unlimitedBudget;
   data->mCollector->Collect(ManualCC, unlimitedBudget, aManualListener);
 }
@@ -4158,7 +4162,9 @@ nsCycleCollector_collectSlice(int64_t aSliceTime)
   MOZ_ASSERT(data);
   MOZ_ASSERT(data->mCollector);
 
-  PROFILER_LABEL("CC", "nsCycleCollector_collectSlice");
+  PROFILER_LABEL("nsCycleCollector", "collectSlice",
+    js::ProfileEntry::Category::CC);
+
   SliceBudget budget;
   if (aSliceTime >= 0) {
     budget = SliceBudget(SliceBudget::TimeBudget(aSliceTime));
@@ -4175,7 +4181,9 @@ nsCycleCollector_collectSliceWork(int64_t aSliceWork)
   MOZ_ASSERT(data);
   MOZ_ASSERT(data->mCollector);
 
-  PROFILER_LABEL("CC", "nsCycleCollector_collectSliceWork");
+  PROFILER_LABEL("nsCycleCollector", "collectSliceWork",
+    js::ProfileEntry::Category::CC);
+
   SliceBudget budget;
   if (aSliceWork >= 0) {
     budget = SliceBudget(SliceBudget::WorkBudget(aSliceWork));
@@ -4218,7 +4226,9 @@ nsCycleCollector_shutdown()
 
   if (data) {
     MOZ_ASSERT(data->mCollector);
-    PROFILER_LABEL("CC", "nsCycleCollector_shutdown");
+    PROFILER_LABEL("nsCycleCollector", "shutdown",
+      js::ProfileEntry::Category::CC);
+
     data->mCollector->Shutdown();
     data->mCollector = nullptr;
     if (!data->mRuntime) {

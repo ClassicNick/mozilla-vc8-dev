@@ -610,7 +610,7 @@ JS_ShutDown(void)
 #endif
 
 #ifdef JS_THREADSAFE
-    WorkerThreadState().finish();
+    HelperThreadState().finish();
 #endif
 
     PRMJ_NowShutdown();
@@ -633,7 +633,7 @@ JS_FRIEND_API(bool) JS::isGCEnabled() { return true; }
 #endif
 
 JS_PUBLIC_API(JSRuntime *)
-JS_NewRuntime(uint32_t maxbytes, JSUseHelperThreads useHelperThreads, JSRuntime *parentRuntime)
+JS_NewRuntime(uint32_t maxbytes, JSRuntime *parentRuntime)
 {
     MOZ_ASSERT(jsInitState == Running,
                "must call JS_Init prior to creating any JSRuntimes");
@@ -644,7 +644,7 @@ JS_NewRuntime(uint32_t maxbytes, JSUseHelperThreads useHelperThreads, JSRuntime 
     // for the main runtime in the process.
     JS_ASSERT_IF(parentRuntime, !parentRuntime->parentRuntime);
 
-    JSRuntime *rt = js_new<JSRuntime>(parentRuntime, useHelperThreads);
+    JSRuntime *rt = js_new<JSRuntime>(parentRuntime);
     if (!rt)
         return nullptr;
 
@@ -4205,8 +4205,6 @@ JS_DefineFunctions(JSContext *cx, HandleObject obj, const JSFunctionSpec *fs)
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, obj);
 
-    RootedObject ctor(cx);
-
     for (; fs->name; fs++) {
         RootedAtom atom(cx);
         // If the name starts with "@@", it must be a well-known symbol.
@@ -4228,11 +4226,12 @@ JS_DefineFunctions(JSContext *cx, HandleObject obj, const JSFunctionSpec *fs)
          */
         unsigned flags = fs->flags;
         if (flags & JSFUN_GENERIC_NATIVE) {
-            if (!ctor) {
-                ctor = JS_GetConstructor(cx, obj);
-                if (!ctor)
-                    return false;
-            }
+            // We require that any consumers using JSFUN_GENERIC_NATIVE stash
+            // the prototype and constructor in the global slots before invoking
+            // JS_DefineFunctions on the proto.
+            JSProtoKey key = JSCLASS_CACHED_PROTO_KEY(obj->getClass());
+            JS_ASSERT(obj == &obj->global().getPrototype(key).toObject());
+            RootedObject ctor(cx, &obj->global().getConstructor(key).toObject());
 
             flags &= ~JSFUN_GENERIC_NATIVE;
             JSFunction *fun = DefineFunction(cx, ctor, id,
@@ -4732,7 +4731,7 @@ JS::FinishOffThreadScript(JSContext *maybecx, JSRuntime *rt, void *token)
     if (maybecx)
         lfc.construct(maybecx);
 
-    return WorkerThreadState().finishParseTask(maybecx, rt, token);
+    return HelperThreadState().finishParseTask(maybecx, rt, token);
 #else
     MOZ_ASSUME_UNREACHABLE("Off thread compilation is not available.");
 #endif
@@ -5597,14 +5596,14 @@ JS_DecodeBytes(JSContext *cx, const char *src, size_t srclen, jschar *dst, size_
     size_t dstlen = *dstlenp;
 
     if (srclen > dstlen) {
-        InflateStringToBuffer(src, dstlen, dst);
+        CopyAndInflateChars(dst, src, dstlen);
 
         AutoSuppressGC suppress(cx);
         JS_ReportErrorNumber(cx, js_GetErrorMessage, nullptr, JSMSG_BUFFER_TOO_SMALL);
         return false;
     }
 
-    InflateStringToBuffer(src, srclen, dst);
+    CopyAndInflateChars(dst, src, srclen);
     *dstlenp = srclen;
     return true;
 }

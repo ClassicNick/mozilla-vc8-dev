@@ -7,15 +7,10 @@
 
 #include "mozilla/MemoryReporting.h"
 
-#include "gfxDWriteShaper.h"
-#include "gfxHarfBuzzShaper.h"
 #include <algorithm>
-#include "gfxGraphiteShaper.h"
 #include "gfxDWriteFontList.h"
 #include "gfxContext.h"
 #include <dwrite.h>
-
-#include "gfxDWriteTextAnalysis.h"
 
 #include "harfbuzz/hb.h"
 
@@ -125,14 +120,6 @@ gfxDWriteFont::gfxDWriteFont(gfxFontEntry *aFontEntry,
     }
 
     ComputeMetrics(anAAOption);
-
-    if (FontCanSupportGraphite()) {
-        mGraphiteShaper = new gfxGraphiteShaper(this);
-    }
-
-    if (FontCanSupportHarfBuzz()) {
-        mHarfBuzzShaper = new gfxHarfBuzzShaper(this);
-    }
 }
 
 gfxDWriteFont::~gfxDWriteFont()
@@ -151,12 +138,6 @@ gfxDWriteFont::CopyWithAntialiasOption(AntialiasOption anAAOption)
 {
     return new gfxDWriteFont(static_cast<gfxDWriteFontEntry*>(mFontEntry.get()),
                              &mStyle, mNeedsBold, anAAOption);
-}
-
-void
-gfxDWriteFont::CreatePlatformShaper()
-{
-    mPlatformShaper = new gfxDWriteShaper(this);
 }
 
 const gfxFont::Metrics&
@@ -611,7 +592,7 @@ gfxDWriteFont::Measure(gfxTextRun *aTextRun,
 }
 
 bool
-gfxDWriteFont::ProvidesGlyphWidths()
+gfxDWriteFont::ProvidesGlyphWidths() const
 {
     return !mUseSubpixelPositions ||
            (mFontFace->GetSimulations() & DWRITE_FONT_SIMULATIONS_BOLD);

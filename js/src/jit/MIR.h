@@ -3362,17 +3362,13 @@ class MTruncateToInt32 : public MUnaryInstruction
 };
 
 // Converts any type to a string
-class MToString : public MUnaryInstruction
+class MToString :
+  public MUnaryInstruction,
+  public ToStringPolicy
 {
     explicit MToString(MDefinition *def)
       : MUnaryInstruction(def)
     {
-        // Converting an object to a string might be effectful.
-        JS_ASSERT(!def->mightBeType(MIRType_Object));
-
-        // NOP
-        JS_ASSERT(def->type() != MIRType_String);
-
         setResultType(MIRType_String);
         setMovable();
     }
@@ -3386,12 +3382,20 @@ class MToString : public MUnaryInstruction
 
     MDefinition *foldsTo(TempAllocator &alloc, bool useValueNumbers);
 
+    TypePolicy *typePolicy() {
+        return this;
+    }
+
     bool congruentTo(const MDefinition *ins) const {
         return congruentIfOperandsEqual(ins);
     }
+
     AliasSet getAliasSet() const {
-        JS_ASSERT(!input()->mightBeType(MIRType_Object));
         return AliasSet::None();
+    }
+
+    bool fallible() const {
+        return input()->mightBeType(MIRType_Object);
     }
 };
 
@@ -4300,6 +4304,11 @@ class MSub : public MBinaryArithInstruction
     void computeRange(TempAllocator &alloc);
     bool truncate(TruncateKind kind);
     TruncateKind operandTruncateKind(size_t index) const;
+
+    bool writeRecoverData(CompactBufferWriter &writer) const;
+    bool canRecoverOnBailout() const {
+        return specialization_ != MIRType_None;
+    }
 };
 
 class MMul : public MBinaryArithInstruction
@@ -5532,36 +5541,6 @@ class MLambdaPar
 
     const LambdaFunctionInfo &info() const {
         return info_;
-    }
-};
-
-// Determines the implicit |this| value for function calls.
-class MImplicitThis
-  : public MUnaryInstruction,
-    public SingleObjectPolicy
-{
-    explicit MImplicitThis(MDefinition *callee)
-      : MUnaryInstruction(callee)
-    {
-        setResultType(MIRType_Value);
-        setMovable();
-    }
-
-  public:
-    INSTRUCTION_HEADER(ImplicitThis)
-
-    static MImplicitThis *New(TempAllocator &alloc, MDefinition *callee) {
-        return new(alloc) MImplicitThis(callee);
-    }
-
-    TypePolicy *typePolicy() {
-        return this;
-    }
-    MDefinition *callee() const {
-        return getOperand(0);
-    }
-    AliasSet getAliasSet() const {
-        return AliasSet::None();
     }
 };
 
