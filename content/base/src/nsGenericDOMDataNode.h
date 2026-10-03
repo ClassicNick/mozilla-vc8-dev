@@ -158,6 +158,8 @@ public:
                              nsBindingManager* aOldBindingManager = nullptr) MOZ_OVERRIDE;
   virtual mozilla::dom::ShadowRoot *GetContainingShadow() const MOZ_OVERRIDE;
   virtual mozilla::dom::ShadowRoot *GetShadowRoot() const MOZ_OVERRIDE;
+  virtual nsTArray<nsIContent*> &DestInsertionPoints() MOZ_OVERRIDE;
+  virtual nsTArray<nsIContent*> *GetExistingDestInsertionPoints() const MOZ_OVERRIDE;
   virtual void SetShadowRoot(mozilla::dom::ShadowRoot* aShadowRoot) MOZ_OVERRIDE;
   virtual nsIContent *GetXBLInsertionParent() const MOZ_OVERRIDE;
   virtual void SetXBLInsertionParent(nsIContent* aContent) MOZ_OVERRIDE;
@@ -265,6 +267,11 @@ protected:
      * @see nsIContent::GetContainingShadow
      */
     nsRefPtr<mozilla::dom::ShadowRoot> mContainingShadow;
+
+    /**
+     * @see nsIContent::GetDestInsertionPoints
+     */
+    nsTArray<nsIContent*> mDestInsertionPoints;
   };
 
   // Override from nsINode

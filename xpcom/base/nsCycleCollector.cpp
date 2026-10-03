@@ -4161,7 +4161,7 @@ nsCycleCollector_collectSlice(int64_t aSliceTime)
   PROFILER_LABEL("CC", "nsCycleCollector_collectSlice");
   SliceBudget budget;
   if (aSliceTime >= 0) {
-    budget = SliceBudget::TimeBudget(aSliceTime);
+    budget = SliceBudget(SliceBudget::TimeBudget(aSliceTime));
   }
   data->mCollector->Collect(SliceCC, budget, nullptr);
 }
@@ -4178,7 +4178,7 @@ nsCycleCollector_collectSliceWork(int64_t aSliceWork)
   PROFILER_LABEL("CC", "nsCycleCollector_collectSliceWork");
   SliceBudget budget;
   if (aSliceWork >= 0) {
-    budget = SliceBudget::WorkBudget(aSliceWork);
+    budget = SliceBudget(SliceBudget::WorkBudget(aSliceWork));
   }
   data->mCollector->Collect(SliceCC, budget, nullptr);
 }

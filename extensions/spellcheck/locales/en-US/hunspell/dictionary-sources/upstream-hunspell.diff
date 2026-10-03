@@ -9095,565 +9095,636 @@
 < afterward
 ---
 > afterward/S
-11393d17202
+11073a16884
+> aggregator/SM
+11393d17203
 < altho
-11579a17389
+11579a17390
 > analyses
-11631c17441
+11631c17442
 < anecdotal
 ---
 > anecdotal/Y
-11804c17614
+11750a17562,17563
+> anonymization/SM
+> anonymize/DSG
+11804c17617
 < anthropomorphizing
 ---
 > anthropomorphize/DSG
-11983c17793
+11983c17796
 < app/S
 ---
 > app/MS
-12137a17948
+12137a17951
 > archaeology/M
-12152c17963
+12152c17966
 < archeological
 ---
 > archeological/Y
-12432c18243
+12432c18246
 < assignees
 ---
 > assignee/MS
-12685c18496
+12685c18499
 < auteur
 ---
 > auteur/MS
-12713a18525
+12713a18528
 > autocomplete/S
-12754a18567
+12754a18570
 > avant-garde
-12827d18639
+12827d18642
 < awol
-12829a18642
+12829a18645
 > axe/M
-13864a19678
+12969c18785
+< badge/MZDRS
+---
+> badge/MZDRSG
+13864a19681
 > biodiesel/M
-14210d20023
+14179a19997,19999
+> bloviate/SGD
+> bloviation
+> bloviator/SM
+14210d20029
 < blueing's
-14434a20248
+14434a20254
 > bookselling
-14841c20655
+14841c20661
 < broadcast/AMGS
 ---
 > broadcast/AMGSD
-15039,15040c20853
+15039,15040c20859
 < bullshitter's
 < bullshitter/S!
 ---
 > bullshitter/SM!
-15230d21042
+15230d21048
 < byelaw/SM
-15383d21194
+15383d21200
 < callisthenics/M
-15460a21272,21274
+15460a21278,21280
 > cancelled/U
 > canceller/M
 > cancelling
-15559a21374
+15559a21380
 > capita
-15629,15630d21443
+15629,15630d21449
 < carburetter/SM
 < carburettor/SM
-15701a21515
+15701a21521
 > carnitas
-15788d21601
+15788d21607
 < cashpoint/S
-15797d21609
+15797d21615
 < cassino/M
-15832a21645
+15832a21651
 > catalyses
-15940d21752
+15940d21758
 < caviare/M
-16372c22184
+16277c22095
+< check/AGMDS
+---
+> check/AGMDSU
+16327c22145
+< chemistry/M
+---
+> chemistry/MS
+16372c22190
 < chickenshit/S!
 ---
 > chickenshit/SM!
-16404c22216
+16404c22222
 < children
 ---
 > children/M
-16488d22299
+16488d22305
 < chlorophyl/M
-16629,16630c22440
+16629,16630c22446
 < cider's
 < cider/S
 ---
 > cider/MS
-16652a22463
+16652a22469
 > ciphertext/S
-17072d22882
+17072d22888
 < cocain/M
-17102,17103c22912
+17102,17103c22918
 < cocksucker's
 < cocksucker/S!
 ---
 > cocksucker/SM!
-17755c23564
+17301a23117,23118
+> colonoscope/SM
+> colonoscopy/SM
+17755c23572
 < confer/S
 ---
 > confer/SB
-17800a23610
+17800a23618
 > conformant
-18151d23960
+18151d23968
 < convenor/S
-18206c24015
+18206c24023
 < cookie/M
 ---
 > cookie/SM
-18375a24185,24186
+18375a24193,24194
 > corrigibility/IM
 > corrigible/I
-18389a24201
+18389a24209
 > corruptibly/I
-18467a24280
+18467a24288
 > could've
-18999a24813
+18999a24821
 > cryptologist/MS
-19000a24815
+19000a24823
 > cryptosystem/S
-19035a24851
+19035a24859
 > cul-de-sac
-19246c25062
+19246c25070
 < cysteine
 ---
 > cysteine/M
-19935a25752
+19536a25361
+> decertify/DSGNX
+19935a25761
 > dequeue/DSG
-20196,20197c26013,26014
+20196,20197c26022,26023
 < dialog/SM
 < dialogue/SM
 ---
 > dialog/SMGD
 > dialogue/SMRGD
-20220a26038
+20220a26047
 > diatomaceous
-20481a26300
+20481a26309
 > disclose/DSG
-20633a26453
+20633a26462
 > dissentious
-20830c26650
+20830c26659
 < dogie/M
 ---
 > dogie/SM
-20895a26716
+20895a26725
 > donator/MS
-21820a27642
+21367a27198
+> durian/SM
+21820a27652
 > elicitor/MS
-22071a27894
+22071a27904
 > encyclopaedia
-22196a28020
+22196a28030
 > enqueue/DSG
-22556a28381
+22508a28343,28344
+> eschatological
+> eschatologist/SM
+22556a28393
 > estoppel
-22638c28463
+22638c28475
 < euthanize
 ---
 > euthanize/DSG
-22719a28545
+22719a28557
 > exabyte/MS
-22947a28774
+22947a28786
 > experimentalism
-23207,23208d29033
+23207,23208d29045
 < faecal
 < faeces/M
-23215c29040
+23215c29052
 < faggoting's
 ---
 > faggot/SMG
-23701a29527
+23418a29256
+> faux
+23701a29540
 > filesystem/MS
-24155c29981
+24155c29994
 < fluidized
 ---
 > fluidize/DSG
-24216a30043
+24216a30056
 > foci
-24736d30562
+24736d30575
 < frier/M
-24855,24856c30681,30682
+24855,24856c30694,30695
 < fucker/M!
 < fuckhead/S!
 ---
 > fucker/SM!
 > fuckhead/SM!
-24953d30778
+24953d30791
 < furore/MS
-25125c30950
+25125c30963
 < gaolbird/S
 ---
 > gaolbirds
-25180d31004
+25180d31017
 < gasolene/M
-25190a31015
+25190a31028
 > gastroenterologist/M
-25262c31087
+25262c31100
 < geezer/M
 ---
 > geezer/MS
-25327c31152
+25327c31165
 < genomic
 ---
 > genomic/S
-25462a31288
+25462a31301
 > gigabit/MS
-25464a31291,31293
+25464a31304,31306
 > gigajoule/MS
 > gigapixel/MS
 > gigawatt/MS
-25560d31388
+25560d31401
 < glamourize/DSG
-25674c31502
+25674c31515
 < glycerine's
 ---
 > glycerine/M
-25905c31733
+25905c31746
 < gram/MS
 ---
 > gram/KMS
-25909d31736
+25909d31749
 < gramme/SM
-26063c31890,31891
+26063c31903,31904
 < greybeard
 ---
 > grey/MDRTGSP
 > greybeard/SM
-26066c31894
+26066c31907
 < greyness
 ---
 > greyness/M
-26246,26247d32073
+26246,26247d32086
 < guerilla's
 < guerillas
-26432,26436d32257
+26432,26436d32270
 < haemoglobin's
 < haemophilia/M
 < haemorrhage/DSMG
 < haemorrhoid/S
 < haemorrhoids/M
-27167c32988
+27167c33001
 < hexane
 ---
 > hexane/SM
-27273a33095
+27273a33108
 > hippopotami
-27875d33696
+27875d33709
 < hyaena/SM
-28017c33838
+28017c33851
 < iPod/M
 ---
 > iPod/MS
-28105a33927
+28105a33940
 > idolator/SM
-28513c34335
+28227c34062
+< immerse/XDSGN
+---
+> immerse/XDSGNV
+28513c34348
 < inbound
 ---
 > inbound/s
-28590,28591c34412
+28590,28591c34425
 < incorrigibility/M
 < incorrigible
 ---
 > incorrigibleness
-28593d34413
+28593d34426
 < incorruptibly
-28650a34471
+28650a34484
 > indices
-28812d34632
+28812d34645
 < inflexion/SM
-29216a35037
+29204a35038
+> intermediacy/S
+29206c35040,35042
+< intermediate/SMY
+---
+> intermediate/SMYPGD
+> intermediation/SE
+> intermediator/SM
+29216a35053
 > intern/GDL
-29266a35088
+29266a35104
 > interruptible/U
-29272a35095,35098
+29272a35111,35114
 > intersex
 > intersexual/MS
 > intersexualism
 > intersexuality
-29724c35550
+29724c35566
 < jewellery's
 ---
 > jewellery/M
-29870a35697
+29870a35713
 > judgement/MS
-30066c35893
+30066c35909
 < kiddie/M
 ---
 > kiddie/SM
-30262,30263c36089
+30262,30263c36105
 < kraut's
 < kraut/S!
 ---
 > kraut/MS!
-30665a36492
+30665a36508
 > lector/MS
-31031c36858
+31031c36874
 < linguini's
 ---
 > linguini/M
-31034c36861
+31034c36877
 < linguistically
 ---
 > linguistical/Y
-31151,31152c36978
+31151,31152c36994
 < liver's
 < liver/S
 ---
 > liver/MS
-32230c38056
+31639a37482
+> mage/SM
+32230c38073
 < meanie/M
 ---
 > meanie/MS
-32317,32318c38143
+32317,32318c38160
 < megadeath/M
 < megadeaths
 ---
 > megadeath/SM
-32320c38145
+32320c38162
 < megajoules
 ---
 > megajoule/SM
-32329c38154
+32329c38171
 < megapixel/S
 ---
 > megapixel/MS
-32708a38534
+32708a38551
 > might've
-32717a38544
+32717a38561
 > migrator/SM
-32760a38588
+32760a38605
 > millennia
-32777d38604
+32777d38621
 < millionnaire/M
-32934a38762
+32934a38779
 > miscommunication/S
-32991a38820
+32991a38837
 > misjudgement/MS
-33784a39614
+33784a39631
 > must've
-33963c39793
+33963c39810
 < native/MS
 ---
 > native/MSY
-34169,34171c39999,40000
+34169,34171c40016,40017
 < neurone/S
 < neurophysiology
 < neuroscience
 ---
 > neurophysiology/M
 > neuroscience/MS
-34275c40104
+34275c40121
 < nightie/M
 ---
 > nightie/SM
-35104a40934
+35104a40951
 > octopi
-35219d41048
+35219d41065
 < oleomargarin/M
-35226a41056
+35226a41073
 > oligo
-35913c41743
+35345c41192
+< oppose/DSG
+---
+> oppose/DSGRB
+35913c41760
 < oversize/D
 ---
 > oversize
-36056,36059d41885
+36056,36059d41902
 < paederast/S
 < paediatrician's
 < paediatricians
 < paediatrics/M
-36291a42118
+36291a42135
 > paralyses
-36403d42229
+36377a42222
+> parkour
+36403d42247
 < parrakeet/MS
-36449d42274
+36449d42292
 < partizan/SM
-37093a42919
+37093a42937
 > petabyte/MS
-37102c42928
+37102c42946
 < petitioner/M
 ---
 > petitioner/MS
-37264a43091
+37221a43066,43067
+> phlebotomist/SM
+> phlebotomize/SGD
+37264a43111
 > phosphorylate/DSGN
-37316d43142
+37316d43162
 < phrenetic
-37630a43457
+37630a43477
 > plaintext
-37796a43624
+37796a43644
 > plugin/MS
-37987c43815
+37987c43835
 < polypeptide/S
 ---
 > polypeptide/MS
-38291d44118
+38291d44138
 < practise's
-38451a44279
+38451a44299
 > prejudgement/MS
-38805a44634
+38805a44654
 > profiler/SM
-38835a44665
+38835a44685
 > programmatically
-38891a44722,44723
+38891a44742,44743
 > pronate/DSGN
 > pronator/MS
-38951c44783
+38951c44803
 < proprietorship/M
 ---
 > proprietorship/MS
-39039a44872
+39039a44892
 > provender/M
-39095a44929
+39095a44949
 > pseudorandom/Y
-39564a45399
+39564a45419
 > quinoa
-39873a45709,45710
+39873a45729,45730
 > rasterization/M
 > rasterize/SGDR
-40036a45874
+40036a45894
 > recency
-40140a45979
+40140a45999
 > recurse/DGSV
-40141a45981
+40141a46001
 > recuse/DGS
-40208a46049
+40208a46069
 > refactor/SMDG
-40244d46084
+40244d46104
 < reflexion/SM
-40659d46498
+40659d46518
 < resizing
-40829c46668
+40829c46688
 < reverie/M
 ---
 > reverie/MS
-41415a47255
+40895a46755,46757
+> rheumatological
+> rheumatology/M
+> rheumatologist/SM
+41415a47278
 > sabre/MS
-41914c47754
+41914c47777
 < schnaps's
 ---
 > schnaps/M
-41949c47789
+41949c47812
 < schrod's
 ---
 > schrod/SM
-41998a47839
+41998a47862
 > scot-free
-42883,42885c48724
+42883,42885c48747
 < shit's
 < shit/S!
 < shite/S!
 ---
 > shit/MS!
-42887,42888c48726,48727
+42887,42888c48749,48750
 < shithead/S!
 < shitload/!
 ---
 > shithead/MS!
 > shitload/MS!
-42891c48730
+42891c48753
 < shitty/RT!
 ---
 > shitty/TR!
-42976a48816
+42976a48839
 > should've
-43008c48848
+43008c48871
 < showtime
 ---
 > showtime/MS
-43328c49168
+43328c49191
 < size/MGBDRS
 ---
 > size/AMGBDRS
-43724,43726c49564
+43724,43726c49587
 < smoulder's
 < smouldered
 < smoulders
 ---
 > smoulder/GSMD
-43766a49605,49606
+43766a49628,49629
 > snarkily
 > snarky/TR
-44062c49902
+44041a49905
+> sommelier/SM
+44062c49926
 < sonofabitch
 ---
 > sonofabitch/!
-44346a50187
+44346a50211
 > spelled
-44348a50190
+44348a50214
 > spelt
-44371a50214
+44371a50238
 > spick/S!
-44383c50226
+44383c50250
 < spik/S
 ---
 > spik/S!
-46106a51950
+46106a51974
 > syllabi
-46160c52004
+46160c52028
 < synch/GMD
 ---
 > synch/GMDS
-46167d52010
+46167d52034
 < synchs
-46203,46204c52046,52047
+46178a52046,52048
+> synesthesia
+> synesthete/S
+> synesthetic
+46203,46204c52073,52074
 < sysadmin/S
 < sysop/S
 ---
 > sysadmin/MS
 > sysop/MS
-46752a52596
+46632a52503,52504
+> teleport/SGD
+> teleportation
+46752a52625
 > terabit/MS
-46753a52598,52599
+46753a52627,52628
 > terahertz/M
 > terapixel/MS
-46817a52664
+46817a52693
 > testcase/MS
-46831a52679
+46831a52708
 > testsuite/MS
-46845a52694
+46845a52723
 > textbox/SM
-46925a52775
+46925a52804
 > theremin/MS
-47455c53305
+47455c53334
 < toolbar
 ---
 > toolbar/MS
-47755a53606
+47644a53524
+> traceur/SM
+47755a53636
 > transfect/DSMG
-47774a53626,53627
+47774a53656,53657
 > transgenderism
 > transgene/MS
-47951c53804
+47951c53834
 < triage/M
 ---
-> triage/MG
-48869a54723
+> triage/MGS
+48869a54753
 > unlikeable
-49211c55065
+49211c55095
 < vagina/M
 ---
 > vagina/MS
-49368,49369c55222
+49368,49369c55252
 < velour's
 < velours's
 ---
 > velour/MS
-49478a55332
+49478a55362
 > vertices
-50148a56003
+50148a56033
 > weaponize/DSG
-50260,50261d56114
+50260,50261d56144
 < werwolf/M
 < werwolves
-50728c56581
+50728c56611
 < women
 ---
 > women/M
-50794c56647
+50794c56677
 < wop/S!
 ---
 > wop/MS!

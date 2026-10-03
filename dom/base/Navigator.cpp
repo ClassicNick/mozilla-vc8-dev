@@ -98,6 +98,11 @@
 #include "WorkerPrivate.h"
 #include "WorkerRunnable.h"
 
+#if defined(XP_LINUX)
+#include "mozilla/Hal.h"
+#endif
+#include "mozilla/dom/ContentChild.h"
+
 namespace mozilla {
 namespace dom {
 
@@ -1238,8 +1243,10 @@ Navigator::SendBeacon(const nsAString& aUrl,
         return false;
       }
 
-      rv = strStream->SetData(reinterpret_cast<char*>(aData.Value().GetAsArrayBufferView().Data()),
-                              aData.Value().GetAsArrayBufferView().Length());
+      ArrayBufferView& view = aData.Value().GetAsArrayBufferView();
+      view.ComputeLengthAndData();
+      rv = strStream->SetData(reinterpret_cast<char*>(view.Data()),
+                              view.Length());
 
       if (NS_FAILED(rv)) {
         aRv.Throw(NS_ERROR_FAILURE);
@@ -1483,41 +1490,27 @@ Navigator::GetFeature(const nsAString& aName)
 
 #if defined(XP_LINUX)
   if (aName.EqualsLiteral("hardware.memory")) {
-    static int memLevel = 1;
-    if (memLevel == 1) {
-      FILE* f = fopen("/proc/meminfo", "r");
-      if (!f) {
-        p->MaybeReject(NS_LITERAL_STRING("CannotOpenMeminfo"));
-        return p.forget();
-      }
-
-      int memTotal;
-      int n = fscanf(f, "MemTotal: %d kB\n", &memTotal);
-      fclose(f);
-
-      if (memTotal == 0 || n != 1) {
+    // with seccomp enabled, fopen() should be in a non-sandboxed process
+    if (XRE_GetProcessType() == GeckoProcessType_Default) {
+      uint32_t memLevel = mozilla::hal::GetTotalSystemMemoryLevel();
+      if (memLevel == 0) {
         p->MaybeReject(NS_LITERAL_STRING("Abnormal"));
         return p.forget();
       }
-      // From KB to MB
-      memTotal /= 1024;
-
-      // round the value up to the next power of two
-      while (memLevel <= memTotal) {
-        memLevel *= 2;
-      }
+      p->MaybeResolve((int)memLevel);
+    } else {
+      mozilla::dom::ContentChild* cc =
+        mozilla::dom::ContentChild::GetSingleton();
+      nsRefPtr<Promise> ipcRef(p);
+      cc->SendGetSystemMemory(reinterpret_cast<uint64_t>(ipcRef.forget().take()));
     }
-    p->MaybeResolve(memLevel);
+    return p.forget();
   } // hardware.memory
-  else
 #endif
-  {
-    // resolve with <undefined> because the feature name is not supported
-    p->MaybeResolve(JS::UndefinedHandleValue);
-  }
+  // resolve with <undefined> because the feature name is not supported
+  p->MaybeResolve(JS::UndefinedHandleValue);
 
   return p.forget();
-
 }
 
 

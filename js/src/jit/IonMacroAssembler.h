@@ -224,8 +224,8 @@ class MacroAssembler : public MacroAssemblerSpecific
 
     // This constructor should only be used when there is no IonContext active
     // (for example, Trampoline-$(ARCH).cpp and IonCaches.cpp).
-    MacroAssembler(JSContext *cx, IonScript *ion = nullptr,
-                   JSScript *script = nullptr, jsbytecode *pc = nullptr)
+    explicit MacroAssembler(JSContext *cx, IonScript *ion = nullptr,
+                            JSScript *script = nullptr, jsbytecode *pc = nullptr)
       : enoughMemory_(true),
         embedsNurseryPointers_(false),
         sps_(nullptr)
@@ -253,7 +253,7 @@ class MacroAssembler : public MacroAssemblerSpecific
 
     // asm.js compilation handles its own IonContet-pushing
     struct AsmJSToken {};
-    MacroAssembler(AsmJSToken)
+    explicit MacroAssembler(AsmJSToken)
       : enoughMemory_(true),
         embedsNurseryPointers_(false),
         sps_(nullptr)
@@ -384,7 +384,8 @@ class MacroAssembler : public MacroAssemblerSpecific
 
     void branchIfRope(Register str, Label *label) {
         Address flags(str, JSString::offsetOfFlags());
-        branch32(Assembler::Equal, flags, Imm32(JSString::ROPE_FLAGS), label);
+        static_assert(JSString::ROPE_FLAGS == 0, "Rope type flags must be 0");
+        branchTest32(Assembler::Zero, flags, Imm32(JSString::TYPE_FLAGS_MASK), label);
     }
 
     void loadSliceBounds(Register worker, Register dest) {
@@ -848,6 +849,10 @@ class MacroAssembler : public MacroAssemblerSpecific
     // This is a reference to a patch location where the JitCode* will be written.
   private:
     CodeOffsetLabel exitCodePatch_;
+
+  private:
+    void linkExitFrame();
+    void linkParallelExitFrame(Register pt);
 
   public:
     void enterExitFrame(const VMFunction *f = nullptr) {
@@ -1381,7 +1386,7 @@ class MacroAssembler : public MacroAssemblerSpecific
   public:
     class AfterICSaveLive {
         friend class MacroAssembler;
-        AfterICSaveLive(uint32_t initialStack)
+        explicit AfterICSaveLive(uint32_t initialStack)
 #ifdef JS_DEBUG
           : initialStack(initialStack)
 #endif

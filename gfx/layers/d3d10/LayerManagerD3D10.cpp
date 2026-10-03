@@ -31,12 +31,11 @@
 #include "DXGI1_2.h"
 #endif
 
-using namespace std;
-using namespace mozilla::dom;
-using namespace mozilla::gfx;
-
 namespace mozilla {
 namespace layers {
+
+using namespace std;
+using namespace mozilla::gfx;
 
 typedef HRESULT (WINAPI*D3D10CreateEffectFromMemoryFunc)(
     void *pData,

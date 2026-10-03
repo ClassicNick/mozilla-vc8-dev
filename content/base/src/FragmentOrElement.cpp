@@ -1006,6 +1006,23 @@ FragmentOrElement::SetShadowRoot(ShadowRoot* aShadowRoot)
   slots->mShadowRoot = aShadowRoot;
 }
 
+nsTArray<nsIContent*>&
+FragmentOrElement::DestInsertionPoints()
+{
+  nsDOMSlots *slots = DOMSlots();
+  return slots->mDestInsertionPoints;
+}
+
+nsTArray<nsIContent*>*
+FragmentOrElement::GetExistingDestInsertionPoints() const
+{
+  nsDOMSlots *slots = GetExistingDOMSlots();
+  if (slots) {
+    return &slots->mDestInsertionPoints;
+  }
+  return nullptr;
+}
+
 void
 FragmentOrElement::SetXBLInsertionParent(nsIContent* aContent)
 {
@@ -1758,7 +1775,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(FragmentOrElement)
     if (idAtom) {
       id.AppendLiteral(" id='");
       id.Append(nsDependentAtomString(idAtom));
-      id.AppendLiteral("'");
+      id.Append('\'');
     }
 
     nsAutoString classes;
@@ -1769,7 +1786,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(FragmentOrElement)
       classAttrValue->ToString(classString);
       classString.ReplaceChar(char16_t('\n'), char16_t(' '));
       classes.Append(classString);
-      classes.AppendLiteral("'");
+      classes.Append('\'');
     }
 
     nsAutoCString orphan;
