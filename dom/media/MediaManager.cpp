@@ -45,14 +45,11 @@
 #include "MediaEngineDefault.h"
 #if defined(MOZ_WEBRTC)
 #include "MediaEngineWebRTC.h"
+#include "browser_logging/WebRtcLog.h"
 #endif
 
 #ifdef MOZ_B2G
 #include "MediaPermissionGonk.h"
-#endif
-
-#ifdef MOZ_WEBRTC
-#include "browser_logging/WebRtcLog.h"
 #endif
 
 // GetCurrentTime is defined in winbase.h as zero argument macro forwarding to

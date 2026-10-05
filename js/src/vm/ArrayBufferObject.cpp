@@ -765,7 +765,7 @@ ArrayBufferObject::stealContents(JSContext *cx, Handle<ArrayBufferObject*> buffe
 }
 
 /* static */ void
-ArrayBufferObject::addSizeOfExcludingThis(JSObject *obj, mozilla::MallocSizeOf mallocSizeOf, JS::ObjectsExtraSizes *sizes)
+ArrayBufferObject::addSizeOfExcludingThis(JSObject *obj, mozilla::MallocSizeOf mallocSizeOf, JS::ClassInfo *info)
 {
     ArrayBufferObject &buffer = AsArrayBuffer(obj);
 
@@ -776,14 +776,14 @@ ArrayBufferObject::addSizeOfExcludingThis(JSObject *obj, mozilla::MallocSizeOf m
 #if defined (JS_CPU_X64)
         // On x64, ArrayBufferObject::prepareForAsmJS switches the
         // ArrayBufferObject to use mmap'd storage.
-        sizes->nonHeapElementsAsmJS += buffer.byteLength();
+        info->objectsNonHeapElementsAsmJS += buffer.byteLength();
 #else
-        sizes->mallocHeapElementsAsmJS += mallocSizeOf(buffer.dataPointer());
+        info->objectsMallocHeapElementsAsmJS += mallocSizeOf(buffer.dataPointer());
 #endif
     } else if (MOZ_UNLIKELY(buffer.isMappedArrayBuffer())) {
-        sizes->nonHeapElementsMapped += buffer.byteLength();
+        info->objectsNonHeapElementsMapped += buffer.byteLength();
     } else if (buffer.dataPointer()) {
-        sizes->mallocHeapElementsNonAsmJS += mallocSizeOf(buffer.dataPointer());
+        info->objectsMallocHeapElementsNonAsmJS += mallocSizeOf(buffer.dataPointer());
     }
 }
 
@@ -799,8 +799,14 @@ ArrayBufferObject::finalize(FreeOp *fop, JSObject *obj)
 /* static */ void
 ArrayBufferObject::obj_trace(JSTracer *trc, JSObject *obj)
 {
-    if (!IS_GC_MARKING_TRACER(trc) && !trc->runtime()->isHeapMinorCollecting())
+    if (!IS_GC_MARKING_TRACER(trc) && !trc->runtime()->isHeapMinorCollecting()
+#ifdef JSGC_FJGENERATIONAL
+        && !trc->runtime()->isFJMinorCollecting()
+#endif
+        )
+    {
         return;
+    }
 
     // ArrayBufferObjects need to maintain a list of possibly-weak pointers to
     // their views. The straightforward way to update the weak pointers would

@@ -27,7 +27,7 @@
 #include "vm/Xdr.h"
 
 namespace JS {
-struct ObjectsExtraSizes;
+struct ClassInfo;
 }
 
 namespace js {
@@ -187,6 +187,10 @@ DenseRangeWriteBarrierPost(JSRuntime *rt, JSObject *obj, uint32_t start, uint32_
 #endif
 }
 
+namespace gc {
+class ForkJoinNursery;
+}
+
 }  /* namespace js */
 
 /*
@@ -206,6 +210,7 @@ class JSObject : public js::ObjectImpl
     friend struct js::GCMarker;
     friend class  js::NewObjectCache;
     friend class js::Nursery;
+    friend class js::gc::ForkJoinNursery;
 
     /* Make the type object to use for LAZY_TYPE objects. */
     static js::types::TypeObject *makeLazyType(JSContext *cx, js::HandleObject obj);
@@ -329,7 +334,7 @@ class JSObject : public js::ObjectImpl
         return lastProperty()->hasTable();
     }
 
-    void addSizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf, JS::ObjectsExtraSizes *sizes);
+    void addSizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf, JS::ClassInfo *info);
 
     bool hasIdempotentProtoChain() const;
 

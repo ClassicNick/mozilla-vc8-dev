@@ -14,6 +14,7 @@
 
 #include "gfxTypes.h"
 #include "gfxFontFamilyList.h"
+#include "gfxBlur.h"
 #include "nsRect.h"
 
 #include "qcms.h"
@@ -177,9 +178,6 @@ public:
     virtual already_AddRefed<gfxASurface>
       CreateOffscreenSurface(const IntSize& size,
                              gfxContentType contentType) = 0;
-
-    virtual already_AddRefed<gfxASurface> OptimizeImage(gfxImageSurface *aSurface,
-                                                        gfxImageFormat format);
 
     /**
      * Beware that these methods may return DrawTargets which are not fully supported
