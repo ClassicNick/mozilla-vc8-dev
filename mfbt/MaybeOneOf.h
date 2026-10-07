@@ -63,10 +63,10 @@ class MaybeOneOf
   }
 
   template <class T, class U>
-  void construct(U&& u) {
+  void construct(MoveRef<U> u) {
     MOZ_ASSERT(state == None);
     state = Type2State<T>::result;
-    ::new (storage.addr()) T(Move(u));
+    ::new (storage.addr()) T(u);
   }
 
   template <class T, class U1>

@@ -175,7 +175,7 @@ TryEvalJSON(JSContext *cx, JSScript *callerScript,
 
             if (cp == end) {
                 bool isArray = (chars[0] == '[');
-                auto jsonChars = isArray
+                Range<const jschar> jsonChars = isArray
                                  ? Range<const jschar>(chars.get(), length)
                                  : Range<const jschar>(chars.get() + 1U, length - 2);
                 JSONParser<jschar> parser(cx, jsonChars, JSONParserBase::NoError);

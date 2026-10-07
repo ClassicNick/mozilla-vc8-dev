@@ -37,6 +37,11 @@ include PTabContext;
 include URIParams;
 include ProtocolTypes;
 
+// Workaround to prevent error if PContentChild.cpp & PContentBridgeParent.cpp
+// are put into different UnifiedProtocolsXX.cpp files.
+// XXX Remove this once bug 1069073 is fixed
+include "mozilla/dom/PContentBridgeParent.h";
+
 using GeoPosition from "nsGeoPositionIPCSerialiser.h";
 
 using struct ChromePackage from "mozilla/chrome/RegistryMessageUtils.h";

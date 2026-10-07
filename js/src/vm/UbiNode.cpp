@@ -103,16 +103,16 @@ class SimpleEdge : public Edge {
     }
 
     // Move construction and assignment.
-    SimpleEdge(SimpleEdge &&rhs) {
-        name = rhs.name;
-        referent = rhs.referent;
+    SimpleEdge(mozilla::MoveRef<SimpleEdge> rhs) {
+        name = rhs->name;
+        referent = rhs->referent;
 
-        rhs.name = nullptr;
+        rhs->name = nullptr;
     }
-    SimpleEdge &operator=(SimpleEdge &&rhs) {
+    SimpleEdge &operator=(mozilla::MoveRef<SimpleEdge> rhs) {
         MOZ_ASSERT(&rhs != this);
         this->~SimpleEdge();
-        new(this) SimpleEdge(mozilla::Move(rhs));
+        new(this) SimpleEdge(rhs);
         return *this;
     }
 };
@@ -155,7 +155,7 @@ class SimpleEdgeVectorTracer : public JSTracer {
         // ownership of name; if the append succeeds, the vector element
         // then takes ownership; if the append fails, then the temporary
         // retains it, and its destructor will free it.
-        if (!vec->append(mozilla::Move(SimpleEdge(jsname, Node(kind, *thingp))))) {
+        if (!vec->append(mozilla::OldMove(SimpleEdge(jsname, Node(kind, *thingp))))) {
             okay = false;
             return;
         }
