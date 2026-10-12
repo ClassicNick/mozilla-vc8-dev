@@ -24,12 +24,13 @@ class MemoryReport;
 
 class nsMemoryReporterManager : public nsIMemoryReporterManager
 {
+  virtual ~nsMemoryReporterManager();
+
 public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIMEMORYREPORTERMANAGER
 
   nsMemoryReporterManager();
-  virtual ~nsMemoryReporterManager();
 
   // Gets the memory reporter manager service.
   static nsMemoryReporterManager* GetOrCreate()
@@ -193,6 +194,7 @@ private:
   struct GetReportsState
   {
     uint32_t                             mGeneration;
+    bool                                 mAnonymize;
     nsCOMPtr<nsITimer>                   mTimer;
     uint32_t                             mNumChildProcesses;
     uint32_t                             mNumChildProcessesCompleted;
@@ -203,7 +205,7 @@ private:
     nsCOMPtr<nsISupports>                mFinishReportingData;
     nsString                             mDMDDumpIdent;
 
-    GetReportsState(uint32_t aGeneration, nsITimer* aTimer,
+    GetReportsState(uint32_t aGeneration, bool aAnonymize, nsITimer* aTimer,
                     uint32_t aNumChildProcesses,
                     nsIHandleReportCallback* aHandleReport,
                     nsISupports* aHandleReportData,
@@ -211,6 +213,7 @@ private:
                     nsISupports* aFinishReportingData,
                     const nsAString& aDMDDumpIdent)
       : mGeneration(aGeneration)
+      , mAnonymize(aAnonymize)
       , mTimer(aTimer)
       , mNumChildProcesses(aNumChildProcesses)
       , mNumChildProcessesCompleted(0)

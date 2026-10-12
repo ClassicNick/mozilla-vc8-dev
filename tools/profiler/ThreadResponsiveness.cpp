@@ -13,6 +13,7 @@
 
 using mozilla::Monitor;
 using mozilla::MonitorAutoLock;
+using mozilla::TimeStamp;
 
 class CheckResponsivenessTask : public nsRunnable,
                                 public nsITimerCallback {
@@ -26,11 +27,13 @@ public:
     MOZ_COUNT_CTOR(CheckResponsivenessTask);
   }
 
+protected:
   ~CheckResponsivenessTask()
   {
     MOZ_COUNT_DTOR(CheckResponsivenessTask);
   }
 
+public:
   NS_IMETHOD Run()
   {
     MonitorAutoLock mon(mMonitor);

@@ -35,7 +35,7 @@ class TabChild;
 
 namespace widget {
 
-class AutoCacheNativeKeyCommands;
+struct AutoCacheNativeKeyCommands;
 
 class PuppetWidget : public nsBaseWidget, public nsSupportsWeakReference
 {
@@ -48,8 +48,11 @@ class PuppetWidget : public nsBaseWidget, public nsSupportsWeakReference
 
 public:
   PuppetWidget(TabChild* aTabChild);
+
+protected:
   virtual ~PuppetWidget();
 
+public:
   NS_DECL_ISUPPORTS_INHERITED
 
   NS_IMETHOD Create(nsIWidget*        aParent,
@@ -141,7 +144,7 @@ public:
                           DoCommandCallback aCallback,
                           void* aCallbackData) MOZ_OVERRIDE;
 
-  friend class AutoCacheNativeKeyCommands;
+  friend struct AutoCacheNativeKeyCommands;
 
   //
   // nsBaseWidget methods we override
@@ -302,6 +305,7 @@ public:
     PuppetScreen(void* nativeScreen);
     ~PuppetScreen();
 
+    NS_IMETHOD GetId(uint32_t* aId) MOZ_OVERRIDE;
     NS_IMETHOD GetRect(int32_t* aLeft, int32_t* aTop, int32_t* aWidth, int32_t* aHeight) MOZ_OVERRIDE;
     NS_IMETHOD GetAvailRect(int32_t* aLeft, int32_t* aTop, int32_t* aWidth, int32_t* aHeight) MOZ_OVERRIDE;
     NS_IMETHOD GetPixelDepth(int32_t* aPixelDepth) MOZ_OVERRIDE;
@@ -312,9 +316,10 @@ public:
 
 class PuppetScreenManager MOZ_FINAL : public nsIScreenManager
 {
+    ~PuppetScreenManager();
+
 public:
     PuppetScreenManager();
-    ~PuppetScreenManager();
 
     NS_DECL_ISUPPORTS
     NS_DECL_NSISCREENMANAGER

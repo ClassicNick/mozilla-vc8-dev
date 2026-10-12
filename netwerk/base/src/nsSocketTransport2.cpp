@@ -1,3 +1,4 @@
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 /* vim:set ts=4 sw=4 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -1029,6 +1030,10 @@ nsSocketTransport::ResolveHost()
         dnsFlags |= nsIDNSService::RESOLVE_DISABLE_IPV6;
     if (mConnectionFlags & nsSocketTransport::DISABLE_IPV4)
         dnsFlags |= nsIDNSService::RESOLVE_DISABLE_IPV4;
+    if (mConnectionFlags & nsSocketTransport::DISABLE_RFC1918)
+        dnsFlags |= nsIDNSService::RESOLVE_DISABLE_RFC1918;
+    if (mConnectionFlags & nsSocketTransport::DISABLE_LOOPBACK)
+        dnsFlags |= nsIDNSService::RESOLVE_DISABLE_LOOPBACK;
 
     NS_ASSERTION(!(dnsFlags & nsIDNSService::RESOLVE_DISABLE_IPV6) ||
                  !(dnsFlags & nsIDNSService::RESOLVE_DISABLE_IPV4),
@@ -1171,20 +1176,39 @@ nsSocketTransport::InitiateSocket()
 {
     SOCKET_LOG(("nsSocketTransport::InitiateSocket [this=%p]\n", this));
 
+    static bool crashOnNonLocalConnections = !!getenv("MOZ_DISABLE_NONLOCAL_CONNECTIONS");
+
     nsresult rv;
+    bool isLocal;
+    IsLocal(&isLocal);
 
     if (gIOService->IsOffline()) {
-        bool isLocal;
-
-        IsLocal(&isLocal);
         if (!isLocal)
             return NS_ERROR_OFFLINE;
+    } else if (!isLocal) {
+        if (NS_SUCCEEDED(mCondition) &&
+            crashOnNonLocalConnections &&
+            !(IsIPAddrAny(&mNetAddr) || IsIPAddrLocal(&mNetAddr))) {
+            nsAutoCString ipaddr;
+            nsRefPtr<nsNetAddr> netaddr = new nsNetAddr(&mNetAddr);
+            netaddr->GetAddress(ipaddr);
+            fprintf_stderr(stderr,
+                           "Non-local network connections are disabled and a connection "
+                           "attempt to %s (%s) was made.  You should only access hostnames "
+                           "available via the test networking proxy (if running mochitests) "
+                           "or from a test-specific httpd.js server (if running xpcshell tests)."
+                           " Browser services should be disabled or redirected to a local server.\n",
+                           mHost.get(), ipaddr.get());
+            MOZ_CRASH("Attempting to connect to non-local address!");
+        }
     }
 
-    // Hosts/Proxy Hosts that are Local IP Literals should not be speculatively
-    // connected - Bug 853423.
-    if (mConnectionFlags & nsISocketTransport::DISABLE_RFC1918 &&
-        IsIPAddrLocal(&mNetAddr)) {
+    // Ensure that we're not using a private IP if such addresses are disabled.
+    bool disableRFC1918 = mConnectionFlags & nsISocketTransport::DISABLE_RFC1918;
+    bool disableLoopback = mConnectionFlags & nsISocketTransport::DISABLE_LOOPBACK;
+
+    if ((disableRFC1918 && IsIPAddrLocal(&mNetAddr)) ||
+        (disableLoopback && IsLoopBackAddress(&mNetAddr))) {
 #ifdef PR_LOGGING
         if (SOCKET_LOG_ENABLED()) {
             nsAutoCString netAddrCString;
@@ -1193,13 +1217,16 @@ nsSocketTransport::InitiateSocket()
                                  netAddrCString.BeginWriting(),
                                  kIPv6CStrBufSize))
                 netAddrCString = NS_LITERAL_CSTRING("<IP-to-string failed>");
-            SOCKET_LOG(("nsSocketTransport::InitiateSocket skipping "
-                        "speculative connection for host [%s:%d] proxy "
-                        "[%s:%d] with Local IP address [%s]",
+            SOCKET_LOG(("nsSocketTransport::InitiateSocket refusing to "
+                        "connect to %s host [%s:%d] proxy [%s:%d] with IP "
+                        "address [%s]",
+                        IsIPAddrLocal(&mNetAddr) ? "private" : "loopback",
                         mHost.get(), mPort, mProxyHost.get(), mProxyPort,
                         netAddrCString.get()));
         }
 #endif
+        MOZ_ASSERT(false,
+                   "Local or Loopback IP addresses disabled for this socket!");
         return NS_ERROR_CONNECTION_REFUSED;
     }
 
@@ -1681,8 +1708,15 @@ nsSocketTransport::OnSocketEvent(uint32_t type, nsresult status, nsISupports *pa
         SOCKET_LOG(("  MSG_DNS_LOOKUP_COMPLETE\n"));
         mDNSRequest = 0;
         if (param) {
+            MOZ_ASSERT(NS_SUCCEEDED(status),
+                       "Shouldn't have DNS record if request failed.");
             mDNSRecord = static_cast<nsIDNSRecord *>(param);
-            mDNSRecord->GetNextAddr(SocketPort(), &mNetAddr);
+            nsresult rv = mDNSRecord->GetNextAddr(SocketPort(), &mNetAddr);
+            if (NS_FAILED(rv)) {
+                NS_WARNING("Unable to get address after name resolution "
+                           "succeeded.");
+                status = rv;
+            }
         }
         // status contains DNS lookup status
         if (NS_FAILED(status)) {

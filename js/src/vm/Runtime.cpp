@@ -181,6 +181,9 @@ JSRuntime::JSRuntime(JSRuntime *parentRuntime)
     negativeInfinityValue(DoubleValue(NegativeInfinity<double>())),
     positiveInfinityValue(DoubleValue(PositiveInfinity<double>())),
     emptyString(nullptr),
+#ifdef NIGHTLY_BUILD
+    assertOnScriptEntryHook_(nullptr),
+#endif
     debugMode(false),
     spsProfiler(thisFromCtor()),
     profilingScripts(false),
@@ -188,6 +191,7 @@ JSRuntime::JSRuntime(JSRuntime *parentRuntime)
     haveCreatedContext(false),
     data(nullptr),
     signalHandlersInstalled_(false),
+    canUseSignalHandlers_(false),
     defaultFreeOp_(thisFromCtor(), false),
     debuggerMutations(0),
     securityCallbacks(const_cast<JSSecurityCallbacks *>(&NullSecurityCallbacks)),
@@ -211,6 +215,7 @@ JSRuntime::JSRuntime(JSRuntime *parentRuntime)
     staticStrings(nullptr),
     commonNames(nullptr),
     permanentAtoms(nullptr),
+    wellKnownSymbols(nullptr),
     wrapObjectCallbacks(&DefaultWrapObjectCallbacks),
     preserveWrapperCallback(nullptr),
     jitSupportsFloatingPoint(false),
@@ -229,8 +234,6 @@ JSRuntime::JSRuntime(JSRuntime *parentRuntime)
 {
     liveRuntimesCount++;
 
-    setGCMode(JSGC_MODE_GLOBAL);
-
     /* Initialize infallibly first, so we can goto bad and JS_DestroyRuntime. */
     JS_INIT_CLIST(&onNewGlobalObjectWatchers);
 
@@ -247,7 +250,7 @@ JitSupportsFloatingPoint()
         return false;
 
 #if defined(JS_ION) && WTF_ARM_ARCH_VERSION == 6
-    if (!js::jit::hasVFP())
+    if (!js::jit::HasVFP())
         return false;
 #endif
 
@@ -257,8 +260,16 @@ JitSupportsFloatingPoint()
 #endif
 }
 
+static bool
+SignalBasedTriggersDisabled()
+{
+  // Don't bother trying to cache the getenv lookup; this should be called
+  // infrequently.
+  return !!getenv("JS_DISABLE_SLOW_SCRIPT_SIGNALS") || !!getenv("JS_NO_SIGNALS");
+}
+
 bool
-JSRuntime::init(uint32_t maxbytes)
+JSRuntime::init(uint32_t maxbytes, uint32_t maxNurseryBytes)
 {
 #ifdef JS_THREADSAFE
     ownerThread_ = PR_GetCurrentThread();
@@ -280,7 +291,7 @@ JSRuntime::init(uint32_t maxbytes)
     if (!threadPool.init())
         return false;
 
-    if (!gc.init(maxbytes))
+    if (!gc.init(maxbytes, maxNurseryBytes))
         return false;
 
     const char *size = getenv("JSGC_MARK_STACK_LIMIT");
@@ -306,10 +317,16 @@ JSRuntime::init(uint32_t maxbytes)
     atomsZone.forget();
     this->atomsCompartment_ = atomsCompartment.forget();
 
+    if (!symbolRegistry_.init())
+        return false;
+
     if (!scriptDataTable_.init())
         return false;
 
     if (!evalCache.init())
+        return false;
+
+    if (!compressedSourceSet.init())
         return false;
 
     /* The garbage collector depends on everything before this point being initialized. */
@@ -332,6 +349,7 @@ JSRuntime::init(uint32_t maxbytes)
 
 #ifdef JS_ION
     signalHandlersInstalled_ = EnsureAsmJSSignalHandlersInstalled(this);
+    canUseSignalHandlers_ = signalHandlersInstalled_ && !SignalBasedTriggersDisabled();
 #endif
 
     if (!spsProfiler.init())
@@ -482,7 +500,7 @@ JSRuntime::resetJitStackLimit()
 #if defined(JS_ARM_SIMULATOR) || defined(JS_MIPS_SIMULATOR)
     mainThread.setJitStackLimit(js::jit::Simulator::StackLimit());
 #endif
- }
+}
 
 void
 JSRuntime::addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf, JS::RuntimeSizes *rtSizes)
@@ -511,7 +529,9 @@ JSRuntime::addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf, JS::Runtim
 
     rtSizes->mathCache += mathCache_ ? mathCache_->sizeOfIncludingThis(mallocSizeOf) : 0;
 
-    rtSizes->sourceDataCache += sourceDataCache.sizeOfExcludingThis(mallocSizeOf);
+    rtSizes->uncompressedSourceCache += uncompressedSourceCache.sizeOfExcludingThis(mallocSizeOf);
+
+    rtSizes->compressedSourceSet += compressedSourceSet.sizeOfExcludingThis(mallocSizeOf);
 
     rtSizes->scriptData += scriptDataTable().sizeOfExcludingThis(mallocSizeOf);
     for (ScriptDataTable::Range r = scriptDataTable().all(); !r.empty(); r.popFront())
@@ -538,14 +558,6 @@ JSRuntime::addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf, JS::Runtim
 #endif
 }
 
-static bool
-SignalBasedTriggersDisabled()
-{
-  // Don't bother trying to cache the getenv lookup; this should be called
-  // infrequently.
-  return !!getenv("JS_DISABLE_SLOW_SCRIPT_SIGNALS");
-}
-
 void
 JSRuntime::requestInterrupt(InterruptMode mode)
 {
@@ -567,11 +579,11 @@ JSRuntime::requestInterrupt(InterruptMode mode)
 #endif
 
     /*
-     * asm.js and, optionally, normal Ion code use memory protection and signal
+     * asm.js and normal Ion code optionally use memory protection and signal
      * handlers to halt running code.
      */
-    if (!SignalBasedTriggersDisabled()) {
-        RequestInterruptForAsmJSCode(this);
+    if (canUseSignalHandlers()) {
+        RequestInterruptForAsmJSCode(this, mode);
         jit::RequestInterruptForIonCode(this, mode);
     }
 #endif

@@ -41,11 +41,11 @@ using namespace js;
 using namespace js::types;
 
 using mozilla::Abs;
+using mozilla::ArrayLength;
 using mozilla::MinNumberValue;
 using mozilla::NegativeInfinity;
 using mozilla::PodCopy;
 using mozilla::PositiveInfinity;
-using mozilla::Range;
 using mozilla::RangedPtr;
 
 using JS::AutoCheckCannotGC;
@@ -178,7 +178,7 @@ ComputeAccurateBinaryBaseInteger(const CharT *start, const CharT *end, int base)
 
 template <typename CharT>
 double
-js::ParseDecimalNumber(const Range<const CharT> chars)
+js::ParseDecimalNumber(const mozilla::Range<const CharT> chars)
 {
     MOZ_ASSERT(chars.length() > 0);
     uint64_t dec = 0;
@@ -196,10 +196,10 @@ js::ParseDecimalNumber(const Range<const CharT> chars)
 }
 
 template double
-js::ParseDecimalNumber(const Range<const Latin1Char> chars);
+js::ParseDecimalNumber(const mozilla::Range<const Latin1Char> chars);
 
 template double
-js::ParseDecimalNumber(const Range<const jschar> chars);
+js::ParseDecimalNumber(const mozilla::Range<const jschar> chars);
 
 template <typename CharT>
 bool
@@ -648,16 +648,14 @@ js::Int32ToString(ThreadSafeContext *cx, int32_t si)
     if (JSFlatString *str = LookupInt32ToString(cx, si))
         return str;
 
-    JSFatInlineString *str = js_NewGCFatInlineString<allowGC>(cx);
+    Latin1Char buffer[JSFatInlineString::MAX_LENGTH_LATIN1 + 1];
+    size_t length;
+    Latin1Char *start = BackfillInt32InBuffer(si, buffer, ArrayLength(buffer), &length);
+
+    mozilla::Range<const Latin1Char> chars(start, length);
+    JSInlineString *str = NewFatInlineString<allowGC>(cx, chars);
     if (!str)
         return nullptr;
-
-    jschar buffer[JSFatInlineString::MAX_LENGTH_TWO_BYTE + 1];
-    size_t length;
-    jschar *start = BackfillInt32InBuffer(si, buffer,
-                                          JSFatInlineString::MAX_LENGTH_TWO_BYTE + 1, &length);
-
-    PodCopy(str->initTwoByte(length), start, length + 1);
 
     CacheNumber(cx, si, str);
     return str;
@@ -883,7 +881,7 @@ num_toLocaleString_impl(JSContext *cx, CallArgs args)
         return ok;
     }
 
-    str = js_NewStringCopyN<CanGC>(cx, buf, buflen);
+    str = NewStringCopyN<CanGC>(cx, buf, buflen);
     js_free(buf);
     if (!str)
         return false;
@@ -944,7 +942,7 @@ DToStrResult(JSContext *cx, double d, JSDToStrMode mode, int precision, CallArgs
         JS_ReportOutOfMemory(cx);
         return false;
     }
-    JSString *str = js_NewStringCopyZ<CanGC>(cx, numStr);
+    JSString *str = NewStringCopyZ<CanGC>(cx, numStr);
     if (!str)
         return false;
     args.rval().setString(str);
@@ -1237,10 +1235,10 @@ js_InitNumberClass(JSContext *cx, HandleObject obj)
     if (!JS_DefineConstDoubles(cx, ctor, number_constants))
         return nullptr;
 
-    if (!DefinePropertiesAndBrand(cx, ctor, nullptr, number_static_methods))
+    if (!DefinePropertiesAndFunctions(cx, ctor, nullptr, number_static_methods))
         return nullptr;
 
-    if (!DefinePropertiesAndBrand(cx, numberProto, nullptr, number_methods))
+    if (!DefinePropertiesAndFunctions(cx, numberProto, nullptr, number_methods))
         return nullptr;
 
     if (!JS_DefineFunctions(cx, global, number_functions))
@@ -1362,7 +1360,7 @@ js_NumberToStringWithBase(ThreadSafeContext *cx, double d, int base)
                      cbuf.dbuf && cbuf.dbuf == numStr);
     }
 
-    JSFlatString *s = js_NewStringCopyZ<allowGC>(cx, numStr);
+    JSFlatString *s = NewStringCopyZ<allowGC>(cx, numStr);
 
     if (comp)
         comp->dtoaCache.cache(base, d, s);
@@ -1429,18 +1427,16 @@ js::IndexToString(JSContext *cx, uint32_t index)
     if (JSFlatString *str = c->dtoaCache.lookup(10, index))
         return str;
 
-    JSFatInlineString *str = js_NewGCFatInlineString<CanGC>(cx);
+    Latin1Char buffer[JSFatInlineString::MAX_LENGTH_LATIN1 + 1];
+    RangedPtr<Latin1Char> end(buffer + JSFatInlineString::MAX_LENGTH_LATIN1,
+                              buffer, JSFatInlineString::MAX_LENGTH_LATIN1 + 1);
+    *end = '\0';
+    RangedPtr<Latin1Char> start = BackfillIndexInCharBuffer(index, end);
+
+    mozilla::Range<const Latin1Char> chars(start.get(), end - start);
+    JSInlineString *str = NewFatInlineString<CanGC>(cx, chars);
     if (!str)
         return nullptr;
-
-    jschar buffer[JSFatInlineString::MAX_LENGTH_TWO_BYTE + 1];
-    RangedPtr<jschar> end(buffer + JSFatInlineString::MAX_LENGTH_TWO_BYTE,
-                          buffer, JSFatInlineString::MAX_LENGTH_TWO_BYTE + 1);
-    *end = '\0';
-    RangedPtr<jschar> start = BackfillIndexInCharBuffer(index, end);
-
-    jschar *dst = str->initTwoByte(end - start);
-    PodCopy(dst, start.get(), end - start + 1);
 
     c->dtoaCache.cache(10, index, str);
     return str;
@@ -1563,7 +1559,7 @@ js::NonObjectToNumberSlow(ThreadSafeContext *cx, Value v, double *out)
         return true;
     }
 
-    JS_ASSERT(v.isUndefined());
+    JS_ASSERT(v.isUndefined() || v.isSymbol());
     *out = GenericNaN();
     return true;
 }

@@ -85,11 +85,13 @@ static const int kSupportedFeatureLevels[] =
 
 class GfxD2DSurfaceReporter MOZ_FINAL : public nsIMemoryReporter
 {
+    ~GfxD2DSurfaceReporter() {}
+
 public:
     NS_DECL_ISUPPORTS
 
     NS_IMETHOD CollectReports(nsIHandleReportCallback* aHandleReport,
-                              nsISupports* aData)
+                              nsISupports* aData, bool aAnonymize)
     {
         nsresult rv;
 
@@ -118,11 +120,13 @@ NS_IMPL_ISUPPORTS(GfxD2DSurfaceReporter, nsIMemoryReporter)
 #if defined CAIRO_HAS_D2D_SURFACE || defined ENABLE_GPU_MEM_REPORTER
 class GfxD2DVramReporter MOZ_FINAL : public nsIMemoryReporter
 {
+    ~GfxD2DVramReporter() {}
+
 public:
     NS_DECL_ISUPPORTS
 
     NS_IMETHOD CollectReports(nsIHandleReportCallback* aHandleReport,
-                              nsISupports* aData)
+                              nsISupports* aData, bool aAnonymize)
     {
         nsresult rv;
 
@@ -217,12 +221,14 @@ class GPUAdapterReporter : public nsIMemoryReporter
         return result;
     }
 
+    ~GPUAdapterReporter() {}
+
 public:
     NS_DECL_ISUPPORTS
 
     NS_IMETHOD
     CollectReports(nsIMemoryReporterCallback* aCb,
-                   nsISupports* aClosure)
+                   nsISupports* aClosure, bool aAnonymize)
     {
         HANDLE ProcessHandle = GetCurrentProcess();
 
@@ -235,7 +241,7 @@ public:
         PFND3DKMTQS queryD3DKMTStatistics;
 
         // GPU memory reporting is not available before Windows 7
-        if (!IsWin7OrLater()) 
+        if (!IsWin7OrLater())
             return NS_OK;
 
         if (gdi32Handle = LoadLibrary(TEXT("gdi32.dll")))
@@ -413,7 +419,7 @@ gfxWindowsPlatform::UpdateRenderMode()
     if (gfxInfo) {
         int32_t status;
         if (NS_SUCCEEDED(gfxInfo->GetFeatureStatus(nsIGfxInfo::FEATURE_DIRECT2D, &status))) {
-            if (status != nsIGfxInfo::FEATURE_NO_INFO) {
+            if (status != nsIGfxInfo::FEATURE_STATUS_OK) {
                 d2dBlocked = true;
             }
         }
@@ -673,7 +679,7 @@ gfxWindowsPlatform::GetScaledFontForFont(DrawTarget* aTarget, gfxFont *aFont)
         nativeFont.mType = NativeFontType::DWRITE_FONT_FACE;
         nativeFont.mFont = font->GetFontFace();
 
-        if (aTarget->GetType() == BackendType::CAIRO) {
+        if (aTarget->GetBackendType() == BackendType::CAIRO) {
           return Factory::CreateScaledFontWithCairo(nativeFont,
                                                     font->GetAdjustedSize(),
                                                     font->GetCairoScaledFont());
@@ -693,44 +699,13 @@ gfxWindowsPlatform::GetScaledFontForFont(DrawTarget* aTarget, gfxFont *aFont)
     GetObject(static_cast<gfxGDIFont*>(aFont)->GetHFONT(), sizeof(LOGFONT), &lf);
     nativeFont.mFont = &lf;
 
-    if (aTarget->GetType() == BackendType::CAIRO) {
+    if (aTarget->GetBackendType() == BackendType::CAIRO) {
       return Factory::CreateScaledFontWithCairo(nativeFont,
                                                 aFont->GetAdjustedSize(),
                                                 aFont->GetCairoScaledFont());
     }
 
     return Factory::CreateScaledFontForNativeFont(nativeFont, aFont->GetAdjustedSize());
-}
-
-already_AddRefed<gfxASurface>
-gfxWindowsPlatform::GetThebesSurfaceForDrawTarget(DrawTarget *aTarget)
-{
-#if defined XP_WIN && CAIRO_HAS_D2D_SURFACE
-  if (aTarget->GetType() == BackendType::DIRECT2D) {
-    if (!GetD2DDevice()) {
-      // We no longer have a D2D device, can't do this.
-      return nullptr;
-    }
-
-    RefPtr<ID3D10Texture2D> texture =
-      static_cast<ID3D10Texture2D*>(aTarget->GetNativeSurface(NativeSurfaceType::D3D10_TEXTURE));
-
-    if (!texture) {
-      return gfxPlatform::GetThebesSurfaceForDrawTarget(aTarget);
-    }
-
-    aTarget->Flush();
-
-    nsRefPtr<gfxASurface> surf =
-      new gfxD2DSurface(texture, ContentForFormat(aTarget->GetFormat()));
-
-    // shouldn't this hold a reference?
-    surf->SetData(&kDrawTarget, aTarget, nullptr);
-    return surf.forget();
-  }
-#endif
-
-  return gfxPlatform::GetThebesSurfaceForDrawTarget(aTarget);
 }
 
 nsresult
@@ -1059,15 +1034,11 @@ gfxWindowsPlatform::GetPlatformCMSOutputProfile(void* &mem, size_t &mem_size)
     if (!dc)
         return;
 
-#if _MSC_VER
-    __try {
+    MOZ_SEH_TRY {
         res = GetICMProfileW(dc, &size, (LPWSTR)&str);
-    } __except(GetExceptionCode() == EXCEPTION_ILLEGAL_INSTRUCTION) {
+    } MOZ_SEH_EXCEPT(GetExceptionCode() == EXCEPTION_ILLEGAL_INSTRUCTION) {
         res = FALSE;
     }
-#else
-    res = GetICMProfileW(dc, &size, (LPWSTR)&str);
-#endif
 
     ReleaseDC(nullptr, dc);
     if (!res)

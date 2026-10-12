@@ -22,7 +22,7 @@
 #include "nsCSSRules.h"
 #include "mozilla/css/NameSpaceRule.h"
 #include "nsTArray.h"
-#include "nsCSSStyleSheet.h"
+#include "mozilla/CSSStyleSheet.h"
 #include "mozilla/css/Declaration.h"
 #include "nsStyleConsts.h"
 #include "nsNetUtil.h"
@@ -102,7 +102,7 @@ public:
   CSSParserImpl();
   ~CSSParserImpl();
 
-  nsresult SetStyleSheet(nsCSSStyleSheet* aSheet);
+  nsresult SetStyleSheet(CSSStyleSheet* aSheet);
 
   nsresult SetQuirkMode(bool aQuirkMode);
 
@@ -153,6 +153,13 @@ public:
                       nsMediaList* aMediaList,
                       bool aHTMLMode);
 
+  bool ParseSourceSizeList(const nsAString& aBuffer,
+                           nsIURI* aURI, // for error reporting
+                           uint32_t aLineNumber, // for error reporting
+                           InfallibleTArray< nsAutoPtr<nsMediaQuery> >& aQueries,
+                           InfallibleTArray<nsCSSValue>& aValues,
+                           bool aHTMLMode);
+
   nsresult ParseVariable(const nsAString& aVariableName,
                          const nsAString& aPropValue,
                          nsIURI* aSheetURL,
@@ -170,7 +177,8 @@ public:
   bool ParseColorString(const nsSubstring& aBuffer,
                         nsIURI* aURL, // for error reporting
                         uint32_t aLineNumber, // for error reporting
-                        nsCSSValue& aValue);
+                        nsCSSValue& aValue,
+                        bool aSuppressErrors /* false */);
 
   nsresult ParseSelectorString(const nsSubstring& aSelectorString,
                                nsIURI* aURL, // for error reporting
@@ -209,6 +217,8 @@ public:
                               nsIPrincipal* aSheetPrincipal,
                               nsCSSValue& aValue);
 
+  bool IsValueValidForProperty(const nsCSSProperty aPropID,
+                               const nsAString& aPropValue);
 
   typedef nsCSSParser::VariableEnumFunc VariableEnumFunc;
 
@@ -279,7 +289,7 @@ public:
                                            nsIURI* aDocURL,
                                            nsIURI* aBaseURL,
                                            nsIPrincipal* aDocPrincipal,
-                                           nsCSSStyleSheet* aSheet,
+                                           CSSStyleSheet* aSheet,
                                            uint32_t aLineNumber,
                                            uint32_t aLineOffset);
 
@@ -441,15 +451,25 @@ protected:
   bool ParseCharsetRule(RuleAppendFunc aAppendFunc, void* aProcessData);
   bool ParseImportRule(RuleAppendFunc aAppendFunc, void* aProcessData);
   bool ParseURLOrString(nsString& aURL);
-  bool GatherMedia(nsMediaList* aMedia,
-                   bool aInAtRule);
-  bool ParseMediaQuery(bool aInAtRule, nsMediaQuery **aQuery,
+  bool GatherMedia(nsMediaList* aMedia, bool aInAtRule);
+
+  enum eMediaQueryType { eMediaQueryNormal,
+                         // Parsing an at rule
+                         eMediaQueryAtRule,
+                         // Attempt to consume a single media-condition and
+                         // stop. Note that the spec defines "expression and/or
+                         // expression" as one condition but "expression,
+                         // expression" as two.
+                         eMediaQuerySingleCondition };
+  bool ParseMediaQuery(eMediaQueryType aMode, nsMediaQuery **aQuery,
                        bool *aHitStop);
   bool ParseMediaQueryExpression(nsMediaQuery* aQuery);
   void ProcessImport(const nsString& aURLSpec,
                      nsMediaList* aMedia,
                      RuleAppendFunc aAppendFunc,
-                     void* aProcessData);
+                     void* aProcessData,
+                     uint32_t aLineNumber,
+                     uint32_t aColumnNumber);
   bool ParseGroupRule(css::GroupRule* aRule, RuleAppendFunc aAppendFunc,
                       void* aProcessData);
   bool ParseMediaRule(RuleAppendFunc aAppendFunc, void* aProcessData);
@@ -457,7 +477,8 @@ protected:
   bool ParseNameSpaceRule(RuleAppendFunc aAppendFunc, void* aProcessData);
   void ProcessNameSpace(const nsString& aPrefix,
                         const nsString& aURLSpec, RuleAppendFunc aAppendFunc,
-                        void* aProcessData);
+                        void* aProcessData,
+                        uint32_t aLineNumber, uint32_t aColumnNumber);
 
   bool ParseFontFaceRule(RuleAppendFunc aAppendFunc, void* aProcessData);
   bool ParseFontFeatureValuesRule(RuleAppendFunc aAppendFunc,
@@ -971,7 +992,7 @@ protected:
   nsCOMPtr<nsIPrincipal> mSheetPrincipal;
 
   // The sheet we're parsing into
-  nsRefPtr<nsCSSStyleSheet> mSheet;
+  nsRefPtr<CSSStyleSheet> mSheet;
 
   // Used for @import rules
   mozilla::css::Loader* mChildLoader; // not ref counted, it owns us
@@ -979,7 +1000,7 @@ protected:
   // Sheet section we're in.  This is used to enforce correct ordering of the
   // various rule types (eg the fact that a @charset rule must come before
   // anything else).  Note that there are checks of similar things in various
-  // places in nsCSSStyleSheet.cpp (e.g in insertRule, RebuildChildList).
+  // places in CSSStyleSheet.cpp (e.g in insertRule, RebuildChildList).
   enum nsCSSSection {
     eCSSSection_Charset,
     eCSSSection_Import,
@@ -1124,7 +1145,7 @@ CSSParserImpl::~CSSParserImpl()
 }
 
 nsresult
-CSSParserImpl::SetStyleSheet(nsCSSStyleSheet* aSheet)
+CSSParserImpl::SetStyleSheet(CSSStyleSheet* aSheet)
 {
   if (aSheet != mSheet) {
     // Switch to using the new sheet, if any
@@ -1314,7 +1335,7 @@ CSSParserImpl::ParseStyleAttribute(const nsAString& aAttributeValue,
   css::Declaration* declaration = ParseDeclarationBlock(parseFlags);
   if (declaration) {
     // Create a style rule for the declaration
-    NS_ADDREF(*aResult = new css::StyleRule(nullptr, declaration));
+    NS_ADDREF(*aResult = new css::StyleRule(nullptr, declaration, 0, 0));
   } else {
     *aResult = nullptr;
   }
@@ -1601,19 +1622,112 @@ CSSParserImpl::ParseMediaList(const nsSubstring& aBuffer,
   mHTMLMediaMode = false;
 }
 
+//  <source-size-list> = <source-size>#?
+//  <source-size> = <media-condition>? <length>
+bool
+CSSParserImpl::ParseSourceSizeList(const nsAString& aBuffer,
+                                   nsIURI* aURI, // for error reporting
+                                   uint32_t aLineNumber, // for error reporting
+                                   InfallibleTArray< nsAutoPtr<nsMediaQuery> >& aQueries,
+                                   InfallibleTArray<nsCSSValue>& aValues,
+                                   bool aHTMLMode)
+{
+  aQueries.Clear();
+  aValues.Clear();
+
+  // fake base URI since media value lists don't have URIs in them
+  nsCSSScanner scanner(aBuffer, aLineNumber);
+  css::ErrorReporter reporter(scanner, mSheet, mChildLoader, aURI);
+  InitScanner(scanner, reporter, aURI, aURI, nullptr);
+
+  // See ParseMediaList comment about HTML mode
+  mHTMLMediaMode = aHTMLMode;
+
+  bool hitError = false;
+  for (;;) {
+    nsAutoPtr<nsMediaQuery> query;
+    nsCSSValue value;
+
+    bool hitStop;
+    if (!ParseMediaQuery(eMediaQuerySingleCondition, getter_Transfers(query),
+                         &hitStop)) {
+      NS_ASSERTION(!hitStop, "should return true when hit stop");
+      hitError = true;
+      break;
+    }
+
+    if (!query) {
+      REPORT_UNEXPECTED_EOF(PEParseSourceSizeListEOF);
+      NS_ASSERTION(hitStop,
+                   "should return hitStop or an error if returning no query");
+      hitError = true;
+      break;
+    }
+
+    if (hitStop) {
+      // Empty conditions (e.g. just a bare value) should be treated as always
+      // matching (a query with no expressions fails to match, so a negated one
+      // always matches.)
+      query->SetNegated();
+    }
+
+    if (!ParseNonNegativeVariant(value, VARIANT_LPCALC, nullptr)) {
+      hitError = true;
+      break;
+    }
+
+    aQueries.AppendElement(query.forget());
+    aValues.AppendElement(value);
+
+    if (!GetToken(true)) {
+      // Expected EOF
+      break;
+    }
+
+    if (eCSSToken_Symbol != mToken.mType || mToken.mSymbol != ',') {
+      REPORT_UNEXPECTED_TOKEN(PEParseSourceSizeListNotComma);
+      hitError = true;
+      break;
+    }
+  }
+
+  if (hitError) {
+    // Per spec, a parse failure in this list invalidates it
+    // entirely. Currently, this grammar is specified standalone and not part of
+    // any larger grammar, so it doesn't make sense to try to advance the token
+    // beyond it.
+    OUTPUT_ERROR();
+  }
+
+  CLEAR_ERROR();
+  ReleaseScanner();
+  mHTMLMediaMode = false;
+
+  return !hitError;
+}
+
 bool
 CSSParserImpl::ParseColorString(const nsSubstring& aBuffer,
                                 nsIURI* aURI, // for error reporting
                                 uint32_t aLineNumber, // for error reporting
-                                nsCSSValue& aValue)
+                                nsCSSValue& aValue,
+                                bool aSuppressErrors /* false */)
 {
   nsCSSScanner scanner(aBuffer, aLineNumber);
   css::ErrorReporter reporter(scanner, mSheet, mChildLoader, aURI);
   InitScanner(scanner, reporter, aURI, aURI, nullptr);
 
+  nsAutoSuppressErrors suppressErrors(this, aSuppressErrors);
+
   // Parse a color, and check that there's nothing else after it.
   bool colorParsed = ParseColor(aValue) && !GetToken(true);
-  OUTPUT_ERROR();
+
+  if (aSuppressErrors) {
+    CLEAR_ERROR();
+  } else {
+    OUTPUT_ERROR();
+  }
+
   ReleaseScanner();
   return colorParsed;
 }
@@ -2313,7 +2427,7 @@ CSSParserImpl::ParsePropertyWithVariableReferences(
                                             nsIURI* aDocURL,
                                             nsIURI* aBaseURL,
                                             nsIPrincipal* aDocPrincipal,
-                                            nsCSSStyleSheet* aSheet,
+                                            CSSStyleSheet* aSheet,
                                             uint32_t aLineNumber,
                                             uint32_t aLineOffset)
 {
@@ -2695,7 +2809,9 @@ bool
 CSSParserImpl::ParseCharsetRule(RuleAppendFunc aAppendFunc,
                                 void* aData)
 {
-  if (!GetToken(true)) {
+  uint32_t linenum, colnum;
+  if (!GetNextTokenLocation(true, &linenum, &colnum) ||
+      !GetToken(true)) {
     REPORT_UNEXPECTED_EOF(PECharsetRuleEOF);
     return false;
   }
@@ -2712,7 +2828,8 @@ CSSParserImpl::ParseCharsetRule(RuleAppendFunc aAppendFunc,
     return false;
   }
 
-  nsRefPtr<css::CharsetRule> rule = new css::CharsetRule(charset);
+  nsRefPtr<css::CharsetRule> rule = new css::CharsetRule(charset,
+                                                         linenum, colnum);
   (*aAppendFunc)(rule, aData);
 
   return true;
@@ -2733,12 +2850,15 @@ CSSParserImpl::ParseURLOrString(nsString& aURL)
 }
 
 bool
-CSSParserImpl::ParseMediaQuery(bool aInAtRule,
+CSSParserImpl::ParseMediaQuery(eMediaQueryType aQueryType,
                                nsMediaQuery **aQuery,
                                bool *aHitStop)
 {
   *aQuery = nullptr;
   *aHitStop = false;
+  bool inAtRule = aQueryType == eMediaQueryAtRule;
+  // Attempt to parse a single condition and stop
+  bool singleCondition = aQueryType == eMediaQuerySingleCondition;
 
   // "If the comma-separated list is the empty list it is assumed to
   // specify the media query 'all'."  (css3-mediaqueries, section
@@ -2746,7 +2866,7 @@ CSSParserImpl::ParseMediaQuery(bool aInAtRule,
   if (!GetToken(true)) {
     *aHitStop = true;
     // expected termination by EOF
-    if (!aInAtRule)
+    if (!inAtRule)
       return true;
 
     // unexpected termination by EOF
@@ -2754,7 +2874,7 @@ CSSParserImpl::ParseMediaQuery(bool aInAtRule,
     return true;
   }
 
-  if (eCSSToken_Symbol == mToken.mType && aInAtRule &&
+  if (eCSSToken_Symbol == mToken.mType && inAtRule &&
       (mToken.mSymbol == ';' || mToken.mSymbol == '{' || mToken.mSymbol == '}' )) {
     *aHitStop = true;
     UngetToken();
@@ -2775,6 +2895,12 @@ CSSParserImpl::ParseMediaQuery(bool aInAtRule,
       OUTPUT_ERROR();
       query->SetHadUnknownExpression();
     }
+  } else if (singleCondition) {
+    // Since we are only trying to consume a single condition, which precludes
+    // media types and not/only, this should be the same as reaching immediate
+    // EOF (no condition to parse)
+    *aHitStop = true;
+    return true;
   } else {
     nsCOMPtr<nsIAtom> mediaType;
     bool gotNotOrOnly = false;
@@ -2819,7 +2945,7 @@ CSSParserImpl::ParseMediaQuery(bool aInAtRule,
     if (!GetToken(true)) {
       *aHitStop = true;
       // expected termination by EOF
-      if (!aInAtRule)
+      if (!inAtRule)
         break;
 
       // unexpected termination by EOF
@@ -2827,21 +2953,29 @@ CSSParserImpl::ParseMediaQuery(bool aInAtRule,
       break;
     }
 
-    if (eCSSToken_Symbol == mToken.mType && aInAtRule &&
+    if (eCSSToken_Symbol == mToken.mType && inAtRule &&
         (mToken.mSymbol == ';' || mToken.mSymbol == '{' || mToken.mSymbol == '}')) {
       *aHitStop = true;
       UngetToken();
       break;
     }
-    if (eCSSToken_Symbol == mToken.mType && mToken.mSymbol == ',') {
+    if (!singleCondition &&
+        eCSSToken_Symbol == mToken.mType && mToken.mSymbol == ',') {
       // Done with the expressions for this query
       break;
     }
     if (eCSSToken_Ident != mToken.mType ||
         !mToken.mIdent.LowerCaseEqualsLiteral("and")) {
-      REPORT_UNEXPECTED_TOKEN(PEGatherMediaNotComma);
-      UngetToken();
-      return false;
+      if (singleCondition) {
+        // We have a condition at this point -- if we're not chained to other
+        // conditions with and/or, we're done.
+        UngetToken();
+        break;
+      } else {
+        REPORT_UNEXPECTED_TOKEN(PEGatherMediaNotComma);
+        UngetToken();
+        return false;
+      }
     }
     if (!ParseMediaQueryExpression(query)) {
       OUTPUT_ERROR();
@@ -2857,11 +2991,11 @@ bool
 CSSParserImpl::GatherMedia(nsMediaList* aMedia,
                            bool aInAtRule)
 {
+  eMediaQueryType type = aInAtRule ? eMediaQueryAtRule : eMediaQueryNormal;
   for (;;) {
     nsAutoPtr<nsMediaQuery> query;
     bool hitStop;
-    if (!ParseMediaQuery(aInAtRule, getter_Transfers(query),
-                         &hitStop)) {
+    if (!ParseMediaQuery(type, getter_Transfers(query), &hitStop)) {
       NS_ASSERTION(!hitStop, "should return true when hit stop");
       OUTPUT_ERROR();
       if (query) {
@@ -3040,8 +3174,10 @@ CSSParserImpl::ParseImportRule(RuleAppendFunc aAppendFunc, void* aData)
 {
   nsRefPtr<nsMediaList> media = new nsMediaList();
 
+  uint32_t linenum, colnum;
   nsAutoString url;
-  if (!ParseURLOrString(url)) {
+  if (!GetNextTokenLocation(true, &linenum, &colnum) ||
+      !ParseURLOrString(url)) {
     REPORT_UNEXPECTED_TOKEN(PEImportNotURI);
     return false;
   }
@@ -3059,18 +3195,21 @@ CSSParserImpl::ParseImportRule(RuleAppendFunc aAppendFunc, void* aData)
     NS_ASSERTION(media->Length() != 0, "media list must be nonempty");
   }
 
-  ProcessImport(url, media, aAppendFunc, aData);
+  ProcessImport(url, media, aAppendFunc, aData, linenum, colnum);
   return true;
 }
-
 
 void
 CSSParserImpl::ProcessImport(const nsString& aURLSpec,
                              nsMediaList* aMedia,
                              RuleAppendFunc aAppendFunc,
-                             void* aData)
+                             void* aData,
+                             uint32_t aLineNumber,
+                             uint32_t aColumnNumber)
 {
-  nsRefPtr<css::ImportRule> rule = new css::ImportRule(aMedia, aURLSpec);
+  nsRefPtr<css::ImportRule> rule = new css::ImportRule(aMedia, aURLSpec,
+                                                       aLineNumber,
+                                                       aColumnNumber);
   (*aAppendFunc)(rule, aData);
 
   // Diagnose bad URIs even if we don't have a child loader.
@@ -3141,10 +3280,11 @@ bool
 CSSParserImpl::ParseMediaRule(RuleAppendFunc aAppendFunc, void* aData)
 {
   nsRefPtr<nsMediaList> media = new nsMediaList();
-
-  if (GatherMedia(media, true)) {
+  uint32_t linenum, colnum;
+  if (GetNextTokenLocation(true, &linenum, &colnum) &&
+      GatherMedia(media, true)) {
     // XXXbz this could use better error reporting throughout the method
-    nsRefPtr<css::MediaRule> rule = new css::MediaRule();
+    nsRefPtr<css::MediaRule> rule = new css::MediaRule(linenum, colnum);
     // Append first, so when we do SetMedia() the rule
     // knows what its stylesheet is.
     if (ParseGroupRule(rule, aAppendFunc, aData)) {
@@ -3164,6 +3304,12 @@ CSSParserImpl::ParseMozDocumentRule(RuleAppendFunc aAppendFunc, void* aData)
 {
   css::DocumentRule::URL *urls = nullptr;
   css::DocumentRule::URL **next = &urls;
+
+  uint32_t linenum, colnum;
+  if (!GetNextTokenLocation(true, &linenum, &colnum)) {
+    return false;
+  }
+
   do {
     if (!GetToken(true)) {
       REPORT_UNEXPECTED_EOF(PEMozDocRuleEOF);
@@ -3223,7 +3369,7 @@ CSSParserImpl::ParseMozDocumentRule(RuleAppendFunc aAppendFunc, void* aData)
     }
   } while (ExpectSymbol(',', true));
 
-  nsRefPtr<css::DocumentRule> rule = new css::DocumentRule();
+  nsRefPtr<css::DocumentRule> rule = new css::DocumentRule(linenum, colnum);
   rule->SetURLs(urls);
 
   return ParseGroupRule(rule, aAppendFunc, aData);
@@ -3233,7 +3379,9 @@ CSSParserImpl::ParseMozDocumentRule(RuleAppendFunc aAppendFunc, void* aData)
 bool
 CSSParserImpl::ParseNameSpaceRule(RuleAppendFunc aAppendFunc, void* aData)
 {
-  if (!GetToken(true)) {
+  uint32_t linenum, colnum;
+  if (!GetNextTokenLocation(true, &linenum, &colnum) ||
+      !GetToken(true)) {
     REPORT_UNEXPECTED_EOF(PEAtNSPrefixEOF);
     return false;
   }
@@ -3257,7 +3405,7 @@ CSSParserImpl::ParseNameSpaceRule(RuleAppendFunc aAppendFunc, void* aData)
     return false;
   }
 
-  ProcessNameSpace(prefix, url, aAppendFunc, aData);
+  ProcessNameSpace(prefix, url, aAppendFunc, aData, linenum, colnum);
   return true;
 }
 
@@ -3265,7 +3413,9 @@ void
 CSSParserImpl::ProcessNameSpace(const nsString& aPrefix,
                                 const nsString& aURLSpec,
                                 RuleAppendFunc aAppendFunc,
-                                void* aData)
+                                void* aData,
+                                uint32_t aLineNumber,
+                                uint32_t aColumnNumber)
 {
   nsCOMPtr<nsIAtom> prefix;
 
@@ -3276,7 +3426,9 @@ CSSParserImpl::ProcessNameSpace(const nsString& aPrefix,
     }
   }
 
-  nsRefPtr<css::NameSpaceRule> rule = new css::NameSpaceRule(prefix, aURLSpec);
+  nsRefPtr<css::NameSpaceRule> rule = new css::NameSpaceRule(prefix, aURLSpec,
+                                                             aLineNumber,
+                                                             aColumnNumber);
   (*aAppendFunc)(rule, aData);
 
   // If this was the first namespace rule encountered, it will trigger
@@ -3291,12 +3443,14 @@ CSSParserImpl::ProcessNameSpace(const nsString& aPrefix,
 bool
 CSSParserImpl::ParseFontFaceRule(RuleAppendFunc aAppendFunc, void* aData)
 {
-  if (!ExpectSymbol('{', true)) {
+  uint32_t linenum, colnum;
+  if (!GetNextTokenLocation(true, &linenum, &colnum) ||
+      !ExpectSymbol('{', true)) {
     REPORT_UNEXPECTED_TOKEN(PEBadFontBlockStart);
     return false;
   }
 
-  nsRefPtr<nsCSSFontFaceRule> rule(new nsCSSFontFaceRule());
+  nsRefPtr<nsCSSFontFaceRule> rule(new nsCSSFontFaceRule(linenum, colnum));
 
   for (;;) {
     if (!GetToken(true)) {
@@ -3393,8 +3547,13 @@ bool
 CSSParserImpl::ParseFontFeatureValuesRule(RuleAppendFunc aAppendFunc,
                                           void* aData)
 {
+  uint32_t linenum, colnum;
+  if (!GetNextTokenLocation(true, &linenum, &colnum)) {
+    return false;
+  }
+
   nsRefPtr<nsCSSFontFeatureValuesRule>
-               valuesRule(new nsCSSFontFeatureValuesRule());
+               valuesRule(new nsCSSFontFeatureValuesRule(linenum, colnum));
 
   // parse family list
   nsCSSValue fontlistValue;
@@ -3610,7 +3769,9 @@ CSSParserImpl::ParseFontFeatureValueSet(nsCSSFontFeatureValuesRule
 bool
 CSSParserImpl::ParseKeyframesRule(RuleAppendFunc aAppendFunc, void* aData)
 {
-  if (!GetToken(true)) {
+  uint32_t linenum, colnum;
+  if (!GetNextTokenLocation(true, &linenum, &colnum) ||
+      !GetToken(true)) {
     REPORT_UNEXPECTED_EOF(PEKeyframeNameEOF);
     return false;
   }
@@ -3627,7 +3788,8 @@ CSSParserImpl::ParseKeyframesRule(RuleAppendFunc aAppendFunc, void* aData)
     return false;
   }
 
-  nsRefPtr<nsCSSKeyframesRule> rule = new nsCSSKeyframesRule(name);
+  nsRefPtr<nsCSSKeyframesRule> rule = new nsCSSKeyframesRule(name,
+                                                             linenum, colnum);
 
   while (!ExpectSymbol('}', true)) {
     nsRefPtr<nsCSSKeyframeRule> kid = ParseKeyframeRule();
@@ -3646,6 +3808,11 @@ CSSParserImpl::ParseKeyframesRule(RuleAppendFunc aAppendFunc, void* aData)
 bool
 CSSParserImpl::ParsePageRule(RuleAppendFunc aAppendFunc, void* aData)
 {
+  uint32_t linenum, colnum;
+  if (!GetNextTokenLocation(true, &linenum, &colnum)) {
+    return false;
+  }
+
   // TODO: There can be page selectors after @page such as ":first", ":left".
   uint32_t parseFlags = eParseDeclaration_InBraces |
                         eParseDeclaration_AllowImportant;
@@ -3664,7 +3831,8 @@ CSSParserImpl::ParsePageRule(RuleAppendFunc aAppendFunc, void* aData)
   }
 
   // Takes ownership of declaration.
-  nsRefPtr<nsCSSPageRule> rule = new nsCSSPageRule(declaration);
+  nsRefPtr<nsCSSPageRule> rule = new nsCSSPageRule(declaration,
+                                                   linenum, colnum);
 
   (*aAppendFunc)(rule, aData);
   return true;
@@ -3674,7 +3842,9 @@ already_AddRefed<nsCSSKeyframeRule>
 CSSParserImpl::ParseKeyframeRule()
 {
   InfallibleTArray<float> selectorList;
-  if (!ParseKeyframeSelectorList(selectorList)) {
+  uint32_t linenum, colnum;
+  if (!GetNextTokenLocation(true, &linenum, &colnum) ||
+      !ParseKeyframeSelectorList(selectorList)) {
     REPORT_UNEXPECTED(PEBadSelectorKeyframeRuleIgnored);
     return nullptr;
   }
@@ -3688,8 +3858,7 @@ CSSParserImpl::ParseKeyframeRule()
 
   // Takes ownership of declaration, and steals contents of selectorList.
   nsRefPtr<nsCSSKeyframeRule> rule =
-    new nsCSSKeyframeRule(selectorList, declaration);
-
+    new nsCSSKeyframeRule(selectorList, declaration, linenum, colnum);
   return rule.forget();
 }
 
@@ -3740,6 +3909,12 @@ CSSParserImpl::ParseSupportsRule(RuleAppendFunc aAppendFunc, void* aProcessData)
   nsString condition;
 
   mScanner->StartRecording();
+
+  uint32_t linenum, colnum;
+  if (!GetNextTokenLocation(true, &linenum, &colnum)) {
+    return false;
+  }
+
   bool parsed = ParseSupportsCondition(conditionMet);
 
   if (!parsed) {
@@ -3768,7 +3943,8 @@ CSSParserImpl::ParseSupportsRule(RuleAppendFunc aAppendFunc, void* aProcessData)
   // errors don't get reported.
   nsAutoFailingSupportsRule failing(this, conditionMet);
 
-  nsRefPtr<css::GroupRule> rule = new CSSSupportsRule(conditionMet, condition);
+  nsRefPtr<css::GroupRule> rule = new CSSSupportsRule(conditionMet, condition,
+                                                      linenum, colnum);
   return ParseGroupRule(rule, aAppendFunc, aProcessData);
 }
 
@@ -4030,7 +4206,9 @@ bool
 CSSParserImpl::ParseCounterStyleRule(RuleAppendFunc aAppendFunc, void* aData)
 {
   nsAutoString name;
-  if (!ParseCounterStyleName(name, true)) {
+  uint32_t linenum, colnum;
+  if (!GetNextTokenLocation(true, &linenum, &colnum) ||
+      !ParseCounterStyleName(name, true)) {
     REPORT_UNEXPECTED_TOKEN(PECounterStyleNotIdent);
     return false;
   }
@@ -4040,7 +4218,9 @@ CSSParserImpl::ParseCounterStyleRule(RuleAppendFunc aAppendFunc, void* aData)
     return false;
   }
 
-  nsRefPtr<nsCSSCounterStyleRule> rule = new nsCSSCounterStyleRule(name);
+  nsRefPtr<nsCSSCounterStyleRule> rule = new nsCSSCounterStyleRule(name,
+                                                                   linenum,
+                                                                   colnum);
   for (;;) {
     if (!GetToken(true)) {
       REPORT_UNEXPECTED_EOF(PECounterStyleEOF);
@@ -4610,8 +4790,8 @@ CSSParserImpl::ParseRuleSet(RuleAppendFunc aAppendFunc, void* aData,
 
   // Translate the selector list and declaration block into style data
 
-  nsRefPtr<css::StyleRule> rule = new css::StyleRule(slist, declaration);
-  rule->SetLineNumberAndColumnNumber(linenum, colnum);
+  nsRefPtr<css::StyleRule> rule = new css::StyleRule(slist, declaration,
+                                                     linenum, colnum);
   (*aAppendFunc)(rule, aData);
 
   return true;
@@ -13692,7 +13872,7 @@ CSSParserImpl::ParseAnimationOrTransitionShorthand(
     return eParseAnimationOrTransitionShorthand_Inherit;
   }
 
-  static const size_t maxNumProperties = 7;
+  static const size_t maxNumProperties = 8;
   NS_ABORT_IF_FALSE(aNumProperties <= maxNumProperties,
                     "can't handle this many properties");
   nsCSSValueList *cur[maxNumProperties];
@@ -13856,6 +14036,7 @@ CSSParserImpl::ParseAnimation()
     eCSSProperty_animation_direction,
     eCSSProperty_animation_fill_mode,
     eCSSProperty_animation_iteration_count,
+    eCSSProperty_animation_play_state,
     // Must check 'animation-name' after 'animation-timing-function',
     // 'animation-direction', 'animation-fill-mode',
     // 'animation-iteration-count', and 'animation-play-state' since
@@ -13875,7 +14056,8 @@ CSSParserImpl::ParseAnimation()
   initialValues[3].SetIntValue(NS_STYLE_ANIMATION_DIRECTION_NORMAL, eCSSUnit_Enumerated);
   initialValues[4].SetIntValue(NS_STYLE_ANIMATION_FILL_MODE_NONE, eCSSUnit_Enumerated);
   initialValues[5].SetFloatValue(1.0f, eCSSUnit_Number);
-  initialValues[6].SetNoneValue();
+  initialValues[6].SetIntValue(NS_STYLE_ANIMATION_PLAY_STATE_RUNNING, eCSSUnit_Enumerated);
+  initialValues[7].SetNoneValue();
 
   nsCSSValue values[numProps];
 
@@ -14498,6 +14680,47 @@ CSSParserImpl::ParseValueWithVariables(CSSVariableDeclarations::Type* aType,
   return true;
 }
 
+bool
+CSSParserImpl::IsValueValidForProperty(const nsCSSProperty aPropID,
+                                       const nsAString& aPropValue)
+{
+  mData.AssertInitialState();
+  mTempData.AssertInitialState();
+
+  nsCSSScanner scanner(aPropValue, 0);
+  css::ErrorReporter reporter(scanner, mSheet, mChildLoader, nullptr);
+  InitScanner(scanner, reporter, nullptr, nullptr, nullptr);
+
+  nsAutoSuppressErrors suppressErrors(this);
+
+  mSection = eCSSSection_General;
+  scanner.SetSVGMode(false);
+
+  // Check for unknown properties
+  if (eCSSProperty_UNKNOWN == aPropID) {
+    ReleaseScanner();
+    return false;
+  }
+
+  // Check that the property and value parse successfully
+  bool parsedOK = ParseProperty(aPropID);
+
+  // Check for priority
+  parsedOK = parsedOK && ParsePriority() != ePriority_Error;
+
+  // We should now be at EOF
+  parsedOK = parsedOK && !GetToken(true);
+
+  mTempData.ClearProperty(aPropID);
+  mTempData.AssertInitialState();
+  mData.AssertInitialState();
+
+  CLEAR_ERROR();
+  ReleaseScanner();
+
+  return parsedOK;
+}
+
 } // anonymous namespace
 
 // Recycling of parser implementation objects
@@ -14505,7 +14728,7 @@ CSSParserImpl::ParseValueWithVariables(CSSVariableDeclarations::Type* aType,
 static CSSParserImpl* gFreeList = nullptr;
 
 nsCSSParser::nsCSSParser(mozilla::css::Loader* aLoader,
-                         nsCSSStyleSheet* aSheet)
+                         CSSStyleSheet* aSheet)
 {
   CSSParserImpl *impl = gFreeList;
   if (impl) {
@@ -14551,7 +14774,7 @@ nsCSSParser::Shutdown()
 // Wrapper methods
 
 nsresult
-nsCSSParser::SetStyleSheet(nsCSSStyleSheet* aSheet)
+nsCSSParser::SetStyleSheet(CSSStyleSheet* aSheet)
 {
   return static_cast<CSSParserImpl*>(mImpl)->
     SetStyleSheet(aSheet);
@@ -14664,6 +14887,19 @@ nsCSSParser::ParseMediaList(const nsSubstring& aBuffer,
 }
 
 bool
+nsCSSParser::ParseSourceSizeList(const nsAString& aBuffer,
+                                 nsIURI* aURI,
+                                 uint32_t aLineNumber,
+                                 InfallibleTArray< nsAutoPtr<nsMediaQuery> >& aQueries,
+                                 InfallibleTArray<nsCSSValue>& aValues,
+                                 bool aHTMLMode)
+{
+  return static_cast<CSSParserImpl*>(mImpl)->
+    ParseSourceSizeList(aBuffer, aURI, aLineNumber, aQueries, aValues,
+                        aHTMLMode);
+}
+
+bool
 nsCSSParser::ParseFontFamilyListString(const nsSubstring& aBuffer,
                                        nsIURI*            aURI,
                                        uint32_t           aLineNumber,
@@ -14677,10 +14913,11 @@ bool
 nsCSSParser::ParseColorString(const nsSubstring& aBuffer,
                               nsIURI*            aURI,
                               uint32_t           aLineNumber,
-                              nsCSSValue&        aValue)
+                              nsCSSValue&        aValue,
+                              bool               aSuppressErrors /* false */)
 {
   return static_cast<CSSParserImpl*>(mImpl)->
-    ParseColorString(aBuffer, aURI, aLineNumber, aValue);
+    ParseColorString(aBuffer, aURI, aLineNumber, aValue, aSuppressErrors);
 }
 
 nsresult
@@ -14766,7 +15003,7 @@ nsCSSParser::ParsePropertyWithVariableReferences(
                                             nsIURI* aDocURL,
                                             nsIURI* aBaseURL,
                                             nsIPrincipal* aDocPrincipal,
-                                            nsCSSStyleSheet* aSheet,
+                                            CSSStyleSheet* aSheet,
                                             uint32_t aLineNumber,
                                             uint32_t aLineOffset)
 {
@@ -14798,3 +15035,12 @@ nsCSSParser::ParseCounterDescriptor(nsCSSCounterDesc aDescID,
     ParseCounterDescriptor(aDescID, aBuffer,
                            aSheetURL, aBaseURL, aSheetPrincipal, aValue);
 }
+
+bool
+nsCSSParser::IsValueValidForProperty(const nsCSSProperty aPropID,
+                                     const nsAString&    aPropValue)
+{
+  return static_cast<CSSParserImpl*>(mImpl)->
+    IsValueValidForProperty(aPropID, aPropValue);
+}
+

@@ -16,12 +16,11 @@
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/dom/HTMLIFrameElement.h"
 #include "mozilla/dom/ToJSValue.h"
-#include "nsIDOMCustomEvent.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsVariant.h"
 #include "mozilla/dom/BrowserElementDictionariesBinding.h"
 #include "nsCxPusher.h"
-#include "GeneratedEventClasses.h"
+#include "mozilla/dom/CustomEvent.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -39,7 +38,7 @@ CreateIframe(Element* aOpenerFrameElement, const nsAString& aName, bool aRemote)
   nsNodeInfoManager *nodeInfoManager =
     aOpenerFrameElement->OwnerDoc()->NodeInfoManager();
 
-  nsCOMPtr<nsINodeInfo> nodeInfo =
+  nsRefPtr<NodeInfo> nodeInfo =
     nodeInfoManager->GetNodeInfo(nsGkAtoms::iframe,
                                  /* aPrefix = */ nullptr,
                                  kNameSpaceID_XHTML,

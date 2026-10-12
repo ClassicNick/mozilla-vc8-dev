@@ -62,14 +62,17 @@ WebGLFramebuffer::Attachment::HasAlpha() const
 }
 
 bool
-WebGLFramebuffer::Attachment::IsReadableFloat() const
+WebGLFramebuffer::Attachment::IsFloatType(FloatType floatType) const
 {
     if (Texture() && Texture()->HasImageInfoAt(mTexImageTarget, mTexImageLevel)) {
         GLenum type = Texture()->ImageInfoAt(mTexImageTarget, mTexImageLevel).WebGLType();
         switch (type) {
         case LOCAL_GL_FLOAT:
+            return floatType == FloatType::Full ||
+                   floatType == FloatType::Any;
         case LOCAL_GL_HALF_FLOAT_OES:
-            return true;
+            return floatType == FloatType::Half ||
+                   floatType == FloatType::Any;
         }
         return false;
     }
@@ -79,9 +82,12 @@ WebGLFramebuffer::Attachment::IsReadableFloat() const
         switch (format) {
         case LOCAL_GL_RGB16F:
         case LOCAL_GL_RGBA16F:
+            return floatType == FloatType::Half ||
+                   floatType == FloatType::Any;
         case LOCAL_GL_RGB32F:
         case LOCAL_GL_RGBA32F:
-            return true;
+            return floatType == FloatType::Full ||
+                   floatType == FloatType::Any;
         }
         return false;
     }
@@ -375,6 +381,7 @@ WebGLFramebuffer::Attachment::FinalizeAttachment(GLContext* gl, GLenum attachmen
 void
 WebGLFramebuffer::Delete()
 {
+    DetachAllAttachments();
     mColorAttachments.Clear();
     mDepthAttachment.Reset();
     mStencilAttachment.Reset();
@@ -383,6 +390,29 @@ WebGLFramebuffer::Delete()
     mContext->MakeContextCurrent();
     mContext->gl->fDeleteFramebuffers(1, &mGLName);
     LinkedListElement<WebGLFramebuffer>::removeFrom(mContext->mFramebuffers);
+}
+
+void
+WebGLFramebuffer::DetachAttachment(WebGLFramebuffer::Attachment& attachment)
+{
+    if (attachment.Texture())
+        attachment.Texture()->DetachFrom(this, attachment.mAttachmentPoint);
+
+    if (attachment.Renderbuffer())
+        attachment.Renderbuffer()->DetachFrom(this, attachment.mAttachmentPoint);
+}
+
+void
+WebGLFramebuffer::DetachAllAttachments()
+{
+    size_t count = mColorAttachments.Length();
+    for (size_t i = 0; i < count; i++) {
+        DetachAttachment(mColorAttachments[i]);
+    }
+
+    DetachAttachment(mDepthAttachment);
+    DetachAttachment(mStencilAttachment);
+    DetachAttachment(mDepthStencilAttachment);
 }
 
 void
@@ -542,7 +572,7 @@ WebGLFramebuffer::DetachTexture(const WebGLTexture* tex)
     size_t count = mColorAttachments.Length();
     for (size_t i = 0; i < count; i++) {
         if (mColorAttachments[i].Texture() == tex) {
-            FramebufferTexture2D(LOCAL_GL_FRAMEBUFFER, LOCAL_GL_COLOR_ATTACHMENT0, LOCAL_GL_TEXTURE_2D, nullptr, 0);
+            FramebufferTexture2D(LOCAL_GL_FRAMEBUFFER, LOCAL_GL_COLOR_ATTACHMENT0+i, LOCAL_GL_TEXTURE_2D, nullptr, 0);
             // a texture might be attached more that once while editing the framebuffer
         }
     }
@@ -560,8 +590,8 @@ WebGLFramebuffer::DetachRenderbuffer(const WebGLRenderbuffer* rb)
 {
     size_t count = mColorAttachments.Length();
     for (size_t i = 0; i < count; i++) {
-        if (mColorAttachments[0].Renderbuffer() == rb) {
-            FramebufferRenderbuffer(LOCAL_GL_FRAMEBUFFER, LOCAL_GL_COLOR_ATTACHMENT0, LOCAL_GL_RENDERBUFFER, nullptr);
+        if (mColorAttachments[i].Renderbuffer() == rb) {
+            FramebufferRenderbuffer(LOCAL_GL_FRAMEBUFFER, LOCAL_GL_COLOR_ATTACHMENT0+i, LOCAL_GL_RENDERBUFFER, nullptr);
             // a renderbuffer might be attached more that once while editing the framebuffer
         }
     }
@@ -606,6 +636,26 @@ WebGLFramebuffer::HasIncompleteAttachments() const
     size_t count = mColorAttachments.Length();
     for (size_t i = 0; i < count; i++) {
         hasIncomplete |= IsIncomplete(mColorAttachments[i]);
+
+        if (mColorAttachments[i].IsDefined()) {
+            // Excerpt from http://www.khronos.org/registry/webgl/extensions/OES_texture_float/
+            // New implementations should not implicitly support float rendering and
+            // applications should be modified to explicitly enable WEBGL_color_buffer_float.
+            if (mColorAttachments[i].IsFloatType(Attachment::FloatType::Full) &&
+                !Context()->IsExtensionEnabled(WebGLExtensionID::WEBGL_color_buffer_float))
+            {
+                hasIncomplete |= true;
+            }
+
+            // Excerpt from http://www.khronos.org/registry/webgl/extensions/OES_texture_half_float/
+            // New implementations should not implicitly support float rendering and
+            // applications should be modified to explicitly enable OES_color_buffer_half_float.
+            if (mColorAttachments[i].IsFloatType(Attachment::FloatType::Half) &&
+                !Context()->IsExtensionEnabled(WebGLExtensionID::EXT_color_buffer_half_float))
+            {
+                hasIncomplete |= true;
+            }
+        }
     }
 
     hasIncomplete |= IsIncomplete(mDepthAttachment);

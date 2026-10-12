@@ -14,6 +14,7 @@
 #include "mozilla/Types.h"
 #include "nsTArray.h"
 #include "prlog.h"
+#include "mozilla/dom/MozPowerManagerBinding.h"
 #include "mozilla/dom/battery/Types.h"
 #include "mozilla/dom/network/Types.h"
 #include "mozilla/dom/power/Types.h"
@@ -575,7 +576,7 @@ void StartForceQuitWatchdog(hal::ShutdownMode aMode, int32_t aTimeoutSecs);
 /**
  * Perform Factory Reset to wipe out all user data.
  */
-void FactoryReset();
+void FactoryReset(mozilla::dom::FactoryResetReason& aReason);
 
 /**
  * Start monitoring the status of gamepads attached to the system.
@@ -615,6 +616,11 @@ uint32_t GetTotalSystemMemory();
  * Returns 0 if we are unable to determine this information from /proc/meminfo.
  */
 uint32_t GetTotalSystemMemoryLevel();
+
+/**
+ * Determine whether the headphone switch event is from input device
+ */
+bool IsHeadphoneEventFromInputDev();
 
 } // namespace MOZ_HAL_NAMESPACE
 } // namespace mozilla

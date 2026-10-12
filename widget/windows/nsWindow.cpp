@@ -4344,6 +4344,8 @@ inline static mozilla::HangMonitor::ActivityType ActivityTypeForMessage(UINT msg
 // and http://msdn.microsoft.com/en-us/library/ms633573%28VS.85%29.aspx
 LRESULT CALLBACK nsWindow::WindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+  MOZ_RELEASE_ASSERT(!ipc::ProcessingUrgentMessages());
+
   HangMonitor::NotifyActivity(ActivityTypeForMessage(msg));
 
   return mozilla::CallWindowProcCrashProtected(WindowProcInternal, hWnd, msg, wParam, lParam);
@@ -5733,9 +5735,9 @@ nsWindow::GetMessageTimeStamp(LONG aEventTime)
     cyclesToAdd++;
   }
 
-  if (timesWrapped > 0) {
+  if (cyclesToAdd > 0) {
     eventTimeStamp +=
-      TimeDuration::FromMilliseconds(kEventTimeRange * timesWrapped);
+      TimeDuration::FromMilliseconds(kEventTimeRange * cyclesToAdd);
   }
 
   return eventTimeStamp;
@@ -6784,7 +6786,7 @@ nsWindow::HasBogusPopupsDropShadowOnMultiMonitor() {
         if (gfxInfo) {
           int32_t status;
           if (NS_SUCCEEDED(gfxInfo->GetFeatureStatus(nsIGfxInfo::FEATURE_DIRECT3D_9_LAYERS, &status))) {
-            if (status == nsIGfxInfo::FEATURE_NO_INFO || prefs.mForceAcceleration)
+            if (status == nsIGfxInfo::FEATURE_STATUS_OK || prefs.mForceAcceleration)
             {
               sHasBogusPopupsDropShadowOnMultiMonitor = TRI_TRUE;
             }

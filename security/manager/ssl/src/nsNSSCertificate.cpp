@@ -11,6 +11,7 @@
 #include "CertVerifier.h"
 #include "ExtendedValidation.h"
 #include "pkix/pkixtypes.h"
+#include "pkix/ScopedPtr.h"
 #include "nsNSSComponent.h" // for PIPNSS string bundle calls.
 #include "nsNSSCleaner.h"
 #include "nsCOMPtr.h"
@@ -19,8 +20,6 @@
 #include "nsPKCS12Blob.h"
 #include "nsPK11TokenDB.h"
 #include "nsIX509Cert.h"
-#include "nsIX509Cert3.h"
-#include "nsISMimeCert.h"
 #include "nsNSSASN1Object.h"
 #include "nsString.h"
 #include "nsXPIDLString.h"
@@ -38,19 +37,17 @@
 #include "nsIObjectInputStream.h"
 #include "nsIProgrammingLanguage.h"
 #include "nsXULAppAPI.h"
-#include "ScopedNSSTypes.h"
 #include "nsProxyRelease.h"
 #include "mozilla/Base64.h"
 #include "NSSCertDBTrustDomain.h"
-
 #include "nspr.h"
 #include "certdb.h"
+#include "pkix/pkixtypes.h"
 #include "secerr.h"
 #include "nssb64.h"
 #include "secasn1.h"
 #include "secder.h"
 #include "ssl.h"
-#include "ocsp.h"
 #include "plbase64.h"
 
 using namespace mozilla;
@@ -70,10 +67,7 @@ NSSCleanupAutoPtrClass_WithParam(PLArenaPool, PORT_FreeArena, FalseParam, false)
 
 NS_IMPL_ISUPPORTS(nsNSSCertificate,
                   nsIX509Cert,
-                  nsIX509Cert2,
-                  nsIX509Cert3,
                   nsIIdentityInfo,
-                  nsISMimeCert,
                   nsISerializable,
                   nsIClassInfo)
 
@@ -835,19 +829,23 @@ nsNSSCertificate::GetChain(nsIArray** _rvChain)
   nsresult rv;
   PR_LOG(gPIPNSSLog, PR_LOG_DEBUG, ("Getting chain for \"%s\"\n", mCert->nickname));
 
-  ::mozilla::pkix::ScopedCERTCertList nssChain;
+  ScopedCERTCertList nssChain;
   RefPtr<SharedCertVerifier> certVerifier(GetDefaultCertVerifier());
   NS_ENSURE_TRUE(certVerifier, NS_ERROR_UNEXPECTED);
 
   // We want to test all usages, but we start with server because most of the
   // time Firefox users care about server certs.
-  certVerifier->VerifyCert(mCert.get(),
-                           certificateUsageSSLServer, PR_Now(),
-                           nullptr, /*XXX fixme*/
-                           nullptr, /* hostname */
-                           CertVerifier::FLAG_LOCAL_ONLY,
-                           nullptr, /* stapledOCSPResponse */
-                           &nssChain);
+  if (certVerifier->VerifyCert(mCert.get(),
+                               certificateUsageSSLServer, PR_Now(),
+                               nullptr, /*XXX fixme*/
+                               nullptr, /* hostname */
+                               CertVerifier::FLAG_LOCAL_ONLY,
+                               nullptr, /* stapledOCSPResponse */
+                               &nssChain) != SECSuccess) {
+    nssChain = nullptr;
+    // keep going
+  }
+
   // This is the whitelist of all non-SSLServer usages that are supported by
   // verifycert.
   const int otherUsagesToTest = certificateUsageSSLClient |
@@ -865,13 +863,16 @@ nsNSSCertificate::GetChain(nsIArray** _rvChain)
     PR_LOG(gPIPNSSLog, PR_LOG_DEBUG,
            ("pipnss: PKIX attempting chain(%d) for '%s'\n",
             usage, mCert->nickname));
-    certVerifier->VerifyCert(mCert.get(),
-                             usage, PR_Now(),
-                             nullptr, /*XXX fixme*/
-                             nullptr, /*hostname*/
-                             CertVerifier::FLAG_LOCAL_ONLY,
-                             nullptr, /* stapledOCSPResponse */
-                             &nssChain);
+    if (certVerifier->VerifyCert(mCert.get(),
+                                 usage, PR_Now(),
+                                 nullptr, /*XXX fixme*/
+                                 nullptr, /*hostname*/
+                                 CertVerifier::FLAG_LOCAL_ONLY,
+                                 nullptr, /* stapledOCSPResponse */
+                                 &nssChain) != SECSuccess) {
+      nssChain = nullptr;
+      // keep going
+    }
   }
 
   if (!nssChain) {
@@ -1144,9 +1145,9 @@ nsNSSCertificate::ExportAsCMS(uint32_t chainMode,
     return NS_ERROR_FAILURE;
 
   switch (chainMode) {
-    case nsIX509Cert3::CMS_CHAIN_MODE_CertOnly:
-    case nsIX509Cert3::CMS_CHAIN_MODE_CertChain:
-    case nsIX509Cert3::CMS_CHAIN_MODE_CertChainWithRoot:
+    case nsIX509Cert::CMS_CHAIN_MODE_CertOnly:
+    case nsIX509Cert::CMS_CHAIN_MODE_CertChain:
+    case nsIX509Cert::CMS_CHAIN_MODE_CertChainWithRoot:
       break;
     default:
       return NS_ERROR_INVALID_ARG;
@@ -1181,15 +1182,15 @@ nsNSSCertificate::ExportAsCMS(uint32_t chainMode,
   // Since CERT_CertChainFromCert() also includes the certificate itself,
   // we have to start at the issuing cert (to avoid duplicate certs
   // in the SignedData).
-  if (chainMode == nsIX509Cert3::CMS_CHAIN_MODE_CertChain ||
-      chainMode == nsIX509Cert3::CMS_CHAIN_MODE_CertChainWithRoot) {
+  if (chainMode == nsIX509Cert::CMS_CHAIN_MODE_CertChain ||
+      chainMode == nsIX509Cert::CMS_CHAIN_MODE_CertChainWithRoot) {
     ScopedCERTCertificate issuerCert(
         CERT_FindCertIssuer(mCert.get(), PR_Now(), certUsageAnyCA));
     // the issuerCert of a self signed root is the cert itself,
     // so make sure we're not adding duplicates, again
     if (issuerCert && issuerCert != mCert.get()) {
       bool includeRoot =
-        (chainMode == nsIX509Cert3::CMS_CHAIN_MODE_CertChainWithRoot);
+        (chainMode == nsIX509Cert::CMS_CHAIN_MODE_CertChainWithRoot);
       ScopedCERTCertificateList certChain(
           CERT_CertChainFromCert(issuerCert, certUsageAnyCA, includeRoot));
       if (certChain) {
@@ -1380,26 +1381,9 @@ nsNSSCertificate::Equals(nsIX509Cert* other, bool* result)
   NS_ENSURE_ARG(other);
   NS_ENSURE_ARG(result);
 
-  nsCOMPtr<nsIX509Cert2> other2 = do_QueryInterface(other);
-  if (!other2)
-    return NS_ERROR_FAILURE;
-
-  ScopedCERTCertificate cert(other2->GetCert());
+  ScopedCERTCertificate cert(other->GetCert());
   *result = (mCert.get() == cert.get());
   return NS_OK;
-}
-
-NS_IMETHODIMP
-nsNSSCertificate::SaveSMimeProfile()
-{
-  nsNSSShutDownPreventionLock locker;
-  if (isAlreadyShutDown())
-    return NS_ERROR_NOT_AVAILABLE;
-
-  if (SECSuccess != CERT_SaveSMimeProfile(mCert.get(), nullptr, nullptr))
-    return NS_ERROR_FAILURE;
-  else
-    return NS_OK;
 }
 
 #ifndef MOZ_NO_EV_CERTS
@@ -1522,13 +1506,51 @@ nsNSSCertificate::GetValidEVPolicyOid(nsACString& outDottedOid)
   return NS_OK;
 }
 
+namespace mozilla {
+
+// TODO(bug 1036065): It seems like we only construct CERTCertLists for the
+// purpose of constructing nsNSSCertLists, so maybe we should change this
+// function to output an nsNSSCertList instead.
+SECStatus
+ConstructCERTCertListFromReversedDERArray(
+  const mozilla::pkix::DERArray& certArray,
+  /*out*/ ScopedCERTCertList& certList)
+{
+  certList = CERT_NewCertList();
+  if (!certList) {
+    return SECFailure;
+  }
+
+  CERTCertDBHandle* certDB(CERT_GetDefaultCertDB()); // non-owning
+
+  size_t numCerts = certArray.GetLength();
+  for (size_t i = 0; i < numCerts; ++i) {
+    SECItem* certDER(const_cast<SECItem*>(certArray.GetDER(i)));
+    ScopedCERTCertificate cert(CERT_NewTempCertificate(certDB, certDER,
+                                                       nullptr, false, true));
+    if (!cert) {
+      return SECFailure;
+    }
+    // certArray is ordered with the root first, but we want the resulting
+    // certList to have the root last.
+    if (CERT_AddCertToListHead(certList, cert) != SECSuccess) {
+      return SECFailure;
+    }
+    cert.forget(); // cert is now owned by certList.
+  }
+
+  return SECSuccess;
+}
+
+} // namespace mozilla
+
 NS_IMPL_ISUPPORTS(nsNSSCertList, nsIX509CertList)
 
-nsNSSCertList::nsNSSCertList(mozilla::pkix::ScopedCERTCertList& certList,
+nsNSSCertList::nsNSSCertList(ScopedCERTCertList& certList,
                              const nsNSSShutDownPreventionLock& proofOfLock)
 {
   if (certList) {
-    mCertList = certList.release();
+    mCertList = certList.forget();
   } else {
     mCertList = CERT_NewCertList();
   }
@@ -1568,10 +1590,7 @@ nsNSSCertList::AddCert(nsIX509Cert* aCert)
   if (isAlreadyShutDown()) {
     return NS_ERROR_NOT_AVAILABLE;
   }
-  nsCOMPtr<nsIX509Cert2> nssCert = do_QueryInterface(aCert);
-  CERTCertificate* cert;
-
-  cert = nssCert->GetCert();
+  CERTCertificate* cert = aCert->GetCert();
   if (!cert) {
     NS_ERROR("Somehow got nullptr for mCertificate in nsNSSCertificate.");
     return NS_ERROR_FAILURE;
@@ -1593,8 +1612,7 @@ nsNSSCertList::DeleteCert(nsIX509Cert* aCert)
   if (isAlreadyShutDown()) {
     return NS_ERROR_NOT_AVAILABLE;
   }
-  nsCOMPtr<nsIX509Cert2> nssCert = do_QueryInterface(aCert);
-  CERTCertificate* cert = nssCert->GetCert();
+  CERTCertificate* cert = aCert->GetCert();
   CERTCertListNode* node;
 
   if (!cert) {
@@ -1621,8 +1639,9 @@ CERTCertList*
 nsNSSCertList::DupCertList(CERTCertList* aCertList,
                            const nsNSSShutDownPreventionLock& /*proofOfLock*/)
 {
-  if (!aCertList)
+  if (!aCertList) {
     return nullptr;
+  }
 
   CERTCertList* newList = CERT_NewCertList();
 

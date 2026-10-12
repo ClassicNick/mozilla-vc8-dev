@@ -186,8 +186,10 @@ class TiledContentHost : public ContentHost,
 public:
   TiledContentHost(const TextureInfo& aTextureInfo);
 
+protected:
   ~TiledContentHost();
 
+public:
   virtual LayerRenderState GetRenderState() MOZ_OVERRIDE
   {
     return LayerRenderState();
@@ -227,13 +229,16 @@ public:
                       Compositor* aCompositor,
                       AttachFlags aFlags = NO_FLAGS) MOZ_OVERRIDE;
 
+  virtual void Detach(Layer* aLayer = nullptr,
+                      AttachFlags aFlags = NO_FLAGS) MOZ_OVERRIDE;
+
 #ifdef MOZ_DUMP_PAINTING
-  virtual void Dump(FILE* aFile=nullptr,
+  virtual void Dump(std::stringstream& aStream,
                     const char* aPrefix="",
                     bool aDumpHtml=false) MOZ_OVERRIDE;
 #endif
 
-  virtual void PrintInfo(nsACString& aTo, const char* aPrefix);
+  virtual void PrintInfo(std::stringstream& aStream, const char* aPrefix);
 
 #if defined(MOZ_WIDGET_GONK) && ANDROID_VERSION >= 17
   /**

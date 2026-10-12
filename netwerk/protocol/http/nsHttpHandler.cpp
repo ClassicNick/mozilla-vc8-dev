@@ -142,7 +142,8 @@ nsHttpHandler::nsHttpHandler()
     , mProxyPipelining(true)
     , mIdleTimeout(PR_SecondsToInterval(10))
     , mSpdyTimeout(PR_SecondsToInterval(180))
-    , mResponseTimeout(PR_SecondsToInterval(600))
+    , mResponseTimeout(PR_SecondsToInterval(300))
+    , mResponseTimeoutEnabled(false)
     , mMaxRequestAttempts(10)
     , mMaxRequestDelay(10)
     , mIdleSynTimeout(250)
@@ -195,6 +196,7 @@ nsHttpHandler::nsHttpHandler()
     , mConnectTimeout(90000)
     , mBypassCacheLockThreshold(250.0)
     , mParallelSpeculativeConnectLimit(6)
+    , mAllowSpeculativeConnectOnLoopback(false)
     , mRequestTokenBucketEnabled(true)
     , mRequestTokenBucketMinParallelism(6)
     , mRequestTokenBucketHz(100)
@@ -347,6 +349,7 @@ nsHttpHandler::Init()
         mObserverService->AddObserver(this, "net:prune-dead-connections", true);
         mObserverService->AddObserver(this, "net:failed-to-process-uri-content", true);
         mObserverService->AddObserver(this, "last-pb-context-exited", true);
+        mObserverService->AddObserver(this, "browser:purge-session-history", true);
     }
 
     MakeNewRequestTokenBucket();
@@ -516,28 +519,6 @@ nsHttpHandler::GetIOService(nsIIOService** result)
 {
     NS_ADDREF(*result = mIOService);
     return NS_OK;
-}
-
-uint32_t
-nsHttpHandler::Get32BitsOfPseudoRandom()
-{
-    // only confirm rand seeding on socket thread
-    MOZ_ASSERT(PR_GetCurrentThread() == gSocketThread);
-
-    // rand() provides different amounts of PRNG on different platforms.
-    // 15 or 31 bits are common amounts.
-
-    PR_STATIC_ASSERT(RAND_MAX >= 0xfff);
-
-#if RAND_MAX < 0xffffU
-    return ((uint16_t) rand() << 20) |
-            (((uint16_t) rand() & 0xfff) << 8) |
-            ((uint16_t) rand() & 0xff);
-#elif RAND_MAX < 0xffffffffU
-    return ((uint16_t) rand() << 16) | ((uint16_t) rand() & 0xffff);
-#else
-    return (uint32_t) rand();
-#endif
 }
 
 void
@@ -1259,6 +1240,13 @@ nsHttpHandler::PrefsChanged(nsIPrefBranch *prefs, const char *pref)
             mParallelSpeculativeConnectLimit = (uint32_t) clamped(val, 0, 1024);
     }
 
+    if (PREF_CHANGED(HTTP_PREF("speculative.allowLoopback"))) {
+        rv = prefs->GetBoolPref(HTTP_PREF("speculative.allowLoopback"), &cVar);
+        if (NS_SUCCEEDED(rv)) {
+            mAllowSpeculativeConnectOnLoopback = cVar;
+        }
+    }
+
     // Whether or not to block requests for non head js/css items (e.g. media)
     // while those elements load.
     if (PREF_CHANGED(HTTP_PREF("rendering-critical-requests-prioritization"))) {
@@ -1458,6 +1446,10 @@ nsHttpHandler::PrefsChanged(nsIPrefBranch *prefs, const char *pref)
             mTCPKeepaliveLongLivedIdleTimeS = clamped(val,
                                                       1, kMaxTCPKeepIdle);
     }
+
+    // Enable HTTP response timeout if TCP Keepalives are disabled.
+    mResponseTimeoutEnabled = !mTCPKeepaliveShortLivedEnabled &&
+                              !mTCPKeepaliveLongLivedEnabled;
 
 #undef PREF_CHANGED
 #undef MULTI_PREF_CHANGED
@@ -1860,6 +1852,12 @@ nsHttpHandler::Observe(nsISupports *subject,
     }
     else if (strcmp(topic, "last-pb-context-exited") == 0) {
         mPrivateAuthCache.ClearAll();
+    } else if (strcmp(topic, "browser:purge-session-history") == 0) {
+        if (mConnMgr && gSocketTransportService) {
+            nsCOMPtr<nsIRunnable> event = NS_NewRunnableMethod(mConnMgr,
+                &nsHttpConnectionMgr::ClearConnectionHistory);
+            gSocketTransportService->Dispatch(event, NS_DISPATCH_NORMAL);
+        }
     }
 
     return NS_OK;

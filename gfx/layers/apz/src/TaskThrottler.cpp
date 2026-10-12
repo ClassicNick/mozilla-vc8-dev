@@ -18,7 +18,7 @@ TaskThrottler::TaskThrottler(const TimeStamp& aTimeStamp)
 
 void
 TaskThrottler::PostTask(const tracked_objects::Location& aLocation,
-                        CancelableTask* aTask, const TimeStamp& aTimeStamp)
+                        UniquePtr<CancelableTask> aTask, const TimeStamp& aTimeStamp)
 {
   aTask->SetBirthPlace(aLocation);
 
@@ -30,7 +30,6 @@ TaskThrottler::PostTask(const tracked_objects::Location& aLocation,
   } else {
     mStartTime = aTimeStamp;
     aTask->Run();
-    delete aTask;
     mOutstanding = true;
   }
 }

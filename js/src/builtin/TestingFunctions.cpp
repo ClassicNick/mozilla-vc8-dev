@@ -7,7 +7,7 @@
 #include "builtin/TestingFunctions.h"
 
 #include "mozilla/Move.h"
-#include "mozilla/Scoped.h"
+#include "mozilla/UniquePtr.h"
 
 #include "jsapi.h"
 #include "jscntxt.h"
@@ -41,7 +41,7 @@ using namespace JS;
 
 using mozilla::ArrayLength;
 using mozilla::OldMove;
-using mozilla::ScopedFreePtr;
+using mozilla::UniquePtr;
 
 // If fuzzingSafe is set, remove functionality that could cause problems with
 // fuzzers. Set this via the environment variable MOZ_FUZZING_SAFE.
@@ -247,7 +247,7 @@ GC(JSContext *cx, unsigned argc, jsval *vp)
     }
 
 #ifndef JS_MORE_DETERMINISTIC
-    size_t preBytes = cx->runtime()->gc.bytes;
+    size_t preBytes = cx->runtime()->gc.bytesAllocated();
 #endif
 
     if (compartment)
@@ -259,7 +259,7 @@ GC(JSContext *cx, unsigned argc, jsval *vp)
     char buf[256] = { '\0' };
 #ifndef JS_MORE_DETERMINISTIC
     JS_snprintf(buf, sizeof(buf), "before %lu, after %lu\n",
-                (unsigned long)preBytes, (unsigned long)cx->runtime()->gc.bytes);
+                (unsigned long)preBytes, (unsigned long)cx->runtime()->gc.bytesAllocated());
 #endif
     JSString *str = JS_NewStringCopyZ(cx, buf);
     if (!str)
@@ -291,7 +291,9 @@ static const struct ParamPair {
     {"gcBytes",             JSGC_BYTES},
     {"gcNumber",            JSGC_NUMBER},
     {"sliceTimeBudget",     JSGC_SLICE_TIME_BUDGET},
-    {"markStackLimit",      JSGC_MARK_STACK_LIMIT}
+    {"markStackLimit",      JSGC_MARK_STACK_LIMIT},
+    {"minEmptyChunkCount",  JSGC_MIN_EMPTY_CHUNK_COUNT},
+    {"maxEmptyChunkCount",  JSGC_MAX_EMPTY_CHUNK_COUNT}
 };
 
 // Keep this in sync with above params.
@@ -588,7 +590,7 @@ GCState(JSContext *cx, unsigned argc, jsval *vp)
     else if (globalState == gc::SWEEP)
         state = "sweep";
     else
-        MOZ_ASSUME_UNREACHABLE("Unobserveable global GC state");
+        MOZ_CRASH("Unobserveable global GC state");
 
     JSString *str = JS_NewStringCopyZ(cx, state);
     if (!str)
@@ -764,6 +766,7 @@ static const struct TraceKindPair {
     { "all",        -1                  },
     { "object",     JSTRACE_OBJECT      },
     { "string",     JSTRACE_STRING      },
+    { "symbol",     JSTRACE_SYMBOL      },
 };
 
 static bool
@@ -879,10 +882,25 @@ static bool
 SaveStack(JSContext *cx, unsigned argc, jsval *vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
-    Rooted<SavedFrame*> frame(cx);
-    if (!cx->compartment()->savedStacks().saveCurrentStack(cx, &frame))
+
+    unsigned maxFrameCount = 0;
+    if (args.length() >= 1) {
+        double d;
+        if (!ToNumber(cx, args[0], &d))
+            return false;
+        if (d < 0) {
+            js_ReportValueErrorFlags(cx, JSREPORT_ERROR, JSMSG_UNEXPECTED_TYPE,
+                                     JSDVG_SEARCH_STACK, args[0], JS::NullPtr(),
+                                     "not a valid maximum frame count", NULL);
+            return false;
+        }
+        maxFrameCount = d;
+    }
+
+    Rooted<JSObject*> stack(cx);
+    if (!JS::CaptureCurrentStack(cx, &stack, maxFrameCount))
         return false;
-    args.rval().setObject(*frame.get());
+    args.rval().setObjectOrNull(stack);
     return true;
 }
 
@@ -1660,6 +1678,47 @@ ReportLargeAllocationFailure(JSContext *cx, unsigned argc, jsval *vp)
     return true;
 }
 
+static bool
+EvalReturningScope(JSContext *cx, unsigned argc, jsval *vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+
+    RootedString str(cx);
+    if (!JS_ConvertArguments(cx, args, "S", str.address()))
+        return false;
+
+    AutoStableStringChars strChars(cx);
+    if (!strChars.initTwoByte(cx, str))
+        return false;
+
+    mozilla::Range<const jschar> chars = strChars.twoByteRange();
+    size_t srclen = chars.length();
+    const jschar *src = chars.start().get();
+
+    JS::AutoFilename filename;
+    unsigned lineno;
+
+    DescribeScriptedCaller(cx, &filename, &lineno);
+
+    JS::CompileOptions options(cx);
+    options.setFileAndLine(filename.get(), lineno);
+    options.setNoScriptRval(true);
+    options.setCompileAndGo(false);
+
+    JS::SourceBufferHolder srcBuf(src, srclen, JS::SourceBufferHolder::NoOwnership);
+    RootedScript script(cx);
+    if (!JS::Compile(cx, JS::NullPtr(), options, srcBuf, &script))
+        return false;
+
+    RootedObject global(cx, JS::CurrentGlobalOrNull(cx));
+    RootedObject scope(cx);
+    if (!js::ExecuteInGlobalAndReturnScope(cx, global, script, &scope))
+        return false;
+
+    args.rval().setObject(*scope);
+    return true;
+}
+
 static const JSFunctionSpecWithHelp TestingFunctions[] = {
     JS_FN_HELP("gc", ::GC, 0, 0,
 "gc([obj] | 'compartment')",
@@ -1945,6 +2004,10 @@ static const JSFunctionSpecWithHelp TestingFunctions[] = {
 "dumpObject()",
 "  Dump an internal representation of an object."),
 #endif
+
+    JS_FN_HELP("evalReturningScope", EvalReturningScope, 1, 0,
+"evalReturningScope(scriptStr)",
+"  Evaluate the script in a new scope and return the scope."),
 
     JS_FS_HELP_END
 };

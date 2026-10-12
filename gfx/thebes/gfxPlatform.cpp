@@ -136,6 +136,7 @@ using namespace mozilla::gfx;
 class SRGBOverrideObserver MOZ_FINAL : public nsIObserver,
                                        public nsSupportsWeakReference
 {
+    ~SRGBOverrideObserver() {}
 public:
     NS_DECL_ISUPPORTS
     NS_DECL_NSIOBSERVER
@@ -145,8 +146,6 @@ NS_IMPL_ISUPPORTS(SRGBOverrideObserver, nsIObserver, nsISupportsWeakReference)
 
 #define GFX_DOWNLOADABLE_FONTS_ENABLED "gfx.downloadable_fonts.enabled"
 
-#define GFX_PREF_HARFBUZZ_SCRIPTS "gfx.font_rendering.harfbuzz.scripts"
-#define HARFBUZZ_SCRIPTS_DEFAULT  mozilla::unicode::SHAPING_DEFAULT
 #define GFX_PREF_FALLBACK_USE_CMAPS  "gfx.font_rendering.fallback.always_use_cmaps"
 
 #define GFX_PREF_OPENTYPE_SVG "gfx.font_rendering.opentype_svg.enabled"
@@ -181,6 +180,7 @@ static const char* kObservedPrefs[] = {
 
 class FontPrefsObserver MOZ_FINAL : public nsIObserver
 {
+    ~FontPrefsObserver() {}
 public:
     NS_DECL_ISUPPORTS
     NS_DECL_NSIOBSERVER
@@ -205,6 +205,7 @@ FontPrefsObserver::Observe(nsISupports *aSubject,
 
 class MemoryPressureObserver MOZ_FINAL : public nsIObserver
 {
+    ~MemoryPressureObserver() {}
 public:
     NS_DECL_ISUPPORTS
     NS_DECL_NSIOBSERVER
@@ -264,7 +265,6 @@ gfxPlatform::gfxPlatform()
   : mAzureCanvasBackendCollector(MOZ_THIS_IN_INITIALIZER_LIST(),
                                  &gfxPlatform::GetAzureBackendInfo)
 {
-    mUseHarfBuzzScripts = UNINITIALIZED_VALUE;
     mAllowDownloadableFonts = UNINITIALIZED_VALUE;
     mFallbackUsesCmaps = UNINITIALIZED_VALUE;
 
@@ -515,10 +515,12 @@ gfxPlatform::InitLayersIPC()
         XRE_GetProcessType() == GeckoProcessType_Default)
     {
         mozilla::layers::CompositorParent::StartUp();
+#ifndef MOZ_WIDGET_GONK
         if (gfxPrefs::AsyncVideoEnabled()) {
             mozilla::layers::ImageBridgeChild::StartUp();
         }
-#ifdef MOZ_WIDGET_GONK
+#else
+        mozilla::layers::ImageBridgeChild::StartUp();
         SharedBufferManagerChild::StartUp();
 #endif
     }
@@ -631,22 +633,6 @@ void SourceSurfaceDestroyed(void *aData)
   delete static_cast<DependentSourceSurfaceUserData*>(aData);
 }
 
-#if MOZ_TREE_CAIRO
-void SourceSnapshotDetached(cairo_surface_t *nullSurf)
-{
-  gfxImageSurface* origSurf =
-    static_cast<gfxImageSurface*>(cairo_surface_get_user_data(nullSurf, &kSourceSurface));
-
-  origSurf->SetData(&kSourceSurface, nullptr, nullptr);
-}
-#else
-void SourceSnapshotDetached(void *nullSurf)
-{
-  gfxImageSurface* origSurf = static_cast<gfxImageSurface*>(nullSurf);
-  origSurf->SetData(&kSourceSurface, nullptr, nullptr);
-}
-#endif
-
 void
 gfxPlatform::ClearSourceSurfaceForSurface(gfxASurface *aSurface)
 {
@@ -672,7 +658,7 @@ gfxPlatform::GetSourceSurfaceForSurface(DrawTarget *aTarget, gfxASurface *aSurfa
   if (userData) {
     SourceSurfaceUserData *surf = static_cast<SourceSurfaceUserData*>(userData);
 
-    if (surf->mSrcSurface->IsValid() && surf->mBackendType == aTarget->GetType()) {
+    if (surf->mSrcSurface->IsValid() && surf->mBackendType == aTarget->GetBackendType()) {
       return surf->mSrcSurface;
     }
     // We can just continue here as when setting new user data the destroy
@@ -688,7 +674,7 @@ gfxPlatform::GetSourceSurfaceForSurface(DrawTarget *aTarget, gfxASurface *aSurfa
     format = SurfaceFormat::B8G8R8A8;
   }
 
-  if (aTarget->GetType() == BackendType::CAIRO) {
+  if (aTarget->GetBackendType() == BackendType::CAIRO) {
     // If we're going to be used with a CAIRO DrawTarget, then just create a
     // SourceSurfaceCairo since we don't know the underlying type of the CAIRO
     // DrawTarget and can't pick a better surface type. Doing this also avoids
@@ -758,7 +744,7 @@ gfxPlatform::GetSourceSurfaceForSurface(DrawTarget *aTarget, gfxASurface *aSurfa
   }
 
   if (!srcBuffer) {
-    MOZ_ASSERT(aTarget->GetType() != BackendType::CAIRO,
+    MOZ_ASSERT(aTarget->GetBackendType() != BackendType::CAIRO,
                "We already tried CreateSourceSurfaceFromNativeSurface with a "
                "DrawTargetCairo above");
     // We've run out of performant options. We now try creating a SourceSurface
@@ -797,7 +783,7 @@ gfxPlatform::GetSourceSurfaceForSurface(DrawTarget *aTarget, gfxASurface *aSurfa
 
   // Add user data to aSurface so we can cache lookups in the future.
   SourceSurfaceUserData *srcSurfUD = new SourceSurfaceUserData;
-  srcSurfUD->mBackendType = aTarget->GetType();
+  srcSurfUD->mBackendType = aTarget->GetBackendType();
   srcSurfUD->mSrcSurface = srcBuffer;
   aSurface->SetData(&kSourceSurface, srcSurfUD, SourceBufferDestroy);
 
@@ -842,20 +828,6 @@ gfxPlatform::GetScaledFontForFont(DrawTarget* aTarget, gfxFont *aFont)
   return scaledFont;
 }
 
-cairo_user_data_key_t kDrawSourceSurface;
-static void
-DataSourceSurfaceDestroy(void *dataSourceSurface)
-{
-  static_cast<DataSourceSurface*>(dataSourceSurface)->Release();
-}
-
-cairo_user_data_key_t kDrawTargetForSurface;
-static void
-DataDrawTargetDestroy(void *aTarget)
-{
-  static_cast<DrawTarget*>(aTarget)->Release();
-}
-
 bool
 gfxPlatform::SupportsAzureContentForDrawTarget(DrawTarget* aTarget)
 {
@@ -863,7 +835,7 @@ gfxPlatform::SupportsAzureContentForDrawTarget(DrawTarget* aTarget)
     return false;
   }
 
-  return SupportsAzureContentForType(aTarget->GetType());
+  return SupportsAzureContentForType(aTarget->GetBackendType());
 }
 
 bool
@@ -915,7 +887,7 @@ gfxPlatform::GetSkiaGLGlue()
      * FIXME: This should be stored in TLS or something, since there needs to be one for each thread using it. As it
      * stands, this only works on the main thread.
      */
-    mozilla::gfx::SurfaceCaps caps = mozilla::gfx::SurfaceCaps::ForRGBA();
+    mozilla::gl::SurfaceCaps caps = mozilla::gl::SurfaceCaps::ForRGBA();
     nsRefPtr<mozilla::gl::GLContext> glContext = mozilla::gl::GLContextProvider::CreateOffscreen(gfxIntSize(16, 16), caps);
     if (!glContext) {
       printf_stderr("Failed to create GLContext for SkiaGL!\n");
@@ -939,49 +911,6 @@ gfxPlatform::PurgeSkiaCache()
 
   mSkiaGlue->GetGrContext()->freeGpuResources();
 #endif
-}
-
-already_AddRefed<gfxASurface>
-gfxPlatform::GetThebesSurfaceForDrawTarget(DrawTarget *aTarget)
-{
-  if (aTarget->GetType() == BackendType::CAIRO) {
-    cairo_surface_t* csurf =
-      static_cast<cairo_surface_t*>(aTarget->GetNativeSurface(NativeSurfaceType::CAIRO_SURFACE));
-    if (csurf) {
-      return gfxASurface::Wrap(csurf);
-    }
-  }
-
-  // The semantics of this part of the function are sort of weird. If we
-  // don't have direct support for the backend, we snapshot the first time
-  // and then return the snapshotted surface for the lifetime of the draw
-  // target. Sometimes it seems like this works out, but it seems like it
-  // might result in no updates ever.
-  RefPtr<SourceSurface> source = aTarget->Snapshot();
-  RefPtr<DataSourceSurface> data = source->GetDataSurface();
-
-  if (!data) {
-    return nullptr;
-  }
-
-  IntSize size = data->GetSize();
-  gfxImageFormat format = SurfaceFormatToImageFormat(data->GetFormat());
-
-
-  nsRefPtr<gfxASurface> surf =
-    new gfxImageSurface(data->GetData(), gfxIntSize(size.width, size.height),
-                        data->Stride(), format);
-
-  if (surf->CairoStatus()) {
-    return nullptr;
-  }
-
-  surf->SetData(&kDrawSourceSurface, data.forget().drop(), DataSourceSurfaceDestroy);
-  // keep the draw target alive as long as we need its data
-  aTarget->AddRef();
-  surf->SetData(&kDrawTargetForSurface, aTarget, DataDrawTargetDestroy);
-
-  return surf.forget();
 }
 
 TemporaryRef<DrawTarget>
@@ -1032,11 +961,18 @@ TemporaryRef<DrawTarget>
 gfxPlatform::CreateDrawTargetForData(unsigned char* aData, const IntSize& aSize, int32_t aStride, SurfaceFormat aFormat)
 {
   NS_ASSERTION(mContentBackend != BackendType::NONE, "No backend.");
-  if (mContentBackend == BackendType::CAIRO) {
-    nsRefPtr<gfxImageSurface> image = new gfxImageSurface(aData, gfxIntSize(aSize.width, aSize.height), aStride, SurfaceFormatToImageFormat(aFormat));
-    return Factory::CreateDrawTargetForCairoSurface(image->CairoSurface(), aSize);
+
+  RefPtr<DrawTarget> dt = Factory::CreateDrawTargetForData(mContentBackend,
+                                                           aData, aSize,
+                                                           aStride, aFormat);
+  if (!dt) {
+    // Factory::CreateDrawTargetForData does not support mContentBackend; retry
+    // with BackendType::CAIRO:
+    dt = Factory::CreateDrawTargetForData(BackendType::CAIRO,
+                                          aData, aSize,
+                                          aStride, aFormat);
   }
-  return Factory::CreateDrawTargetForData(mContentBackend, aData, aSize, aStride, aFormat);
+  return dt.forget();
 }
 
 /* static */ BackendType
@@ -1137,18 +1073,6 @@ gfxPlatform::UseGraphiteShaping()
     }
 
     return mGraphiteShapingEnabled;
-}
-
-bool
-gfxPlatform::UseHarfBuzzForScript(int32_t aScriptCode)
-{
-    if (mUseHarfBuzzScripts == UNINITIALIZED_VALUE) {
-        mUseHarfBuzzScripts = Preferences::GetInt(GFX_PREF_HARFBUZZ_SCRIPTS, HARFBUZZ_SCRIPTS_DEFAULT);
-    }
-
-    int32_t shapingType = mozilla::unicode::ScriptShapingType(aScriptCode);
-
-    return (mUseHarfBuzzScripts & shapingType) != 0;
 }
 
 gfxFontEntry*
@@ -1885,9 +1809,6 @@ gfxPlatform::FontsPrefsChanged(const char *aPref)
     } else if (!strcmp(GFX_PREF_GRAPHITE_SHAPING, aPref)) {
         mGraphiteShapingEnabled = UNINITIALIZED_VALUE;
         FlushFontAndWordCaches();
-    } else if (!strcmp(GFX_PREF_HARFBUZZ_SCRIPTS, aPref)) {
-        mUseHarfBuzzScripts = UNINITIALIZED_VALUE;
-        FlushFontAndWordCaches();
     } else if (!strcmp(BIDI_NUMERAL_PREF, aPref)) {
         mBidiNumeralOption = UNINITIALIZED_VALUE;
     } else if (!strcmp(GFX_PREF_OPENTYPE_SVG, aPref)) {
@@ -2034,12 +1955,12 @@ InitLayersAccelerationPrefs()
       if (gfxInfo) {
         int32_t status;
         if (NS_SUCCEEDED(gfxInfo->GetFeatureStatus(nsIGfxInfo::FEATURE_DIRECT3D_9_LAYERS, &status))) {
-          if (status == nsIGfxInfo::FEATURE_NO_INFO) {
+          if (status == nsIGfxInfo::FEATURE_STATUS_OK) {
             sLayersSupportsD3D9 = true;
           }
         }
         if (NS_SUCCEEDED(gfxInfo->GetFeatureStatus(nsIGfxInfo::FEATURE_DIRECT3D_11_LAYERS, &status))) {
-          if (status == nsIGfxInfo::FEATURE_NO_INFO) {
+          if (status == nsIGfxInfo::FEATURE_STATUS_OK) {
             sLayersSupportsD3D11 = true;
           }
         }
@@ -2089,7 +2010,7 @@ TemporaryRef<ScaledFont>
 gfxPlatform::GetScaledFontForFontWithCairoSkia(DrawTarget* aTarget, gfxFont* aFont)
 {
     NativeFont nativeFont;
-    if (aTarget->GetType() == BackendType::CAIRO || aTarget->GetType() == BackendType::SKIA) {
+    if (aTarget->GetBackendType() == BackendType::CAIRO || aTarget->GetBackendType() == BackendType::SKIA) {
         nativeFont.mType = NativeFontType::CAIRO_FONT_FACE;
         nativeFont.mFont = aFont->GetCairoScaledFont();
         return Factory::CreateScaledFontForNativeFont(nativeFont, aFont->GetAdjustedSize());

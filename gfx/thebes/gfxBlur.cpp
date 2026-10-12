@@ -5,7 +5,6 @@
 
 #include "gfxBlur.h"
 #include "gfxContext.h"
-#include "gfxImageSurface.h"
 #include "gfxPlatform.h"
 
 #include "mozilla/gfx/Blur.h"
@@ -70,15 +69,7 @@ gfxAlphaBoxBlur::Init(const gfxRect& aRect,
                                                             mBlur->GetStride(),
                                                             SurfaceFormat::A8);
     if (!dt) {
-        nsRefPtr<gfxImageSurface> image =
-            new gfxImageSurface(mData,
-                                gfxIntSize(size.width, size.height),
-                                mBlur->GetStride(),
-                                gfxImageFormat::A8);
-        dt = Factory::CreateDrawTargetForCairoSurface(image->CairoSurface(), size);
-        if (!dt) {
-            return nullptr;
-        }
+        return nullptr;
     }
 
     IntRect irect = mBlur->GetRect();
@@ -322,7 +313,9 @@ GetCachedBlur(DrawTarget *aDT,
   if (!gBlurCache) {
     gBlurCache = new BlurCache();
   }
-  BlurCacheData* cached = gBlurCache->Lookup(aRect, aBlurRadius, aSkipRect, aDT->GetType(), &aDirtyRect);
+  BlurCacheData* cached = gBlurCache->Lookup(aRect, aBlurRadius, aSkipRect,
+                                             aDT->GetBackendType(),
+                                             &aDirtyRect);
   if (cached) {
     *aTopLeft = cached->mTopLeft;
     return cached->mBlur;
@@ -341,14 +334,16 @@ CacheBlur(DrawTarget *aDT,
 {
   // If we already had a cached value with this key, but an incorrect dirty region then just update
   // the existing entry
-  if (BlurCacheData* cached = gBlurCache->Lookup(aRect, aBlurRadius, aSkipRect, aDT->GetType(), nullptr)) {
+  if (BlurCacheData* cached = gBlurCache->Lookup(aRect, aBlurRadius, aSkipRect,
+                                                 aDT->GetBackendType(),
+                                                 nullptr)) {
     cached->mBlur = aBlur;
     cached->mTopLeft = aTopLeft;
     cached->mDirtyRect = aDirtyRect;
     return;
   }
 
-  BlurCacheKey key(aRect, aBlurRadius, aSkipRect, aDT->GetType());
+  BlurCacheKey key(aRect, aBlurRadius, aSkipRect, aDT->GetBackendType());
   BlurCacheData* data = new BlurCacheData(aBlur, aTopLeft, aDirtyRect, key);
   if (!gBlurCache->RegisterEntry(data)) {
     delete data;
@@ -402,6 +397,9 @@ gfxAlphaBoxBlur::BlurRectangle(gfxContext *aDestinationCtx,
     dest->Fill();
 
     surface = blur.DoBlur(dt, &topLeft);
+    if (!surface) {
+      return;
+    }
     CacheBlur(dt, aRect, blurRadius, aSkipRect, surface, topLeft, aDirtyRect);
   }
 

@@ -59,6 +59,8 @@
 #include "nsIMutable.h"
 #include "nsIObserverService.h"
 #include "nsIScriptSecurityManager.h"
+#include "nsScreenManagerProxy.h"
+#include "nsMemoryInfoDumper.h"
 #include "nsServiceManagerUtils.h"
 #include "nsStyleSheetService.h"
 #include "nsXULAppAPI.h"
@@ -71,6 +73,7 @@
 #include "nsLayoutStylesheetCache.h"
 #include "nsIJSRuntimeService.h"
 #include "nsThreadManager.h"
+#include "nsAnonymousTemporaryFile.h"
 
 #include "IHistory.h"
 #include "nsNetUtil.h"
@@ -149,6 +152,7 @@
 #include "mozilla/dom/telephony/PTelephonyChild.h"
 #include "mozilla/dom/time/DateCacheCleaner.h"
 #include "mozilla/net/NeckoMessageUtils.h"
+#include "mozilla/RemoteSpellCheckEngineChild.h"
 
 using namespace base;
 using namespace mozilla;
@@ -167,6 +171,7 @@ using namespace mozilla::jsipc;
 #if defined(MOZ_WIDGET_GONK)
 using namespace mozilla::system;
 #endif
+using namespace mozilla::widget;
 
 #ifdef MOZ_NUWA_PROCESS
 static bool sNuwaForking = false;
@@ -190,18 +195,23 @@ class MemoryReportRequestChild : public PMemoryReportRequestChild,
 public:
     NS_DECL_ISUPPORTS
 
-    MemoryReportRequestChild(uint32_t aGeneration, const nsAString& aDMDDumpIdent);
-    virtual ~MemoryReportRequestChild();
+    MemoryReportRequestChild(uint32_t aGeneration, bool aAnonymize,
+                             const FileDescriptor& aDMDFile);
     NS_IMETHOD Run();
 private:
+    virtual ~MemoryReportRequestChild();
+
     uint32_t mGeneration;
-    nsString mDMDDumpIdent;
+    bool     mAnonymize;
+    FileDescriptor mDMDFile;
 };
 
 NS_IMPL_ISUPPORTS(MemoryReportRequestChild, nsIRunnable)
 
-MemoryReportRequestChild::MemoryReportRequestChild(uint32_t aGeneration, const nsAString& aDMDDumpIdent)
-: mGeneration(aGeneration), mDMDDumpIdent(aDMDDumpIdent)
+MemoryReportRequestChild::MemoryReportRequestChild(
+    uint32_t aGeneration, bool aAnonymize, const FileDescriptor& aDMDFile)
+  : mGeneration(aGeneration), mAnonymize(aAnonymize),
+    mDMDFile(aDMDFile)
 {
     MOZ_COUNT_CTOR(MemoryReportRequestChild);
 }
@@ -358,6 +368,8 @@ public:
     NS_DECL_NSICONSOLELISTENER
 
 private:
+    ~ConsoleListener() {}
+
     ContentChild* mChild;
     friend class ContentChild;
 };
@@ -414,6 +426,8 @@ ConsoleListener::Observe(nsIConsoleMessage* aMessage)
 
 class SystemMessageHandledObserver MOZ_FINAL : public nsIObserver
 {
+    ~SystemMessageHandledObserver() {}
+
 public:
     NS_DECL_ISUPPORTS
     NS_DECL_NSIOBSERVER
@@ -478,8 +492,17 @@ ContentChild* ContentChild::sSingleton;
 // Performs initialization that is not fork-safe, i.e. that must be done after
 // forking from the Nuwa process.
 static void
-InitOnContentProcessCreated()
+InitOnContentProcessCreated(bool aAfterNuwaFork)
 {
+#ifdef MOZ_NUWA_PROCESS
+    // Wait until we are forked from Nuwa
+    if (!aAfterNuwaFork &&
+        Preferences::GetBool("dom.ipc.processPrelaunch.enabled", false)) {
+        return;
+    }
+#else
+    unused << aAfterNuwaFork;
+#endif
     // This will register cross-process observer.
     mozilla::dom::time::InitializeDateCacheCleaner();
 }
@@ -666,17 +689,17 @@ ContentChild::InitXPCOM()
         new SystemMessageHandledObserver();
     sysMsgObserver->Init();
 
-#ifndef MOZ_NUWA_PROCESS
-    InitOnContentProcessCreated();
-#endif
+    InitOnContentProcessCreated(/* aAfterNuwaFork = */false);
 }
 
 PMemoryReportRequestChild*
-ContentChild::AllocPMemoryReportRequestChild(const uint32_t& generation,
-                                             const bool &minimizeMemoryUsage,
-                                             const nsString& aDMDDumpIdent)
+ContentChild::AllocPMemoryReportRequestChild(const uint32_t& aGeneration,
+                                             const bool &aAnonymize,
+                                             const bool &aMinimizeMemoryUsage,
+                                             const FileDescriptor& aDMDFile)
 {
-    MemoryReportRequestChild *actor = new MemoryReportRequestChild(generation, aDMDDumpIdent);
+    MemoryReportRequestChild *actor =
+        new MemoryReportRequestChild(aGeneration, aAnonymize, aDMDFile);
     actor->AddRef();
     return actor;
 }
@@ -684,6 +707,7 @@ ContentChild::AllocPMemoryReportRequestChild(const uint32_t& generation,
 // This is just a wrapper for InfallibleTArray<MemoryReport> that implements
 // nsISupports, so it can be passed to nsIMemoryReporter::CollectReports.
 class MemoryReportsWrapper MOZ_FINAL : public nsISupports {
+    ~MemoryReportsWrapper() {}
 public:
     NS_DECL_ISUPPORTS
     MemoryReportsWrapper(InfallibleTArray<MemoryReport> *r) : mReports(r) { }
@@ -715,6 +739,8 @@ public:
         return NS_OK;
     }
 private:
+    ~MemoryReportCallback() {}
+
     const nsCString mProcess;
 };
 NS_IMPL_ISUPPORTS(
@@ -724,15 +750,17 @@ NS_IMPL_ISUPPORTS(
 
 bool
 ContentChild::RecvPMemoryReportRequestConstructor(
-    PMemoryReportRequestChild* child,
-    const uint32_t& generation,
-    const bool& minimizeMemoryUsage,
-    const nsString& aDMDDumpIdent)
+    PMemoryReportRequestChild* aChild,
+    const uint32_t& aGeneration,
+    const bool& aAnonymize,
+    const bool& aMinimizeMemoryUsage,
+    const FileDescriptor& aDMDFile)
 {
-    MemoryReportRequestChild *actor = static_cast<MemoryReportRequestChild*>(child);
+    MemoryReportRequestChild *actor =
+        static_cast<MemoryReportRequestChild*>(aChild);
     nsresult rv;
 
-    if (minimizeMemoryUsage) {
+    if (aMinimizeMemoryUsage) {
         nsCOMPtr<nsIMemoryReporterManager> mgr = do_GetService("@mozilla.org/memory-reporter-manager;1");
         rv = mgr->MinimizeMemoryUsage(actor);
         // mgr will eventually call actor->Run()
@@ -759,7 +787,8 @@ NS_IMETHODIMP MemoryReportRequestChild::Run()
     nsRefPtr<MemoryReportsWrapper> wrappedReports =
         new MemoryReportsWrapper(&reports);
     nsRefPtr<MemoryReportCallback> cb = new MemoryReportCallback(process);
-    mgr->GetReportsForThisProcessExtended(cb, wrappedReports, mDMDDumpIdent);
+    mgr->GetReportsForThisProcessExtended(cb, wrappedReports, mAnonymize,
+                                          FileDescriptorToFILE(mDMDFile, "wb"));
 
     bool sent = Send__delete__(this, mGeneration, reports);
     return sent ? NS_OK : NS_ERROR_FAILURE;
@@ -1026,6 +1055,20 @@ ContentChild::AllocPBlobChild(const BlobConstructorParams& aParams)
     return nsIContentChild::AllocPBlobChild(aParams);
 }
 
+mozilla::PRemoteSpellcheckEngineChild *
+ContentChild::AllocPRemoteSpellcheckEngineChild()
+{
+    NS_NOTREACHED("Default Constructor for PRemoteSpellcheckEngineChilf should never be called");
+    return nullptr;
+}
+
+bool
+ContentChild::DeallocPRemoteSpellcheckEngineChild(PRemoteSpellcheckEngineChild *child)
+{
+    delete child;
+    return true;
+}
+
 bool
 ContentChild::DeallocPBlobChild(PBlobChild* aActor)
 {
@@ -1171,6 +1214,28 @@ bool
 ContentChild::DeallocPNeckoChild(PNeckoChild* necko)
 {
     delete necko;
+    return true;
+}
+
+PScreenManagerChild*
+ContentChild::AllocPScreenManagerChild(uint32_t* aNumberOfScreens,
+                                       float* aSystemDefaultScale,
+                                       bool* aSuccess)
+{
+    // The ContentParent should never attempt to allocate the
+    // nsScreenManagerProxy. Instead, the nsScreenManagerProxy
+    // service is requested and instantiated via XPCOM, and the
+    // constructor of nsScreenManagerProxy sets up the IPC connection.
+    NS_NOTREACHED("Should never get here!");
+    return nullptr;
+}
+
+bool
+ContentChild::DeallocPScreenManagerChild(PScreenManagerChild* aService)
+{
+    // nsScreenManagerProxy is AddRef'd in its constructor.
+    nsScreenManagerProxy *child = static_cast<nsScreenManagerProxy*>(aService);
+    child->Release();
     return true;
 }
 
@@ -1834,7 +1899,7 @@ public:
         }
 
         // Perform other after-fork initializations.
-        InitOnContentProcessCreated();
+        InitOnContentProcessCreated(/* aAfterNuwaFork = */true);
 
         return NS_OK;
     }

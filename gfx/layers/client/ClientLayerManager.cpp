@@ -284,6 +284,15 @@ ClientLayerManager::GetRemoteRenderer()
   return mWidget->GetRemoteRenderer();
 }
 
+CompositorChild*
+ClientLayerManager::GetCompositorChild()
+{
+  if (XRE_GetProcessType() != GeckoProcessType_Default) {
+    return CompositorChild::Get();
+  }
+  return GetRemoteRenderer();
+}
+
 void
 ClientLayerManager::Composite()
 {
@@ -528,6 +537,13 @@ ClientLayerManager::IsCompositingCheap()
          LayerManager::IsCompositingCheap(mForwarder->GetCompositorBackendType());
 }
 
+bool
+ClientLayerManager::AreComponentAlphaLayersEnabled()
+{
+  return GetCompositorBackendType() != LayersBackend::LAYERS_BASIC &&
+         LayerManager::AreComponentAlphaLayersEnabled();
+}
+
 void
 ClientLayerManager::SetIsFirstPaint()
 {
@@ -606,11 +622,9 @@ ClientLayerManager::GetBackendName(nsAString& aName)
 
 bool
 ClientLayerManager::ProgressiveUpdateCallback(bool aHasPendingNewThebesContent,
-                                              ParentLayerRect& aCompositionBounds,
-                                              CSSToParentLayerScale& aZoom,
+                                              FrameMetrics& aMetrics,
                                               bool aDrawingCritical)
 {
-  aZoom.scale = 1.0;
 #ifdef MOZ_WIDGET_ANDROID
   Layer* primaryScrollable = GetPrimaryScrollableLayer();
   if (primaryScrollable) {
@@ -624,9 +638,14 @@ ClientLayerManager::ProgressiveUpdateCallback(bool aHasPendingNewThebesContent,
         metrics.mCriticalDisplayPort : metrics.mDisplayPort;
     LayerRect displayPort = (metricsDisplayPort + metrics.GetScrollOffset()) * paintScale;
 
-    return AndroidBridge::Bridge()->ProgressiveUpdateCallback(
+    ScreenPoint scrollOffset;
+    CSSToScreenScale zoom;
+    bool ret = AndroidBridge::Bridge()->ProgressiveUpdateCallback(
       aHasPendingNewThebesContent, displayPort, paintScale.scale, aDrawingCritical,
-      aCompositionBounds, aZoom);
+      scrollOffset, zoom);
+    aMetrics.SetScrollOffset(scrollOffset / zoom);
+    aMetrics.SetZoom(zoom);
+    return ret;
   }
 #endif
 

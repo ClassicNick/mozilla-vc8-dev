@@ -44,11 +44,19 @@ class ClientLayerManager : public LayerManager
 
 public:
   ClientLayerManager(nsIWidget* aWidget);
+
+protected:
   virtual ~ClientLayerManager();
 
+public:
   virtual ShadowLayerForwarder* AsShadowForwarder()
   {
     return mForwarder;
+  }
+
+  virtual ClientLayerManager* AsClientLayerManager()
+  {
+    return this;
   }
 
   virtual int32_t GetMaxTextureSize() const;
@@ -107,8 +115,8 @@ public:
 
   virtual void SetIsFirstPaint() MOZ_OVERRIDE;
 
-  TextureClientPool *GetTexturePool(gfx::SurfaceFormat aFormat);
-  SimpleTextureClientPool *GetSimpleTileTexturePool(gfx::SurfaceFormat aFormat);
+  TextureClientPool* GetTexturePool(gfx::SurfaceFormat aFormat);
+  SimpleTextureClientPool* GetSimpleTileTexturePool(gfx::SurfaceFormat aFormat);
 
   // Drop cached resources and ask our shadow manager to do the same,
   // if we have one.
@@ -123,7 +131,7 @@ public:
 
   bool HasShadowTarget() { return !!mShadowTarget; }
 
-  void SetShadowTarget(gfxContext *aTarget) { mShadowTarget = aTarget; }
+  void SetShadowTarget(gfxContext* aTarget) { mShadowTarget = aTarget; }
 
   bool CompositorMightResample() { return mCompositorMightResample; } 
   
@@ -133,12 +141,17 @@ public:
   void* GetThebesLayerCallbackData() const
   { return mThebesLayerCallbackData; }
 
-  CompositorChild *GetRemoteRenderer();
+  CompositorChild* GetRemoteRenderer();
+
+  CompositorChild* GetCompositorChild();
+
+  // Disable component alpha layers with the software compositor.
+  virtual bool ShouldAvoidComponentAlphaLayers() { return !IsCompositingCheap(); }
 
   /**
-   * Called for each iteration of a progressive tile update. Fills
-   * aCompositionBounds and aZoom with the current scale and composition bounds
-   * being used to composite the layers in this manager, to determine what area
+   * Called for each iteration of a progressive tile update. Updates
+   * aMetrics with the current scroll offset and scale being used to composite
+   * the primary scrollable layer in this manager, to determine what area
    * intersects with the target composition bounds.
    * aDrawingCritical will be true if the current drawing operation is using
    * the critical displayport.
@@ -148,8 +161,7 @@ public:
    * true.
    */
   bool ProgressiveUpdateCallback(bool aHasPendingNewThebesContent,
-                                 ParentLayerRect& aCompositionBounds,
-                                 CSSToParentLayerScale& aZoom,
+                                 FrameMetrics& aMetrics,
                                  bool aDrawingCritical);
 
   bool InConstruction() { return mPhase == PHASE_CONSTRUCTION; }
@@ -175,6 +187,8 @@ public:
   {
    return (GetTextureFactoryIdentifier().mSupportedBlendModes & aMixBlendModes) == aMixBlendModes;
   }
+
+  virtual bool AreComponentAlphaLayersEnabled() MOZ_OVERRIDE;
 
   // Log APZ test data for the current paint. We supply the paint sequence
   // number ourselves, and take care of calling APZTestData::StartNewPaint()

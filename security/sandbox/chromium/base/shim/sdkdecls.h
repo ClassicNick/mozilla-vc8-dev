@@ -13,6 +13,7 @@
 // while building or targetting lower platform versions or lower SDKs.
 
 #if (_WIN32_WINNT < 0x0600)
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
 typedef struct _STARTUPINFOEXA {
     STARTUPINFOA StartupInfo;
     LPPROC_THREAD_ATTRIBUTE_LIST lpAttributeList;
@@ -28,6 +29,7 @@ typedef LPSTARTUPINFOEXW LPSTARTUPINFOEX;
 typedef STARTUPINFOEXA STARTUPINFOEX;
 typedef LPSTARTUPINFOEXA LPSTARTUPINFOEX;
 #endif // UNICODE
+#endif
 
 #define PROC_THREAD_ATTRIBUTE_NUMBER    0x0000FFFF
 #define PROC_THREAD_ATTRIBUTE_THREAD    0x00010000  // Attribute may be used with thread creation

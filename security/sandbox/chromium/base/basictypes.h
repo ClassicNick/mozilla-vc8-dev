@@ -13,7 +13,7 @@
 
 #include <limits.h>  // So we can set the bounds of our types.
 #include <stddef.h>  // For size_t.
-#include <stdint.h>  // For intptr_t.
+#include "mozilla/StandardInteger.h"  // For intptr_t.
 
 #include "base/macros.h"
 #include "base/port.h"  // Types that only need exist on certain systems.

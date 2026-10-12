@@ -1371,11 +1371,6 @@ const KTableValue nsCSSProps::kListStyleKTable[] = {
   eCSSKeyword_square, NS_STYLE_LIST_STYLE_SQUARE,
   eCSSKeyword_disclosure_closed, NS_STYLE_LIST_STYLE_DISCLOSURE_CLOSED,
   eCSSKeyword_disclosure_open, NS_STYLE_LIST_STYLE_DISCLOSURE_OPEN,
-  // {lower,upper}-{roman,alpha} are also used by html attribute map.
-  eCSSKeyword_lower_roman, NS_STYLE_LIST_STYLE_LOWER_ROMAN,
-  eCSSKeyword_upper_roman, NS_STYLE_LIST_STYLE_UPPER_ROMAN,
-  eCSSKeyword_lower_alpha, NS_STYLE_LIST_STYLE_LOWER_ALPHA,
-  eCSSKeyword_upper_alpha, NS_STYLE_LIST_STYLE_UPPER_ALPHA,
   // the following counter styles require specific algorithms to generate.
   eCSSKeyword_hebrew, NS_STYLE_LIST_STYLE_HEBREW,
   eCSSKeyword_japanese_informal, NS_STYLE_LIST_STYLE_JAPANESE_INFORMAL,
@@ -2156,6 +2151,7 @@ static const nsCSSProperty gAnimationSubpropTable[] = {
   eCSSProperty_animation_direction,
   eCSSProperty_animation_fill_mode,
   eCSSProperty_animation_iteration_count,
+  eCSSProperty_animation_play_state,
   // List animation-name last so we serialize it last, in case it has
   // a value that conflicts with one of the other properties.  (See
   // how Declaration::GetValue serializes 'animation'.

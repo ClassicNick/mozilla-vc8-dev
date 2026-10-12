@@ -30,6 +30,8 @@
 #include <algorithm>
 #include <math.h>
 
+#define DEFAULT_VIDEO_MAX_FRAMERATE 30
+
 namespace mozilla {
 
 static const char* logTag ="WebrtcVideoSessionConduit";
@@ -54,6 +56,30 @@ mozilla::RefPtr<VideoSessionConduit> VideoSessionConduit::Create(VideoSessionCon
   }
   CSFLogDebug(logTag,  "%s Successfully created VideoConduit ", __FUNCTION__);
   return obj;
+}
+
+WebrtcVideoConduit::WebrtcVideoConduit():
+  mOtherDirection(nullptr),
+  mShutDown(false),
+  mVideoEngine(nullptr),
+  mTransport(nullptr),
+  mRenderer(nullptr),
+  mPtrExtCapture(nullptr),
+  mEngineTransmitting(false),
+  mEngineReceiving(false),
+  mChannel(-1),
+  mCapId(-1),
+  mCurSendCodecConfig(nullptr),
+  mSendingWidth(0),
+  mSendingHeight(0),
+  mReceivingWidth(640),
+  mReceivingHeight(480),
+  mVideoLatencyTestEnable(false),
+  mVideoLatencyAvg(0),
+  mMinBitrate(200),
+  mStartBitrate(300),
+  mMaxBitrate(2000)
+{
 }
 
 WebrtcVideoConduit::~WebrtcVideoConduit()
@@ -530,6 +556,8 @@ WebrtcVideoConduit::ConfigureSendMediaCodec(const VideoCodecConfig* codecConfig)
   webrtc::VideoCodec  video_codec;
   std::string payloadName;
 
+  memset(&video_codec, 0, sizeof(video_codec));
+
   //validate basic params
   if((condError = ValidateCodecConfig(codecConfig,true)) != kMediaConduitNoError)
   {
@@ -984,6 +1012,7 @@ WebrtcVideoConduit::SetExternalSendCodec(VideoCodecConfig* config,
                                               config->mType,
                                               static_cast<WebrtcVideoEncoder*>(encoder),
                                               false)) {
+    mExternalSendCodecHandle = encoder;
     mExternalSendCodec = new VideoCodecConfig(*config);
     return kMediaConduitNoError;
   }
@@ -996,6 +1025,7 @@ WebrtcVideoConduit::SetExternalRecvCodec(VideoCodecConfig* config,
   if (!mPtrExtCodec->RegisterExternalReceiveCodec(mChannel,
                                                   config->mType,
                                                   static_cast<WebrtcVideoDecoder*>(decoder))) {
+    mExternalRecvCodecHandle = decoder;
     mExternalRecvCodec = new VideoCodecConfig(*config);
     return kMediaConduitNoError;
   }
@@ -1265,10 +1295,12 @@ WebrtcVideoConduit::CodecConfigToWebRTCCodec(const VideoCodecConfig* codecInfo,
 
   // width/height will be overridden on the first frame; they must be 'sane' for
   // SetSendCodec()
-  if (codecInfo->mMaxFrameRate > 0)
-  {
+  if (codecInfo->mMaxFrameRate > 0) {
     cinst.maxFramerate = codecInfo->mMaxFrameRate;
+  } else {
+    cinst.maxFramerate = DEFAULT_VIDEO_MAX_FRAMERATE;
   }
+
   cinst.minBitrate = mMinBitrate;
   cinst.startBitrate = mStartBitrate;
   cinst.maxBitrate = mMaxBitrate;
@@ -1279,6 +1311,14 @@ WebrtcVideoConduit::CodecConfigToWebRTCCodec(const VideoCodecConfig* codecInfo,
     cinst.codecSpecific.H264.constraints = codecInfo->mConstraints;
     cinst.codecSpecific.H264.level = codecInfo->mLevel;
     cinst.codecSpecific.H264.packetizationMode = codecInfo->mPacketizationMode;
+    if (codecInfo->mMaxBitrate > 0 && codecInfo->mMaxBitrate < cinst.maxBitrate) {
+      cinst.maxBitrate = codecInfo->mMaxBitrate;
+    }
+    if (codecInfo->mMaxMBPS > 0) {
+      // Not supported yet!
+      CSFLogError(logTag,  "%s H.264 max_mbps not supported yet  ", __FUNCTION__);
+    }
+    // XXX parse the encoded SPS/PPS data
     // paranoia
     cinst.codecSpecific.H264.spsData = nullptr;
     cinst.codecSpecific.H264.spsLen = 0;
@@ -1396,6 +1436,17 @@ uint64_t
 WebrtcVideoConduit::MozVideoLatencyAvg()
 {
   return mVideoLatencyAvg / sRoundingPadding;
+}
+
+uint64_t
+WebrtcVideoConduit::CodecPluginID()
+{
+  if (mExternalSendCodecHandle) {
+    return mExternalSendCodecHandle->PluginID();
+  } else if (mExternalRecvCodecHandle) {
+    return mExternalRecvCodecHandle->PluginID();
+  }
+  return 0;
 }
 
 }// end namespace

@@ -26,9 +26,9 @@ class CodeGeneratorARM : public CodeGeneratorShared
     // Label for the common return path.
     NonAssertingLabel returnLabel_;
     NonAssertingLabel deoptLabel_;
-    // ugh.  this is not going to be pretty to move over.
-    // stack slotted variables are not useful on arm.
-    // it looks like this will need to return one of two types.
+    // Ugh. This is not going to be pretty to move over. Stack slotted variables
+    // are not useful on arm. It looks like this will need to return one of two
+    // types.
     inline Operand ToOperand(const LAllocation &a) {
         if (a.isGeneralReg())
             return Operand(a.toGeneralReg()->reg());
@@ -67,6 +67,10 @@ class CodeGeneratorARM : public CodeGeneratorShared
     bool bailoutTest32(Assembler::Condition c, T1 lhs, T2 rhs, LSnapshot *snapshot) {
         masm.test32(lhs, rhs);
         return bailoutIf(c, snapshot);
+    }
+    bool bailoutIfFalseBool(Register reg, LSnapshot *snapshot) {
+        masm.test32(reg, Imm32(0xFF));
+        return bailoutIf(Assembler::Zero, snapshot);
     }
 
   protected:
@@ -202,7 +206,7 @@ class CodeGeneratorARM : public CodeGeneratorShared
     bool generateInvalidateEpilogue();
   protected:
     void postAsmJSCall(LAsmJSCall *lir) {
-        if (!useHardFpABI() && lir->mir()->callee().which() == MAsmJSCall::Callee::Builtin) {
+        if (!UseHardFpABI() && lir->mir()->callee().which() == MAsmJSCall::Callee::Builtin) {
             switch (lir->mir()->type()) {
               case MIRType_Double:
                 masm.ma_vxfer(r0, r1, d0);

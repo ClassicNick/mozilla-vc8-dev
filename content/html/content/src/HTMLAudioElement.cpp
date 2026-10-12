@@ -7,7 +7,6 @@
 #include "mozilla/dom/HTMLAudioElement.h"
 #include "mozilla/dom/HTMLAudioElementBinding.h"
 #include "nsError.h"
-#include "nsIDOMHTMLAudioElement.h"
 #include "nsGenericHTMLElement.h"
 #include "nsGkAtoms.h"
 #include "nsIDocument.h"
@@ -29,13 +28,10 @@ namespace dom {
 
 extern bool IsAudioAPIEnabled();
 
-NS_IMPL_ISUPPORTS_INHERITED(HTMLAudioElement, HTMLMediaElement,
-                            nsIDOMHTMLMediaElement, nsIDOMHTMLAudioElement)
-
 NS_IMPL_ELEMENT_CLONE(HTMLAudioElement)
 
 
-HTMLAudioElement::HTMLAudioElement(already_AddRefed<nsINodeInfo> aNodeInfo)
+HTMLAudioElement::HTMLAudioElement(already_AddRefed<NodeInfo> aNodeInfo)
   : HTMLMediaElement(aNodeInfo)
 {
 }
@@ -43,7 +39,6 @@ HTMLAudioElement::HTMLAudioElement(already_AddRefed<nsINodeInfo> aNodeInfo)
 HTMLAudioElement::~HTMLAudioElement()
 {
 }
-
 
 already_AddRefed<HTMLAudioElement>
 HTMLAudioElement::Audio(const GlobalObject& aGlobal,
@@ -57,12 +52,12 @@ HTMLAudioElement::Audio(const GlobalObject& aGlobal,
     return nullptr;
   }
 
-  nsCOMPtr<nsINodeInfo> nodeInfo =
+  already_AddRefed<mozilla::dom::NodeInfo> nodeInfo =
     doc->NodeInfoManager()->GetNodeInfo(nsGkAtoms::audio, nullptr,
                                         kNameSpaceID_XHTML,
                                         nsIDOMNode::ELEMENT_NODE);
 
-  nsRefPtr<HTMLAudioElement> audio = new HTMLAudioElement(nodeInfo.forget());
+  nsRefPtr<HTMLAudioElement> audio = new HTMLAudioElement(nodeInfo);
   audio->SetHTMLAttr(nsGkAtoms::preload, NS_LITERAL_STRING("auto"), aRv);
   if (aRv.Failed()) {
     return nullptr;

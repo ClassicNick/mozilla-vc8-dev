@@ -177,6 +177,20 @@ nsInlineFrame::PeekOffsetCharacter(bool aForward, int32_t* aOffset,
 }
 
 void
+nsInlineFrame::DestroyFrom(nsIFrame* aDestructRoot)
+{
+  nsFrameList* overflowFrames = GetOverflowFrames();
+  if (overflowFrames) {
+    // Fixup the parent pointers for any child frames on the OverflowList.
+    // nsIFrame::DestroyFrom depends on that to find the sticky scroll
+    // container (an ancestor).
+    nsIFrame* lineContainer = nsLayoutUtils::FindNearestBlockAncestor(this);
+    DrainSelfOverflowListInternal(eForDestroy, lineContainer);
+  }
+  nsContainerFrame::DestroyFrom(aDestructRoot);
+}
+
+void
 nsInlineFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
                                 const nsRect&           aDirtyRect,
                                 const nsDisplayListSet& aLists)
@@ -422,11 +436,12 @@ nsInlineFrame::DrainSelfOverflowListInternal(DrainFlags aFlags,
       if (aLineContainer && aLineContainer->GetPrevContinuation()) {
         ReparentFloatsForInlineChild(aLineContainer, firstChild, true);
       }
-      const bool inFirstLine = (aFlags & eInFirstLine);
+      const bool doReparentSC =
+        (aFlags & eInFirstLine) && !(aFlags & eForDestroy);
       RestyleManager* restyleManager = PresContext()->RestyleManager();
       for (nsIFrame* f = firstChild; f; f = f->GetNextSibling()) {
         f->SetParent(this);
-        if (inFirstLine) {
+        if (doReparentSC) {
           restyleManager->ReparentStyleContext(f);
           nsLayoutUtils::MarkDescendantsDirty(f);
         }
@@ -707,15 +722,15 @@ nsInlineFrame::ReflowFrames(nsPresContext* aPresContext,
     // and bottom border and padding. The height of children do not
     // affect our height.
     aMetrics.SetBlockStartAscent(fm->MaxAscent());
-    aMetrics.Height() = fm->MaxHeight();
+    aMetrics.BSize(lineWM) = fm->MaxHeight();
   } else {
     NS_WARNING("Cannot get font metrics - defaulting sizes to 0");
     aMetrics.SetBlockStartAscent(aMetrics.Height() = 0);
   }
   aMetrics.SetBlockStartAscent(aMetrics.BlockStartAscent() +
                                framePadding.BStart(frameWM));
-  aMetrics.Height() += aReflowState.ComputedPhysicalBorderPadding().top +
-    aReflowState.ComputedPhysicalBorderPadding().bottom;
+  aMetrics.BSize(lineWM) +=
+    aReflowState.ComputedLogicalBorderPadding().BStartEnd(frameWM);
 
   // For now our overflow area is zero. The real value will be
   // computed in |nsLineLayout::RelativePositionFrames|.
@@ -880,22 +895,22 @@ nsInlineFrame::PushFrames(nsPresContext* aPresContext,
 
 //////////////////////////////////////////////////////////////////////
 
-int
+nsIFrame::LogicalSides
 nsInlineFrame::GetLogicalSkipSides(const nsHTMLReflowState* aReflowState) const
 {
   if (MOZ_UNLIKELY(StyleBorder()->mBoxDecorationBreak ==
                      NS_STYLE_BOX_DECORATION_BREAK_CLONE)) {
-    return 0;
+    return LogicalSides();
   }
 
-  int skip = 0;
+  LogicalSides skip;
   if (!IsFirst()) {
     nsInlineFrame* prev = (nsInlineFrame*) GetPrevContinuation();
     if ((GetStateBits() & NS_INLINE_FRAME_BIDI_VISUAL_STATE_IS_SET) ||
         (prev && (prev->mRect.height || prev->mRect.width))) {
       // Prev continuation is not empty therefore we don't render our start
       // border edge.
-      skip |= LOGICAL_SIDE_I_START;
+      skip |= eLogicalSideBitsIStart;
     }
     else {
       // If the prev continuation is empty, then go ahead and let our start
@@ -908,7 +923,7 @@ nsInlineFrame::GetLogicalSkipSides(const nsHTMLReflowState* aReflowState) const
         (next && (next->mRect.height || next->mRect.width))) {
       // Next continuation is not empty therefore we don't render our end
       // border edge.
-      skip |= LOGICAL_SIDE_I_END;
+      skip |= eLogicalSideBitsIEnd;
     }
     else {
       // If the next continuation is empty, then go ahead and let our end
@@ -922,15 +937,15 @@ nsInlineFrame::GetLogicalSkipSides(const nsHTMLReflowState* aReflowState) const
     // a split should skip the "start" side.  But figuring out which part of
     // the split we are involves getting our first continuation, which might be
     // expensive.  So don't bother if we already have the relevant bits set.
-    if (skip != LOGICAL_SIDES_I_BOTH) {
+    if (skip != LogicalSides(eLogicalSideBitsIBoth)) {
       // We're missing one of the skip bits, so check whether we need to set it.
       // Only get the first continuation once, as an optimization.
       nsIFrame* firstContinuation = FirstContinuation();
       if (firstContinuation->FrameIsNonLastInIBSplit()) {
-        skip |= LOGICAL_SIDE_I_END;
+        skip |= eLogicalSideBitsIEnd;
       }
       if (firstContinuation->FrameIsNonFirstInIBSplit()) {
-        skip |= LOGICAL_SIDE_I_START;
+        skip |= eLogicalSideBitsIStart;
       }
     }
   }
@@ -939,7 +954,7 @@ nsInlineFrame::GetLogicalSkipSides(const nsHTMLReflowState* aReflowState) const
 }
 
 nscoord
-nsInlineFrame::GetBaseline() const
+nsInlineFrame::GetLogicalBaseline(mozilla::WritingMode aWritingMode) const
 {
   return mBaseline;
 }

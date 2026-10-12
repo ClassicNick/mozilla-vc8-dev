@@ -20,7 +20,7 @@
 #include "nsIDocumentInlines.h"
 #include "nsFontMetrics.h"
 #include "nsBoxLayoutState.h"
-#include "nsINodeInfo.h"
+#include "mozilla/dom/NodeInfo.h"
 #include "nsScrollbarFrame.h"
 #include "nsIScrollbarMediator.h"
 #include "nsITextControlFrame.h"
@@ -974,17 +974,14 @@ ScrollFrameHelper::GetNondisappearingScrollbarWidth(nsBoxLayoutState* aState)
                                    mVScrollbarBox,
                                    NS_THEME_SCROLLBAR_NON_DISAPPEARING)) {
       nsIntSize size;
-      nsRenderingContext* rendContext = aState->GetRenderingContext();
-      if (rendContext) {
-        bool canOverride = true;
-        theme->GetMinimumWidgetSize(rendContext,
-                                    mVScrollbarBox,
-                                    NS_THEME_SCROLLBAR_NON_DISAPPEARING,
-                                    &size,
-                                    &canOverride);
-        if (size.width) {
-          return aState->PresContext()->DevPixelsToAppUnits(size.width);
-        }
+      bool canOverride = true;
+      theme->GetMinimumWidgetSize(aState->PresContext(),
+                                  mVScrollbarBox,
+                                  NS_THEME_SCROLLBAR_NON_DISAPPEARING,
+                                  &size,
+                                  &canOverride);
+      if (size.width) {
+        return aState->PresContext()->DevPixelsToAppUnits(size.width);
       }
     }
   }
@@ -3198,14 +3195,14 @@ ScrollFrameHelper::CreateAnonymousContent(
 
   nsNodeInfoManager *nodeInfoManager =
     presContext->Document()->NodeInfoManager();
-  nsCOMPtr<nsINodeInfo> nodeInfo;
+  nsRefPtr<NodeInfo> nodeInfo;
   nodeInfo = nodeInfoManager->GetNodeInfo(nsGkAtoms::scrollbar, nullptr,
                                           kNameSpaceID_XUL,
                                           nsIDOMNode::ELEMENT_NODE);
   NS_ENSURE_TRUE(nodeInfo, NS_ERROR_OUT_OF_MEMORY);
 
   if (canHaveHorizontal) {
-    nsCOMPtr<nsINodeInfo> ni = nodeInfo;
+    nsRefPtr<NodeInfo> ni = nodeInfo;
     NS_TrustedNewXULElement(getter_AddRefs(mHScrollbarContent), ni.forget());
     mHScrollbarContent->SetAttr(kNameSpaceID_None, nsGkAtoms::orient,
                                 NS_LITERAL_STRING("horizontal"), false);
@@ -3220,7 +3217,7 @@ ScrollFrameHelper::CreateAnonymousContent(
   }
 
   if (canHaveVertical) {
-    nsCOMPtr<nsINodeInfo> ni = nodeInfo;
+    nsRefPtr<NodeInfo> ni = nodeInfo;
     NS_TrustedNewXULElement(getter_AddRefs(mVScrollbarContent), ni.forget());
     mVScrollbarContent->SetAttr(kNameSpaceID_None, nsGkAtoms::orient,
                                 NS_LITERAL_STRING("vertical"), false);
@@ -3235,7 +3232,7 @@ ScrollFrameHelper::CreateAnonymousContent(
   }
 
   if (isResizable) {
-    nsCOMPtr<nsINodeInfo> nodeInfo;
+    nsRefPtr<NodeInfo> nodeInfo;
     nodeInfo = nodeInfoManager->GetNodeInfo(nsGkAtoms::resizer, nullptr,
                                             kNameSpaceID_XUL,
                                             nsIDOMNode::ELEMENT_NODE);
@@ -4339,7 +4336,7 @@ ReduceRadii(nscoord aXBorder, nscoord aYBorder,
 bool
 ScrollFrameHelper::GetBorderRadii(const nsSize& aFrameSize,
                                   const nsSize& aBorderArea,
-                                  int aSkipSides,
+                                  Sides aSkipSides,
                                   nscoord aRadii[8]) const
 {
   if (!mOuter->nsContainerFrame::GetBorderRadii(aFrameSize, aBorderArea,

@@ -13,6 +13,7 @@ USE_EXTENSION_MANIFEST = 1
 # files that get copied into $objdir/_tests/
 SERV_FILES = 	\
 		runtests.py \
+		bisection.py \
 		automation.py \
 		runtestsb2g.py \
 		runtestsremote.py \
@@ -47,7 +48,8 @@ SERV_FILES = 	\
 		android23.json \
 		gl.json \
 		b2g_start_script.js \
-		$(NULL)	
+		$(topsrcdir)/build/sanitizers/lsan_suppressions.txt \
+		$(NULL)
 
 ifeq ($(MOZ_BUILD_APP),mobile/android)
 SERV_FILES += \

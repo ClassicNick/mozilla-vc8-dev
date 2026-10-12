@@ -39,6 +39,9 @@ XPCOMUtils.defineLazyModuleGetter(this, "UserAgentOverrides",
 XPCOMUtils.defineLazyModuleGetter(this, "LoginManagerContent",
                                   "resource://gre/modules/LoginManagerContent.jsm");
 
+XPCOMUtils.defineLazyModuleGetter(this, "LoginManagerParent",
+                                  "resource://gre/modules/LoginManagerParent.jsm");
+
 XPCOMUtils.defineLazyModuleGetter(this, "Task", "resource://gre/modules/Task.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "OS", "resource://gre/modules/osfile.jsm");
 
@@ -114,6 +117,7 @@ XPCOMUtils.defineLazyModuleGetter(this, "CharsetMenu",
   ["FeedHandler", ["Feeds:Subscribe"], "chrome://browser/content/FeedHandler.js"],
   ["Feedback", ["Feedback:Show"], "chrome://browser/content/Feedback.js"],
   ["SelectionHandler", ["TextSelection:Get"], "chrome://browser/content/SelectionHandler.js"],
+  ["Notifications", ["Notification:Event"], "chrome://browser/content/Notifications.jsm"],
 ].forEach(function (aScript) {
   let [name, notifications, script] = aScript;
   XPCOMUtils.defineLazyGetter(window, name, function() {
@@ -482,6 +486,9 @@ var BrowserApp = {
     NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.openInNewTab"),
       NativeWindow.contextmenus.linkOpenableNonPrivateContext,
       function(aTarget) {
+        UITelemetry.addEvent("action.1", "contextmenu", null, "web_open_new_tab");
+        UITelemetry.addEvent("loadurl.1", "contextmenu", null);
+
         let url = NativeWindow.contextmenus._getLinkURL(aTarget);
         ContentAreaUtils.urlSecurityCheck(url, aTarget.ownerDocument.nodePrincipal);
         let tab = BrowserApp.addTab(url, { selected: false, parentId: BrowserApp.selectedTab.id });
@@ -501,6 +508,9 @@ var BrowserApp = {
     NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.openInPrivateTab"),
       NativeWindow.contextmenus.linkOpenableContext,
       function(aTarget) {
+        UITelemetry.addEvent("action.1", "contextmenu", null, "web_open_private_tab");
+        UITelemetry.addEvent("loadurl.1", "contextmenu", null);
+
         let url = NativeWindow.contextmenus._getLinkURL(aTarget);
         ContentAreaUtils.urlSecurityCheck(url, aTarget.ownerDocument.nodePrincipal);
         let tab = BrowserApp.addTab(url, { selected: false, parentId: BrowserApp.selectedTab.id, isPrivate: true });
@@ -520,6 +530,8 @@ var BrowserApp = {
     NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.copyLink"),
       NativeWindow.contextmenus.linkCopyableContext,
       function(aTarget) {
+        UITelemetry.addEvent("action.1", "contextmenu", null, "web_copy_link");
+
         let url = NativeWindow.contextmenus._getLinkURL(aTarget);
         NativeWindow.contextmenus._copyStringToDefaultClipboard(url);
       });
@@ -527,6 +539,8 @@ var BrowserApp = {
     NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.copyEmailAddress"),
       NativeWindow.contextmenus.emailLinkContext,
       function(aTarget) {
+        UITelemetry.addEvent("action.1", "contextmenu", null, "web_copy_email");
+
         let url = NativeWindow.contextmenus._getLinkURL(aTarget);
         let emailAddr = NativeWindow.contextmenus._stripScheme(url);
         NativeWindow.contextmenus._copyStringToDefaultClipboard(emailAddr);
@@ -535,6 +549,8 @@ var BrowserApp = {
     NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.copyPhoneNumber"),
       NativeWindow.contextmenus.phoneNumberLinkContext,
       function(aTarget) {
+        UITelemetry.addEvent("action.1", "contextmenu", null, "web_copy_phone");
+
         let url = NativeWindow.contextmenus._getLinkURL(aTarget);
         let phoneNumber = NativeWindow.contextmenus._stripScheme(url);
         NativeWindow.contextmenus._copyStringToDefaultClipboard(phoneNumber);
@@ -551,7 +567,9 @@ var BrowserApp = {
         };
       },
       icon: "drawable://ic_menu_share",
-      callback: function(aTarget) { }
+      callback: function(aTarget) {
+        UITelemetry.addEvent("action.1", "contextmenu", null, "web_share_link");
+      }
     });
 
     NativeWindow.contextmenus.add({
@@ -568,7 +586,9 @@ var BrowserApp = {
         };
       },
       icon: "drawable://ic_menu_share",
-      callback: function(aTarget) { }
+      callback: function(aTarget) {
+        UITelemetry.addEvent("action.1", "contextmenu", null, "web_share_email");
+      }
     });
 
     NativeWindow.contextmenus.add({
@@ -585,12 +605,16 @@ var BrowserApp = {
         };
       },
       icon: "drawable://ic_menu_share",
-      callback: function(aTarget) { }
+      callback: function(aTarget) {
+        UITelemetry.addEvent("action.1", "contextmenu", null, "web_share_phone");
+      }
     });
 
     NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.addToContacts"),
       NativeWindow.contextmenus._disableInGuest(NativeWindow.contextmenus.emailLinkContext),
       function(aTarget) {
+        UITelemetry.addEvent("action.1", "contextmenu", null, "web_contact_email");
+
         let url = NativeWindow.contextmenus._getLinkURL(aTarget);
         sendMessageToJava({
           type: "Contact:Add",
@@ -601,6 +625,8 @@ var BrowserApp = {
     NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.addToContacts"),
       NativeWindow.contextmenus._disableInGuest(NativeWindow.contextmenus.phoneNumberLinkContext),
       function(aTarget) {
+        UITelemetry.addEvent("action.1", "contextmenu", null, "web_contact_phone");
+
         let url = NativeWindow.contextmenus._getLinkURL(aTarget);
         sendMessageToJava({
           type: "Contact:Add",
@@ -611,6 +637,8 @@ var BrowserApp = {
     NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.bookmarkLink"),
       NativeWindow.contextmenus._disableInGuest(NativeWindow.contextmenus.linkBookmarkableContext),
       function(aTarget) {
+        UITelemetry.addEvent("action.1", "contextmenu", null, "web_bookmark");
+
         let url = NativeWindow.contextmenus._getLinkURL(aTarget);
         let title = aTarget.textContent || aTarget.title || url;
         sendMessageToJava({
@@ -623,18 +651,21 @@ var BrowserApp = {
     NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.playMedia"),
       NativeWindow.contextmenus.mediaContext("media-paused"),
       function(aTarget) {
+        UITelemetry.addEvent("action.1", "contextmenu", null, "web_play");
         aTarget.play();
       });
 
     NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.pauseMedia"),
       NativeWindow.contextmenus.mediaContext("media-playing"),
       function(aTarget) {
+        UITelemetry.addEvent("action.1", "contextmenu", null, "web_pause");
         aTarget.pause();
       });
 
     NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.showControls2"),
       NativeWindow.contextmenus.mediaContext("media-hidingcontrols"),
       function(aTarget) {
+        UITelemetry.addEvent("action.1", "contextmenu", null, "web_controls_media");
         aTarget.setAttribute("controls", true);
       });
 
@@ -653,30 +684,36 @@ var BrowserApp = {
       },
       icon: "drawable://ic_menu_share",
       callback: function(aTarget) {
+        UITelemetry.addEvent("action.1", "contextmenu", null, "web_share_media");
       }
     });
 
     NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.fullScreen"),
       NativeWindow.contextmenus.SelectorContext("video:not(:-moz-full-screen)"),
       function(aTarget) {
+        UITelemetry.addEvent("action.1", "contextmenu", null, "web_fullscreen");
         aTarget.mozRequestFullScreen();
       });
 
     NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.mute"),
       NativeWindow.contextmenus.mediaContext("media-unmuted"),
       function(aTarget) {
+        UITelemetry.addEvent("action.1", "contextmenu", null, "web_mute");
         aTarget.muted = true;
       });
   
     NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.unmute"),
       NativeWindow.contextmenus.mediaContext("media-muted"),
       function(aTarget) {
+        UITelemetry.addEvent("action.1", "contextmenu", null, "web_unmute");
         aTarget.muted = false;
       });
 
     NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.copyImageLocation"),
       NativeWindow.contextmenus.imageLocationCopyableContext,
       function(aTarget) {
+        UITelemetry.addEvent("action.1", "contextmenu", null, "web_copy_image");
+
         let url = aTarget.src;
         NativeWindow.contextmenus._copyStringToDefaultClipboard(url);
       });
@@ -699,12 +736,16 @@ var BrowserApp = {
       },
       icon: "drawable://ic_menu_share",
       menu: true,
-      callback: function(aTarget) { }
+      callback: function(aTarget) {
+        UITelemetry.addEvent("action.1", "contextmenu", null, "web_share_image");
+      }
     });
 
     NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.saveImage"),
       NativeWindow.contextmenus.imageSaveableContext,
       function(aTarget) {
+        UITelemetry.addEvent("action.1", "contextmenu", null, "web_save_image");
+
         ContentAreaUtils.saveImageURL(aTarget.currentURI.spec, null, "SaveImageTitle",
                                       false, true, aTarget.ownerDocument.documentURIObject,
                                       aTarget.ownerDocument);
@@ -713,6 +754,8 @@ var BrowserApp = {
     NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.setImageAs"),
       NativeWindow.contextmenus._disableInGuest(NativeWindow.contextmenus.imageSaveableContext),
       function(aTarget) {
+        UITelemetry.addEvent("action.1", "contextmenu", null, "web_background_image");
+
         let src = aTarget.src;
         sendMessageToJava({
           type: "Image:SetAs",
@@ -734,6 +777,8 @@ var BrowserApp = {
         return Strings.browser.GetStringFromName("contextmenu.saveVideo");
       }, NativeWindow.contextmenus.mediaSaveableContext,
       function(aTarget) {
+        UITelemetry.addEvent("action.1", "contextmenu", null, "web_save_media");
+
         let url = aTarget.currentSrc || aTarget.src;
         let filePickerTitleKey = (aTarget instanceof HTMLVideoElement &&
                                   (aTarget.videoWidth != 0 && aTarget.videoHeight != 0))
@@ -976,9 +1021,6 @@ var BrowserApp = {
     evt.initUIEvent("TabClose", true, false, window, tabIndex);
     aTab.browser.dispatchEvent(evt);
 
-    aTab.destroy();
-    this._tabs.splice(tabIndex, 1);
-
     if (aShowUndoToast) {
       // Get a title for the undo close toast. Fall back to the URL if there is no title.
       let ss = Cc["@mozilla.org/browser/sessionstore;1"].getService(Ci.nsISessionStore);
@@ -999,11 +1041,14 @@ var BrowserApp = {
           label: Strings.browser.GetStringFromName("undoCloseToast.action2"),
           callback: function() {
             UITelemetry.addEvent("undo.1", "toast", null, "closetab");
-            ss.undoCloseTab(window, 0);
+            ss.undoCloseTab(window, closedTabData);
           }
         }
       });
     }
+
+    aTab.destroy();
+    this._tabs.splice(tabIndex, 1);
   },
 
   // Use this method to select a tab from JS. This method sends a message
@@ -1068,7 +1113,7 @@ var BrowserApp = {
     aTab.browser.dispatchEvent(evt);
   },
 
-  quit: function quit() {
+  quit: function quit(aClear = {}) {
     // Figure out if there's at least one other browser window around.
     let lastBrowser = true;
     let e = Services.wm.getEnumerator("navigator:browser");
@@ -1088,8 +1133,10 @@ var BrowserApp = {
       Services.obs.notifyObservers(null, "browser-lastwindow-close-granted", null);
     }
 
-    window.QueryInterface(Ci.nsIDOMChromeWindow).minimize();
-    window.close();
+    BrowserApp.sanitize(aClear, function() {
+      window.QueryInterface(Ci.nsIDOMChromeWindow).minimize();
+      window.close();
+    });
   },
 
   saveAsPDF: function saveAsPDF(aBrowser) {
@@ -1343,33 +1390,50 @@ var BrowserApp = {
     }
   },
 
-  sanitize: function (aItems) {
-    let json = JSON.parse(aItems);
+  sanitize: function (aItems, callback) {
+    if (!aItems) {
+      return;
+    }
+
     let success = true;
 
-    for (let key in json) {
-      if (!json[key])
+    for (let key in aItems) {
+      if (!aItems[key])
         continue;
 
-      try {
-        switch (key) {
-          case "cookies_sessions":
-            Sanitizer.clearItem("cookies");
-            Sanitizer.clearItem("sessions");
-            break;
-          default:
-            Sanitizer.clearItem(key);
-        }
-      } catch (e) {
-        dump("sanitize error: " + e);
-        success = false;
+      key = key.replace("private.data.", "");
+
+      var promises = [];
+      switch (key) {
+        case "cookies_sessions":
+          promises.push(Sanitizer.clearItem("cookies"));
+          promises.push(Sanitizer.clearItem("sessions"));
+          break;
+        default:
+          promises.push(Sanitizer.clearItem(key));
       }
     }
 
-    sendMessageToJava({
-      type: "Sanitize:Finished",
-      success: success
-    });
+    Promise.all(promises).then(function() {
+      sendMessageToJava({
+        type: "Sanitize:Finished",
+        success: true
+      });
+
+      if (callback) {
+        callback();
+      }
+    }).catch(function(err) {
+      sendMessageToJava({
+        type: "Sanitize:Finished",
+        error: err,
+        success: false
+      });
+
+      if (callback) {
+        callback();
+      }
+    })
   },
 
   getFocusedInput: function(aBrowser, aOnlyInputElements = false) {
@@ -1479,8 +1543,9 @@ var BrowserApp = {
         let url = data.url;
         let flags;
 
-        if (/^[0-9]+$/.test(url)) {
-          // If the query is a number, force a search (see bug 993705; workaround for bug 693808).
+        if (!data.engine && /^\w+$/.test(url.trim())) {
+          // If the query is a single word and we're not using a search engine,
+          // force a search (see bug 993705; workaround for bug 693808).
           url = URIFixup.keywordToURI(url).spec;
         } else {
           flags |= Ci.nsIWebNavigation.LOAD_FLAGS_ALLOW_THIRD_PARTY_FIXUP |
@@ -1550,11 +1615,13 @@ var BrowserApp = {
           type: "Search:Keyword",
           identifier: engine.identifier,
           name: engine.name,
+          query: aData
         });
         break;
 
       case "Browser:Quit":
-        this.quit();
+        Services.console.logStringMessage(aData);
+        this.quit(JSON.parse(aData));
         break;
 
       case "SaveAs:PDF":
@@ -1572,7 +1639,7 @@ var BrowserApp = {
         break;
 
       case "Sanitize:ClearData":
-        this.sanitize(aData);
+        this.sanitize(JSON.parse(aData));
         break;
 
       case "FullScreen:Exit":
@@ -3119,6 +3186,8 @@ Tab.prototype = {
     this.browser.addEventListener("DOMContentLoaded", this, true);
     this.browser.addEventListener("DOMFormHasPassword", this, true);
     this.browser.addEventListener("DOMLinkAdded", this, true);
+    this.browser.addEventListener("DOMLinkChanged", this, true);
+    this.browser.addEventListener("DOMMetaAdded", this, false);
     this.browser.addEventListener("DOMTitleChanged", this, true);
     this.browser.addEventListener("DOMWindowClose", this, true);
     this.browser.addEventListener("DOMWillOpenModalDialog", this, true);
@@ -3291,6 +3360,8 @@ Tab.prototype = {
     this.browser.removeEventListener("DOMContentLoaded", this, true);
     this.browser.removeEventListener("DOMFormHasPassword", this, true);
     this.browser.removeEventListener("DOMLinkAdded", this, true);
+    this.browser.removeEventListener("DOMLinkChanged", this, true);
+    this.browser.removeEventListener("DOMMetaAdded", this, false);
     this.browser.removeEventListener("DOMTitleChanged", this, true);
     this.browser.removeEventListener("DOMWindowClose", this, true);
     this.browser.removeEventListener("DOMWillOpenModalDialog", this, true);
@@ -3634,6 +3705,25 @@ Tab.prototype = {
     }
   },
 
+  // These constants are used to prioritize high quality metadata over low quality data, so that
+  // we can collect data as we find meta tags, and replace low quality metadata with higher quality
+  // matches. For instance a msApplicationTile icon is a better tile image than an og:image tag.
+  METADATA_GOOD_MATCH: 10,
+  METADATA_NORMAL_MATCH: 1,
+
+  addMetadata: function(type, value, quality = 1) {
+    if (!this.metatags) {
+      this.metatags = {
+        url: this.browser.currentURI.spec
+      };
+    }
+
+    if (!this.metatags[type] || this.metatags[type + "_quality"] < quality) {
+      this.metatags[type] = value;
+      this.metatags[type + "_quality"] = quality;
+    }
+  },
+
   handleEvent: function(aEvent) {
     switch (aEvent.type) {
       case "DOMContentLoaded": {
@@ -3668,8 +3758,11 @@ Tab.prototype = {
           type: "DOMContentLoaded",
           tabID: this.id,
           bgColor: backgroundColor,
-          errorType: errorType
+          errorType: errorType,
+          metadata: this.metatags
         });
+
+        this.metatags = null;
 
         // Attach a listener to watch for "click" events bubbling up from error
         // pages and other similar page. This lets us fix bugs like 401575 which
@@ -3704,7 +3797,23 @@ Tab.prototype = {
         break;
       }
 
-      case "DOMLinkAdded": {
+      case "DOMMetaAdded":
+        let target = aEvent.originalTarget;
+        let browser = BrowserApp.getBrowserForDocument(target.ownerDocument);
+
+        switch (target.name) {
+          case "msapplication-TileImage":
+            this.addMetadata("tileImage", browser.currentURI.resolve(target.content), this.METADATA_GOOD_MATCH);
+            break;
+          case "msapplication-TileColor":
+            this.addMetadata("tileColor", target.content, this.METADATA_GOOD_MATCH);
+            break;
+        }
+
+        break;
+
+      case "DOMLinkAdded":
+      case "DOMLinkChanged": {
         let target = aEvent.originalTarget;
         if (!target.href || target.disabled)
           return;
@@ -3753,7 +3862,7 @@ Tab.prototype = {
             size: maxSize
           };
           sendMessageToJava(json);
-        } else if (list.indexOf("[alternate]") != -1) {
+        } else if (list.indexOf("[alternate]") != -1 && aEvent.type == "DOMLinkAdded") {
           let type = target.type.toLowerCase().replace(/^\s+|\s*(?:;.*)?$/g, "");
           let isFeed = (type == "application/rss+xml" || type == "application/atom+xml");
 
@@ -3774,7 +3883,7 @@ Tab.prototype = {
             };
             sendMessageToJava(json);
           } catch (e) {}
-        } else if (list.indexOf("[search]" != -1)) {
+        } else if (list.indexOf("[search]" != -1) && aEvent.type == "DOMLinkAdded") {
           let type = target.type && target.type.toLowerCase();
 
           // Replace all starting or trailing spaces or spaces before "*;" globally w/ "".
@@ -4113,6 +4222,13 @@ Tab.prototype = {
     if (!sameDocument) {
       // XXX This code assumes that this is the earliest hook we have at which
       // browser.contentDocument is changed to the new document we're loading
+
+      // We have a new browser and a new window, so the old browserWidth and
+      // browserHeight are no longer valid.  We need to force-set the browser
+      // size to ensure it sets the CSS viewport size before the document
+      // has a chance to check it.
+      this.setBrowserSize(kDefaultCSSViewportWidth, kDefaultCSSViewportHeight, true);
+
       this.contentDocumentIsDisplayed = false;
       this.hasTouchListener = false;
     } else {
@@ -4416,9 +4532,11 @@ Tab.prototype = {
     });
   },
 
-  setBrowserSize: function(aWidth, aHeight) {
-    if (fuzzyEquals(this.browserWidth, aWidth) && fuzzyEquals(this.browserHeight, aHeight)) {
-      return;
+  setBrowserSize: function(aWidth, aHeight, aForce) {
+    if (!aForce) {
+      if (fuzzyEquals(this.browserWidth, aWidth) && fuzzyEquals(this.browserHeight, aHeight)) {
+        return;
+      }
     }
 
     this.browserWidth = aWidth;
@@ -4780,6 +4898,11 @@ var BrowserEventHandler = {
   },
 
   onDoubleTap: function(aData) {
+    let metadata = BrowserApp.selectedTab.metadata;
+    if (!metadata.allowDoubleTapZoom) {
+      return;
+    }
+
     let data = JSON.parse(aData);
     let element = ElementTouchHelper.anyElementFromPoint(data.x, data.y);
 
@@ -4831,14 +4954,14 @@ var BrowserEventHandler = {
    * <video>, <object>, <embed>, <applet>, <canvas>, <img>, <media>, <pre>
    */
   _shouldSuppressReflowOnZoom: function(aElement) {
-    if (aElement instanceof Ci.nsIDOMHTMLVideoElement ||
-        aElement instanceof Ci.nsIDOMHTMLObjectElement ||
-        aElement instanceof Ci.nsIDOMHTMLEmbedElement ||
-        aElement instanceof Ci.nsIDOMHTMLAppletElement ||
-        aElement instanceof Ci.nsIDOMHTMLCanvasElement ||
-        aElement instanceof Ci.nsIDOMHTMLImageElement ||
-        aElement instanceof Ci.nsIDOMHTMLMediaElement ||
-        aElement instanceof Ci.nsIDOMHTMLPreElement) {
+    if (aElement instanceof HTMLVideoElement ||
+        aElement instanceof HTMLObjectElement ||
+        aElement instanceof HTMLEmbedElement ||
+        aElement instanceof HTMLAppletElement ||
+        aElement instanceof HTMLCanvasElement ||
+        aElement instanceof HTMLImageElement ||
+        aElement instanceof HTMLMediaElement ||
+        aElement instanceof HTMLPreElement) {
       return true;
     }
 
@@ -5353,6 +5476,8 @@ var FormAssistant = {
     BrowserApp.deck.addEventListener("click", this, true);
     BrowserApp.deck.addEventListener("input", this, false);
     BrowserApp.deck.addEventListener("pageshow", this, false);
+
+    LoginManagerParent.init();
   },
 
   uninit: function() {
@@ -6775,10 +6900,11 @@ var SearchEngines = {
     };
     SelectionHandler.addAction({
       id: "search_add_action",
-      label: Strings.browser.GetStringFromName("contextmenu.addSearchEngine"),
+      label: Strings.browser.GetStringFromName("contextmenu.addSearchEngine2"),
       icon: "drawable://ab_add_search_engine",
       selector: filter,
       action: function(aElement) {
+        UITelemetry.addEvent("action.1", "actionbar", null, "add_search_engine");
         SearchEngines.addEngine(aElement);
       }
     });
@@ -6835,13 +6961,7 @@ var SearchEngines = {
     });
 
     // Send a speculative connection to the default engine.
-    let connector = Services.io.QueryInterface(Ci.nsISpeculativeConnect);
-    let searchURI = Services.search.defaultEngine.getSubmission("dummy").uri;
-    let callbacks = window.QueryInterface(Ci.nsIInterfaceRequestor)
-                          .getInterface(Ci.nsIWebNavigation).QueryInterface(Ci.nsILoadContext);
-    try {
-      connector.speculativeConnect(searchURI, callbacks);
-    } catch (e) {}
+    Services.search.defaultEngine.speculativeConnect({window: window});
   },
 
   // Helper method to extract the engine name from a JSON. Simplifies the observe function.
@@ -6985,7 +7105,7 @@ var SearchEngines = {
     }
 
     // prompt user for name of search engine
-    let promptTitle = Strings.browser.GetStringFromName("contextmenu.addSearchEngine");
+    let promptTitle = Strings.browser.GetStringFromName("contextmenu.addSearchEngine2");
     let title = { value: (aElement.ownerDocument.title || docURI.host) };
     if (!Services.prompt.prompt(null, promptTitle, null, title, null, {}))
       return;
@@ -6995,7 +7115,7 @@ var SearchEngines = {
     let mDBConn = Services.storage.openDatabase(dbFile);
     let stmts = [];
     stmts[0] = mDBConn.createStatement("SELECT favicon FROM history_with_favicons WHERE url = ?");
-    stmts[0].bindStringParameter(0, docURI.spec);
+    stmts[0].bindByIndex(0, docURI.spec);
     let favicon = null;
     Services.search.init(function addEngine_cb(rv) {
       if (!Components.isSuccessCode(rv)) {
@@ -7165,7 +7285,7 @@ var RemoteDebugger = {
   },
 
   _stop: function rd_start() {
-    DebuggerServer.closeListener();
+    DebuggerServer.closeAllListeners();
     dump("Remote debugger stopped");
   }
 };
@@ -8051,12 +8171,12 @@ var Tabs = {
       case "Session:Prefetch":
         if (aData) {
           let uri = Services.io.newURI(aData, null, null);
-          if (uri && !this._domains.has(uri.host)) {
-            try {
+          try {
+            if (uri && !this._domains.has(uri.host)) {
               Services.io.QueryInterface(Ci.nsISpeculativeConnect).speculativeConnect(uri, null);
               this._domains.add(uri.host);
-            } catch (e) {}
-          }
+            }
+          } catch (e) {}
         }
         break;
     }

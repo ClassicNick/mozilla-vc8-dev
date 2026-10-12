@@ -163,10 +163,6 @@ const kEventConstructors = {
                                                          return new ErrorEvent(aName, aProps);
                                                        },
   },
-  ElementReplaceEvent:                       { create: function (aName, aProps) {
-                                                         return new ElementReplaceEvent(aName, aProps);
-                                                       },
-                                             },
   FocusEvent:                                { create: function (aName, aProps) {
                                                          return new FocusEvent(aName, aProps);
                                                        },
@@ -251,6 +247,10 @@ const kEventConstructors = {
                                              },
   MozEmergencyCbModeEvent:                   { create: function (aName, aProps) {
                                                           return new MozEmergencyCbModeEvent(aName, aProps);
+                                                       },
+                                             },
+  MozMessageDeletedEvent:                    { create: function (aName, aProps) {
+                                                         return new MozMessageDeletedEvent(aName, aProps);
                                                        },
                                              },
   MozMmsEvent:                               { create: function (aName, aProps) {

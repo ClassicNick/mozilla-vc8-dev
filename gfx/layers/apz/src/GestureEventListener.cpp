@@ -13,6 +13,9 @@
 #include "nsDebug.h"                    // for NS_WARNING
 #include "nsMathUtils.h"                // for NS_hypot
 
+#define GEL_LOG(...)
+// #define GEL_LOG(...) printf_stderr("GEL: " __VA_ARGS__)
+
 namespace mozilla {
 namespace layers {
 
@@ -61,6 +64,8 @@ GestureEventListener::~GestureEventListener()
 
 nsEventStatus GestureEventListener::HandleInputEvent(const MultiTouchInput& aEvent)
 {
+  GEL_LOG("Receiving event type %d with %d touches in state %d\n", aEvent.mType, aEvent.mTouches.Length(), mState);
+
   nsEventStatus rv = nsEventStatus_eIgnore;
 
   // Cache the current event since it may become the single or long tap that we
@@ -69,7 +74,6 @@ nsEventStatus GestureEventListener::HandleInputEvent(const MultiTouchInput& aEve
 
   switch (aEvent.mType) {
   case MultiTouchInput::MULTITOUCH_START:
-  case MultiTouchInput::MULTITOUCH_ENTER:
     mTouches.Clear();
     for (size_t i = 0; i < aEvent.mTouches.Length(); i++) {
       mTouches.AppendElement(aEvent.mTouches[i]);
@@ -85,7 +89,6 @@ nsEventStatus GestureEventListener::HandleInputEvent(const MultiTouchInput& aEve
     rv = HandleInputTouchMove();
     break;
   case MultiTouchInput::MULTITOUCH_END:
-  case MultiTouchInput::MULTITOUCH_LEAVE:
     for (size_t i = 0; i < aEvent.mTouches.Length(); i++) {
       for (size_t j = 0; j < mTouches.Length(); j++) {
         if (aEvent.mTouches[i].mIdentifier == mTouches[j].mIdentifier) {

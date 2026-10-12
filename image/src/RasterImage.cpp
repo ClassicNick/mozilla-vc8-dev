@@ -53,10 +53,12 @@
 #include "ipc/Nuwa.h"
 #endif
 
-using namespace mozilla;
-using namespace mozilla::gfx;
-using namespace mozilla::image;
-using namespace mozilla::layers;
+namespace mozilla {
+
+using namespace gfx;
+using namespace layers;
+
+namespace image {
 
 // a mask for flags that will affect the decoding
 #define DECODE_FLAGS_MASK (imgIContainer::FLAG_DECODE_NO_PREMULTIPLY_ALPHA | imgIContainer::FLAG_DECODE_NO_COLORSPACE_CONVERSION)
@@ -370,9 +372,6 @@ public:
 private:
   nsAutoPtr<ScaleRequest> mScaleRequest;
 };
-
-namespace mozilla {
-namespace image {
 
 /* static */ StaticRefPtr<RasterImage::DecodePool> RasterImage::DecodePool::sSingleton;
 static nsCOMPtr<nsIThread> sScaleWorkerThread = nullptr;
@@ -1601,6 +1600,12 @@ RasterImage::SetLoopCount(int32_t aLoopCount)
   }
 }
 
+NS_IMETHODIMP_(nsIntRect)
+RasterImage::GetImageSpaceInvalidationRect(const nsIntRect& aRect)
+{
+  return aRect;
+}
+
 nsresult
 RasterImage::AddSourceData(const char *aBuffer, uint32_t aCount)
 {
@@ -2594,7 +2599,9 @@ RasterImage::DrawWithPreDownscaleIfNeeded(imgFrame *aFrame,
   nsIntRect framerect = frame->GetRect();
   gfxMatrix userSpaceToImageSpace = aUserSpaceToImageSpace;
   gfxMatrix imageSpaceToUserSpace = aUserSpaceToImageSpace;
-  imageSpaceToUserSpace.Invert();
+  if (!imageSpaceToUserSpace.Invert()) {
+    return false;
+  }
   gfxSize scale = imageSpaceToUserSpace.ScaleFactors(true);
   nsIntRect subimage = aSubimage;
   RefPtr<SourceSurface> surf;
@@ -2615,8 +2622,7 @@ RasterImage::DrawWithPreDownscaleIfNeeded(imgFrame *aFrame,
       needScaleReq = !surf;
       if (surf) {
         frame = mScaleResult.frame;
-        userSpaceToImageSpace.Multiply(gfxMatrix().Scale(scale.width,
-                                                         scale.height));
+        userSpaceToImageSpace *= gfxMatrix::Scaling(scale.width, scale.height);
 
         // Since we're switching to a scaled image, we need to transform the
         // area of the subimage to draw accordingly, since imgFrame::Draw()
@@ -3160,6 +3166,13 @@ RasterImage::FinishedSomeDecoding(eShutdownIntent aIntent /* = eShutdownIntent_D
   return RequestDecodeIfNeeded(rv, aIntent, done, wasSize);
 }
 
+already_AddRefed<imgIContainer>
+RasterImage::Unwrap()
+{
+  nsCOMPtr<imgIContainer> self(this);
+  return self.forget();
+}
+
 NS_IMPL_ISUPPORTS(RasterImage::DecodePool,
                   nsIObserver)
 
@@ -3409,6 +3422,22 @@ RasterImage::DecodePool::DecodeJob::Run()
   }
 
   return NS_OK;
+}
+
+RasterImage::DecodePool::DecodeJob::~DecodeJob()
+{
+  if (gMultithreadedDecoding) {
+    // Dispatch mImage to main thread to prevent mImage from being destructed by decode thread.
+    nsCOMPtr<nsIThread> mainThread = do_GetMainThread();
+    NS_WARN_IF_FALSE(mainThread, "Couldn't get the main thread!");
+    if (mainThread) {
+      // Handle ambiguous nsISupports inheritance
+      RasterImage* rawImg = nullptr;
+      mImage.swap(rawImg);
+      DebugOnly<nsresult> rv = NS_ProxyRelease(mainThread, NS_ISUPPORTS_CAST(ImageResource*, rawImg));
+      MOZ_ASSERT(NS_SUCCEEDED(rv), "Failed to proxy release to main thread");
+    }
+  }
 }
 
 nsresult

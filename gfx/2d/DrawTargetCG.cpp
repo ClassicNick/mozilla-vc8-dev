@@ -155,8 +155,15 @@ DrawTargetCG::~DrawTargetCG()
     CGContextRelease(mCg);
 }
 
-BackendType
+DrawTargetType
 DrawTargetCG::GetType() const
+{
+  return GetBackendType() == BackendType::COREGRAPHICS_ACCELERATED ?
+           DrawTargetType::HARDWARE_RASTER : DrawTargetType::SOFTWARE_RASTER;
+}
+
+BackendType
+DrawTargetCG::GetBackendType() const
 {
   // It may be worth spliting Bitmap and IOSurface DrawTarget
   // into seperate classes.
@@ -186,7 +193,7 @@ DrawTargetCG::CreateSimilarDrawTarget(const IntSize &aSize, SurfaceFormat aForma
   // XXX: in thebes we use CGLayers to do this kind of thing. It probably makes sense
   // to add that in somehow, but at a higher level
   RefPtr<DrawTargetCG> newTarget = new DrawTargetCG();
-  if (newTarget->Init(GetType(), aSize, aFormat)) {
+  if (newTarget->Init(GetBackendType(), aSize, aFormat)) {
     return newTarget.forget();
   }
   return nullptr;
@@ -213,18 +220,23 @@ DrawTargetCG::CreateSourceSurfaceFromData(unsigned char *aData,
 static CGImageRef
 GetRetainedImageFromSourceSurface(SourceSurface *aSurface)
 {
-  if (aSurface->GetType() == SurfaceType::COREGRAPHICS_IMAGE)
-    return CGImageRetain(static_cast<SourceSurfaceCG*>(aSurface)->GetImage());
-  else if (aSurface->GetType() == SurfaceType::COREGRAPHICS_CGCONTEXT)
-    return CGImageRetain(static_cast<SourceSurfaceCGContext*>(aSurface)->GetImage());
+  switch(aSurface->GetType()) {
+    case SurfaceType::COREGRAPHICS_IMAGE:
+      return CGImageRetain(static_cast<SourceSurfaceCG*>(aSurface)->GetImage());
 
-  if (aSurface->GetType() == SurfaceType::DATA) {
-    DataSourceSurface* dataSource = static_cast<DataSourceSurface*>(aSurface);
-    return CreateCGImage(nullptr, dataSource->GetData(), dataSource->GetSize(),
-                         dataSource->Stride(), dataSource->GetFormat());
+    case SurfaceType::COREGRAPHICS_CGCONTEXT:
+      return CGImageRetain(static_cast<SourceSurfaceCGContext*>(aSurface)->GetImage());
+
+    default:
+    {
+      RefPtr<DataSourceSurface> data = aSurface->GetDataSurface();
+      if (!data) {
+        MOZ_CRASH("unsupported source surface");
+      }
+      return CreateCGImage(nullptr, data->GetData(), data->GetSize(),
+                           data->Stride(), data->GetFormat());
+    }
   }
-
-  MOZ_CRASH("unsupported source surface");
 }
 
 TemporaryRef<SourceSurface>
@@ -1573,7 +1585,8 @@ DrawTargetCG::MarkChanged()
 CGContextRef
 BorrowedCGContext::BorrowCGContextFromDrawTarget(DrawTarget *aDT)
 {
-  if (aDT->GetType() == BackendType::COREGRAPHICS || aDT->GetType() == BackendType::COREGRAPHICS_ACCELERATED) {
+  if (aDT->GetBackendType() == BackendType::COREGRAPHICS ||
+      aDT->GetBackendType() == BackendType::COREGRAPHICS_ACCELERATED) {
     DrawTargetCG* cgDT = static_cast<DrawTargetCG*>(aDT);
     cgDT->MarkChanged();
 

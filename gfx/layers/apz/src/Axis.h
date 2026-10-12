@@ -25,7 +25,7 @@ const float EPSILON = 0.0001f;
 // isn't too large.
 const float COORDINATE_EPSILON = 0.01f;
 
-class FrameMetrics;
+struct FrameMetrics;
 class AsyncPanZoomController;
 
 /**
@@ -83,9 +83,13 @@ public:
    * to prevent the viewport from overscrolling the page rect), and axis locking
    * (which might prevent any displacement from happening). If overscroll
    * ocurred, its amount is written to |aOverscrollAmountOut|.
-   * The adjusted displacement is returned.
+   * The |aDisplacementOut| parameter is set to the adjusted
+   * displacement, and the function returns true iff internal overscroll amounts
+   * were changed.
    */
-  float AdjustDisplacement(float aDisplacement, float& aOverscrollAmountOut);
+  bool AdjustDisplacement(float aDisplacement,
+                          float& aDisplacementOut,
+                          float& aOverscrollAmountOut);
 
   /**
    * Overscrolls this axis by the requested amount in the requested direction.

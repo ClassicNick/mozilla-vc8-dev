@@ -53,6 +53,9 @@ FileIOObject::FileIOObject()
     mTotal(0), mTransferred(0)
 {}
 
+FileIOObject::~FileIOObject()
+{}
+
 void
 FileIOObject::StartProgressEventTimer()
 {
@@ -157,7 +160,7 @@ FileIOObject::OnInputStreamReady(nsIAsyncInputStream* aStream)
     rv = DoAsyncWait(aStream);
   }
 
-  if (!aCount || NS_FAILED(rv)) {
+  if (NS_FAILED(rv) || !aCount) {
     if (rv == NS_BASE_STREAM_CLOSED) {
       rv = NS_OK;
     }

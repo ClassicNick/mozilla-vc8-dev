@@ -74,16 +74,16 @@ XPCOMUtils.defineLazyGetter(this, "libcutils", function() {
 #ifdef MOZ_WIDGET_ANDROID
 // On Android, define the "debug" function as a binding of the "d" function
 // from the AndroidLog module so it gets the "debug" priority and a log tag.
-// We always report debug messages on Android because it's hard to use a debug
-// build on Android and unnecessary to restrict reporting, per bug 1003469.
+// We always report debug messages on Android because it's unnecessary
+// to restrict reporting, per bug 1003469.
 let debug = Cu.import("resource://gre/modules/AndroidLog.jsm", {})
               .AndroidLog.d.bind(null, "Webapps");
 #else
-function debug(aMsg) {
-#ifdef DEBUG
-  dump("-*- Webapps.jsm : " + aMsg + "\n");
-#endif
-}
+// Elsewhere, report debug messages only if dom.mozApps.debug is set to true.
+// The pref is only checked once, on startup, so restart after changing it.
+let debug = Services.prefs.getBoolPref("dom.mozApps.debug")
+              ? (aMsg) => dump("-*- Webapps.jsm : " + aMsg + "\n")
+              : (aMsg) => {};
 #endif
 
 function getNSPRErrorCode(err) {
@@ -616,12 +616,13 @@ this.DOMApplicationRegistry = {
     }.bind(this)).then(null, Cu.reportError);
   },
 
-  updateDataStore: function(aId, aOrigin, aManifestURL, aManifest, aAppStatus) {
-    // Just Certified Apps can use DataStores
-    let prefName = "dom.testing.datastore_enabled_for_hosted_apps";
-    if (aAppStatus != Ci.nsIPrincipal.APP_STATUS_CERTIFIED &&
-        (Services.prefs.getPrefType(prefName) == Services.prefs.PREF_INVALID ||
-         !Services.prefs.getBoolPref(prefName))) {
+  updateDataStore: function(aId, aOrigin, aManifestURL, aManifest) {
+    let uri = Services.io.newURI(aOrigin, null, null);
+    let secMan = Cc["@mozilla.org/scriptsecuritymanager;1"]
+                   .getService(Ci.nsIScriptSecurityManager);
+    let principal = secMan.getAppCodebasePrincipal(uri, aId,
+                                                   /*mozbrowser*/ false);
+    if (!dataStoreService.checkPermission(principal)) {
       return;
     }
 
@@ -951,7 +952,7 @@ this.DOMApplicationRegistry = {
 
         let localeManifest = new ManifestHelper(manifest, app.origin);
 
-        app.name = localeManifest.name;
+        app.name = manifest.name;
         app.csp = manifest.csp || "";
         app.role = localeManifest.role;
         if (app.appStatus >= Ci.nsIPrincipal.APP_STATUS_PRIVILEGED) {
@@ -1315,6 +1316,12 @@ this.DOMApplicationRegistry = {
       return;
     }
 
+    // Ensure we don't send additional errors for this download
+    app.isCanceling = true;
+
+    // Ensure this app can be downloaded again after canceling
+    app.downloading = false;
+
     this._saveApps().then(() => {
       this.broadcastMessage("Webapps:UpdateState", {
         app: {
@@ -1338,6 +1345,7 @@ this.DOMApplicationRegistry = {
 
     let id = this._appIdForManifestURL(aManifestURL);
     let app = this.webapps[id];
+
     if (!app) {
       debug("startDownload: No app found for " + aManifestURL);
       throw new Error("NO_SUCH_APP");
@@ -1543,7 +1551,7 @@ this.DOMApplicationRegistry = {
         true);
     }
     this.updateDataStore(this.webapps[id].localId, app.origin,
-                         app.manifestURL, newManifest, app.appStatus);
+                         app.manifestURL, newManifest);
     this.broadcastMessage("Webapps:UpdateState", {
       app: app,
       manifest: newManifest,
@@ -1579,6 +1587,8 @@ this.DOMApplicationRegistry = {
     aApp.progress = 0;
     DOMApplicationRegistry._saveApps().then(() => {
       DOMApplicationRegistry.broadcastMessage("Webapps:UpdateState", {
+        // Clear any previous errors.
+        error: null,
         app: {
           downloading: true,
           installState: aApp.installState,
@@ -1961,9 +1971,9 @@ this.DOMApplicationRegistry = {
       }
 
       this.updateDataStore(this.webapps[aId].localId, aApp.origin,
-                           aApp.manifestURL, aApp.manifest, aApp.appStatus);
+                           aApp.manifestURL, aApp.manifest);
 
-      aApp.name = manifest.name;
+      aApp.name = aNewManifest.name;
       aApp.csp = manifest.csp || "";
       aApp.role = manifest.role || "";
       aApp.updateTime = Date.now();
@@ -2125,7 +2135,7 @@ this.DOMApplicationRegistry = {
       if (xhr.status == 200) {
         if (!AppsUtils.checkManifestContentType(app.installOrigin, app.origin,
                                                 xhr.getResponseHeader("content-type"))) {
-          sendError("INVALID_MANIFEST");
+          sendError("INVALID_MANIFEST_CONTENT_TYPE");
           return;
         }
 
@@ -2225,7 +2235,7 @@ this.DOMApplicationRegistry = {
       if (xhr.status == 200) {
         if (!AppsUtils.checkManifestContentType(app.installOrigin, app.origin,
                                                 xhr.getResponseHeader("content-type"))) {
-          sendError("INVALID_MANIFEST");
+          sendError("INVALID_MANIFEST_CONTENT_TYPE");
           return;
         }
 
@@ -2328,22 +2338,22 @@ this.DOMApplicationRegistry = {
     return app;
   },
 
-  _cloneApp: function(aData, aNewApp, aManifest, aId, aLocalId) {
+  _cloneApp: function(aData, aNewApp, aLocaleManifest, aManifest, aId, aLocalId) {
     let appObject = AppsUtils.cloneAppObject(aNewApp);
     appObject.appStatus =
       aNewApp.appStatus || Ci.nsIPrincipal.APP_STATUS_INSTALLED;
 
-    if (aManifest.appcache_path) {
+    if (aLocaleManifest.appcache_path) {
       appObject.installState = "pending";
       appObject.downloadAvailable = true;
       appObject.downloading = true;
       appObject.downloadSize = 0;
       appObject.readyToApplyDownload = false;
-    } else if (aManifest.package_path) {
+    } else if (aLocaleManifest.package_path) {
       appObject.installState = "pending";
       appObject.downloadAvailable = true;
       appObject.downloading = true;
-      appObject.downloadSize = aManifest.size;
+      appObject.downloadSize = aLocaleManifest.size;
       appObject.readyToApplyDownload = false;
     } else {
       appObject.installState = "installed";
@@ -2355,8 +2365,8 @@ this.DOMApplicationRegistry = {
     appObject.localId = aLocalId;
     appObject.basePath = OS.Path.dirname(this.appsFile);
     appObject.name = aManifest.name;
-    appObject.csp = aManifest.csp || "";
-    appObject.role = aManifest.role || "";
+    appObject.csp = aLocaleManifest.csp || "";
+    appObject.role = aLocaleManifest.role;
     appObject.installerAppId = aData.appId;
     appObject.installerIsBrowser = aData.isBrowser;
 
@@ -2474,7 +2484,7 @@ this.DOMApplicationRegistry = {
     debug("app.origin: " + app.origin);
     let manifest = new ManifestHelper(jsonManifest, app.origin);
 
-    let appObject = this._cloneApp(aData, app, manifest, id, localId);
+    let appObject = this._cloneApp(aData, app, manifest, jsonManifest, id, localId);
 
     this.webapps[id] = appObject;
 
@@ -2494,8 +2504,7 @@ this.DOMApplicationRegistry = {
       }
 
       this.updateDataStore(this.webapps[id].localId,  this.webapps[id].origin,
-                           this.webapps[id].manifestURL, jsonManifest,
-                           this.webapps[id].appStatus);
+                           this.webapps[id].manifestURL, jsonManifest);
     }
 
     for each (let prop in ["installState", "downloadAvailable", "downloading",
@@ -2543,6 +2552,19 @@ this.DOMApplicationRegistry = {
 
     this.broadcastMessage("Webapps:AddApp", { id: id, app: appObject });
 
+    if (!aData.isPackage) {
+      this.updateAppHandlers(null, app.manifest, app);
+      if (aInstallSuccessCallback) {
+        try {
+          yield aInstallSuccessCallback(app, app.manifest);
+        } catch (e) {
+          // Ignore exceptions during the local installation of
+          // an app. If it fails, the app will anyway be considered
+          // as not installed because isLaunchable will return false.
+        }
+      }
+    }
+
     // The presence of a requestID means that we have a page to update.
     if (aData.isPackage && aData.apkInstall && !aData.requestID) {
       // Skip directly to onInstallSuccessAck, since there isn't
@@ -2554,13 +2576,6 @@ this.DOMApplicationRegistry = {
       // the installing page about the successful install, after which it'll
       // respond Webapps:Install:Return:Ack, which calls onInstallSuccessAck.
       this.broadcastMessage("Webapps:Install:Return:OK", aData);
-    }
-
-    if (!aData.isPackage) {
-      this.updateAppHandlers(null, app.manifest, app);
-      if (aInstallSuccessCallback) {
-        aInstallSuccessCallback(app.manifest);
-      }
     }
 
     Services.obs.notifyObservers(null, "webapps-installed",
@@ -2631,7 +2646,17 @@ this.DOMApplicationRegistry = {
     }
 
     this.updateDataStore(this.webapps[aId].localId, aNewApp.origin,
-                         aNewApp.manifestURL, aManifest, aNewApp.appStatus);
+                         aNewApp.manifestURL, aManifest);
+
+    if (aInstallSuccessCallback) {
+      try {
+        yield aInstallSuccessCallback(aNewApp, aManifest, zipFile.path);
+      } catch (e) {
+        // Ignore exceptions during the local installation of
+        // an app. If it fails, the app will anyway be considered
+        // as not installed because isLaunchable will return false.
+      }
+    }
 
     this.broadcastMessage("Webapps:UpdateState", {
       app: app,
@@ -2646,10 +2671,6 @@ this.DOMApplicationRegistry = {
       eventType: ["downloadsuccess", "downloadapplied"],
       manifestURL: aNewApp.manifestURL
     });
-
-    if (aInstallSuccessCallback) {
-      aInstallSuccessCallback(aManifest, zipFile.path);
-    }
   }),
 
   _nextLocalId: function() {
@@ -2688,11 +2709,12 @@ this.DOMApplicationRegistry = {
   _manifestCache: {},
 
   _readManifests: function(aData) {
+    let manifestCache = this._manifestCache;
     return Task.spawn(function*() {
       for (let elem of aData) {
         let id = elem.id;
 
-        if (!this._manifestCache[id]) {
+        if (!manifestCache[id]) {
           // the manifest file used to be named manifest.json, so fallback on this.
           let baseDir = this.webapps[id].basePath == this.getCoreAppsBasePath()
                           ? "coreAppsDir" : DIRECTORY_NAME;
@@ -2701,14 +2723,14 @@ this.DOMApplicationRegistry = {
 
           let fileNames = ["manifest.webapp", "update.webapp", "manifest.json"];
           for (let fileName of fileNames) {
-            this._manifestCache[id] = yield AppsUtils.loadJSONAsync(OS.Path.join(dir.path, fileName));
-            if (this._manifestCache[id]) {
+            manifestCache[id] = yield AppsUtils.loadJSONAsync(OS.Path.join(dir.path, fileName));
+            if (manifestCache[id]) {
               break;
             }
           }
         }
 
-        elem.manifest = this._manifestCache[id];
+        elem.manifest = manifestCache[id];
       }
 
       return aData;
@@ -2769,6 +2791,16 @@ this.DOMApplicationRegistry = {
 
       // initialize the progress to 0 right now
       oldApp.progress = 0;
+
+      // Save the current state of the app to handle cases where we may be
+      // retrying a past download.
+      yield DOMApplicationRegistry._saveApps();
+      DOMApplicationRegistry.broadcastMessage("Webapps:UpdateState", {
+        // Clear any previous download errors.
+        error: null,
+        app: oldApp,
+        manifestURL: aNewApp.manifestURL
+      });
 
       let zipFile = yield this._getPackage(requestChannel, id, oldApp, aNewApp);
       let hash = yield this._computeFileHash(zipFile.path);
@@ -3106,7 +3138,7 @@ this.DOMApplicationRegistry = {
           aOldApp.downloadAvailable = false;
         }
         if (typeof e == 'object') {
-          Cu.reportError("Error while reading package:" + e);
+          Cu.reportError("Error while reading package: " + e + "\n" + e.stack);
           throw "INVALID_PACKAGE";
         } else {
           throw e;
@@ -3367,12 +3399,20 @@ this.DOMApplicationRegistry = {
         debug("Setting origin to " + uri.prePath +
               " for " + aOldApp.manifestURL);
         let newId = uri.prePath.substring(6); // "app://".length
-        if (newId in this.webapps) {
+        if (newId in this.webapps && this._isLaunchable(this.webapps[newId])) {
           throw "DUPLICATE_ORIGIN";
         }
         aOldApp.origin = uri.prePath;
         // Update the registry.
         let oldId = aOldApp.id;
+
+        if (oldId == newId) {
+          // This could happen when we have an app in the registry
+          // that is not launchable. Since the app already has
+          // the correct id, we don't need to change it.
+          return;
+        }
+
         aOldApp.id = newId;
         this.webapps[newId] = aOldApp;
         delete this.webapps[oldId];
@@ -4083,6 +4123,15 @@ AppcacheObserver.prototype = {
     let setError = function appObs_setError(aError) {
       debug("Offlinecache setError to " + aError);
       app.downloading = false;
+      mustSave = true;
+
+      // If we are canceling the download, we already send a DOWNLOAD_CANCELED
+      // error.
+      if (app.isCanceling) {
+        delete app.isCanceling;
+        return;
+      }
+
       DOMApplicationRegistry.broadcastMessage("Webapps:UpdateState", {
         app: app,
         error: aError,
@@ -4092,7 +4141,6 @@ AppcacheObserver.prototype = {
         eventType: "downloaderror",
         manifestURL: app.manifestURL
       });
-      mustSave = true;
     }
 
     switch (aState) {

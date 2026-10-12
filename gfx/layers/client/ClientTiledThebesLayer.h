@@ -43,8 +43,11 @@ class ClientTiledThebesLayer : public ThebesLayer,
 public:
   ClientTiledThebesLayer(ClientLayerManager* const aManager,
                          ClientLayerManager::ThebesLayerCreationHint aCreationHint = LayerManager::NONE);
+
+protected:
   ~ClientTiledThebesLayer();
 
+public:
   // Override name to distinguish it from ClientThebesLayer in layer dumps
   virtual const char* Name() const { return "TiledThebesLayer"; }
 
@@ -68,6 +71,14 @@ public:
   virtual void RenderLayer();
 
   virtual void ClearCachedResources() MOZ_OVERRIDE;
+
+  /**
+   * Helper method to find the nearest ancestor layers which
+   * scroll and have a displayport. The parameters are out-params
+   * which hold the return values; the values passed in may be null.
+   */
+  void GetAncestorLayers(ContainerLayer** aOutScrollAncestor,
+                         ContainerLayer** aOutDisplayPortAncestor);
 
 private:
   ClientLayerManager* ClientManager()

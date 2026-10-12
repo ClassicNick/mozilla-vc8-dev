@@ -23,6 +23,7 @@ include protocol PImageBridge;
 include protocol PIndexedDB;
 include protocol PMemoryReportRequest;
 include protocol PNecko;
+include protocol PScreenManager;
 include protocol PSharedBufferManager;
 include protocol PSms;
 include protocol PSpeechSynthesis;
@@ -30,6 +31,7 @@ include protocol PStorage;
 include protocol PTelephony;
 include protocol PTestShell;
 include protocol PJavaScript;
+include protocol PRemoteSpellcheckEngine;
 include DOMTypes;
 include JavaScriptTypes;
 include InputStreamParams;
@@ -71,6 +73,7 @@ struct FontListEntry {
     int16_t   stretch;
     uint8_t   italic;
     uint8_t   index;
+    bool      isHidden;
 };
 
 struct DeviceStorageFreeSpaceParams
@@ -123,6 +126,14 @@ struct DeviceStorageAddParams
   PBlob blob;
 };
 
+struct DeviceStorageAppendParams
+{
+  nsString type;
+  nsString storageName;
+  nsString relpath;
+  PBlob blob;
+};
+
 struct DeviceStorageCreateFdParams
 {
   nsString type;
@@ -156,6 +167,7 @@ struct DeviceStorageEnumerationParams
 union DeviceStorageParams
 {
   DeviceStorageAddParams;
+  DeviceStorageAppendParams;
   DeviceStorageCreateFdParams;
   DeviceStorageGetParams;
   DeviceStorageDeleteParams;
@@ -298,12 +310,14 @@ intr protocol PContent
     manages PIndexedDB;
     manages PMemoryReportRequest;
     manages PNecko;
+    manages PScreenManager;
     manages PSms;
     manages PSpeechSynthesis;
     manages PStorage;
     manages PTelephony;
     manages PTestShell;
     manages PJavaScript;
+    manages PRemoteSpellcheckEngine;
 
 both:
     // Depending on exactly how the new browser is being created, it might be
@@ -346,7 +360,8 @@ child:
      */
     async SetProcessSandbox();
 
-    PMemoryReportRequest(uint32_t generation, bool minimizeMemoryUsage, nsString DMDDumpIdent);
+    PMemoryReportRequest(uint32_t generation, bool anonymize,
+                         bool minimizeMemoryUsage, FileDescriptor DMDFile);
 
     /**
      * Notify the AudioChannelService in the child processes.
@@ -456,6 +471,7 @@ parent:
 
     async PJavaScript();
 
+    sync PRemoteSpellcheckEngine();
     PDeviceStorageRequest(DeviceStorageParams params);
 
     PFileSystemRequest(FileSystemParams params);
@@ -472,6 +488,11 @@ parent:
     PIndexedDB();
 
     PNecko();
+
+    sync PScreenManager()
+        returns (uint32_t numberOfScreens,
+                 float systemDefaultScale,
+                 bool success);
 
     PSms();
 
@@ -640,6 +661,8 @@ parent:
      * use the newly-invalid surface.
      */
     BackUpXResources(FileDescriptor aXSocketFd);
+
+    sync OpenAnonymousTemporaryFile() returns (FileDescriptor aFD);
 
 both:
      AsyncMessage(nsString aMessage, ClonedMessageData aData,

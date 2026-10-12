@@ -111,6 +111,7 @@ public:
     CONSUMED,
     NOT_CONSUMED
   };
+
   /**
    * Notify that the stream is hooked up and we'd like to start or stop receiving
    * data on it. Only fires on SourceMediaStreams.
@@ -157,16 +158,17 @@ public:
    */
   virtual void NotifyOutput(MediaStreamGraph* aGraph, GraphTime aCurrentTime) {}
 
-  /**
-   * Notify that the stream finished.
-   */
-  virtual void NotifyFinished(MediaStreamGraph* aGraph) {}
+  enum MediaStreamGraphEvent {
+    EVENT_FINISHED,
+    EVENT_REMOVED,
+    EVENT_HAS_DIRECT_LISTENERS, // transition from no direct listeners
+    EVENT_HAS_NO_DIRECT_LISTENERS,  // transition to no direct listeners
+  };
 
   /**
-   * Notify that your listener has been removed, either due to RemoveListener(),
-   * or due to the stream being destroyed.  You will get no further notifications.
+   * Notify that an event has occurred on the Stream
    */
-  virtual void NotifyRemoved(MediaStreamGraph* aGraph) {}
+  virtual void NotifyEvent(MediaStreamGraph* aGraph, MediaStreamGraphEvent aEvent) {}
 
   enum {
     TRACK_EVENT_CREATED = 0x01,
@@ -232,6 +234,7 @@ public:
  */
 struct AudioNodeSizes
 {
+  AudioNodeSizes() : mDomNode(0), mStream(0), mEngine(0), mNodeType() {}
   size_t mDomNode;
   size_t mStream;
   size_t mEngine;
@@ -381,7 +384,8 @@ public:
    * updates that were sent from the graph thread or will be sent before the
    * graph thread receives the next graph update.
    *
-   * If the graph has been shutdown or destroyed, or if it is non-realtime
+   * If the graph has been shut down or destroyed, then the runnable will be
+   * dispatched to the event queue immediately.  If the graph is non-realtime
    * and has not started, then the runnable will be run
    * synchronously/immediately.  (There are no pending updates in these
    * situations.)
@@ -656,9 +660,6 @@ protected:
    */
   bool mNotifiedHasCurrentData;
 
-  // Temporary data for ordering streams by dependency graph
-  bool mHasBeenOrdered;
-  bool mIsOnOrderingStack;
   // True if the stream is being consumed (i.e. has track data being played,
   // or is feeding into some stream that is being consumed).
   bool mIsConsumed;
@@ -1015,7 +1016,7 @@ private:
 class ProcessedMediaStream : public MediaStream {
 public:
   ProcessedMediaStream(DOMMediaStream* aWrapper)
-    : MediaStream(aWrapper), mAutofinish(false), mInCycle(false)
+    : MediaStream(aWrapper), mAutofinish(false)
   {}
 
   // Control API.
@@ -1084,7 +1085,10 @@ public:
    */
   virtual void ForwardTrackEnabled(TrackID aOutputID, bool aEnabled) {};
 
-  bool InCycle() const { return mInCycle; }
+  // Only valid after MediaStreamGraphImpl::UpdateStreamOrder() has run.
+  // A DelayNode is considered to break a cycle and so this will not return
+  // true for echo loops, only for muted cycles.
+  bool InMutedCycle() const { return mCycleMarker; }
 
   virtual size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const MOZ_OVERRIDE
   {
@@ -1106,9 +1110,10 @@ protected:
   // The list of all inputs that are currently enabled or waiting to be enabled.
   nsTArray<MediaInputPort*> mInputs;
   bool mAutofinish;
-  // True if and only if this stream is in a cycle.
-  // Updated by MediaStreamGraphImpl::UpdateStreamOrder.
-  bool mInCycle;
+  // After UpdateStreamOrder(), mCycleMarker is either 0 or 1 to indicate
+  // whether this stream is in a muted cycle.  During ordering it can contain
+  // other marker values - see MediaStreamGraphImpl::UpdateStreamOrder().
+  uint32_t mCycleMarker;
 };
 
 /**

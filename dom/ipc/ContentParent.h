@@ -36,6 +36,7 @@ class nsIMemoryReporter;
 class ParentIdleListener;
 
 namespace mozilla {
+class PRemoteSpellcheckEngineParent;
 
 namespace ipc {
 class OptionalURIParams;
@@ -115,7 +116,8 @@ public:
      */
     static TabParent*
     CreateBrowserOrApp(const TabContext& aContext,
-                       Element* aFrameElement);
+                       Element* aFrameElement,
+                       ContentParent* aOpenerContentParent);
 
     static void GetAll(nsTArray<ContentParent*>& aArray);
     static void GetAllEvenIfDead(nsTArray<ContentParent*>& aArray);
@@ -208,7 +210,7 @@ public:
      * etc.  So please don't use this name to make any decisions about the
      * ContentParent based on the value returned here.
      */
-    void FriendlyName(nsAString& aName);
+    void FriendlyName(nsAString& aName, bool aAnonymize = false);
 
     virtual void OnChannelError() MOZ_OVERRIDE;
 
@@ -229,6 +231,12 @@ public:
         return PContentParent::RecvPNeckoConstructor(aActor);
     }
 
+    virtual PScreenManagerParent*
+    AllocPScreenManagerParent(uint32_t* aNumberOfScreens,
+                              float* aSystemDefaultScale,
+                              bool* aSuccess) MOZ_OVERRIDE;
+    virtual bool DeallocPScreenManagerParent(PScreenManagerParent* aActor) MOZ_OVERRIDE;
+
     virtual PHalParent* AllocPHalParent() MOZ_OVERRIDE;
     virtual bool RecvPHalConstructor(PHalParent* aActor) MOZ_OVERRIDE {
         return PContentParent::RecvPHalConstructor(aActor);
@@ -245,6 +253,7 @@ public:
     RecvPJavaScriptConstructor(PJavaScriptParent* aActor) MOZ_OVERRIDE {
         return PContentParent::RecvPJavaScriptConstructor(aActor);
     }
+    virtual PRemoteSpellcheckEngineParent* AllocPRemoteSpellcheckEngineParent() MOZ_OVERRIDE;
 
     virtual bool RecvRecordingDeviceEvents(const nsString& aRecordingStatus,
                                            const nsString& aPageURL,
@@ -265,7 +274,6 @@ protected:
     void OnNuwaForkTimeout();
 
     bool ShouldContinueFromReplyTimeout() MOZ_OVERRIDE;
-    bool ShouldSandboxContentProcesses();
 
 private:
     static nsDataHashtable<nsStringHashKey, ContentParent*> *sAppContentParents;
@@ -388,6 +396,7 @@ private:
 
     virtual bool DeallocPJavaScriptParent(mozilla::jsipc::PJavaScriptParent*) MOZ_OVERRIDE;
 
+    virtual bool DeallocPRemoteSpellcheckEngineParent(PRemoteSpellcheckEngineParent*) MOZ_OVERRIDE;
     virtual PBrowserParent* AllocPBrowserParent(const IPCTabContext& aContext,
                                                 const uint32_t& aChromeFlags,
                                                 const uint64_t& aId,
@@ -418,9 +427,10 @@ private:
     virtual bool DeallocPIndexedDBParent(PIndexedDBParent* aActor) MOZ_OVERRIDE;
 
     virtual PMemoryReportRequestParent*
-    AllocPMemoryReportRequestParent(const uint32_t& generation,
-                                    const bool &minimizeMemoryUsage,
-                                    const nsString &aDMDDumpIdent) MOZ_OVERRIDE;
+    AllocPMemoryReportRequestParent(const uint32_t& aGeneration,
+                                    const bool &aAnonymize,
+                                    const bool &aMinimizeMemoryUsage,
+                                    const FileDescriptor &aDMDFile) MOZ_OVERRIDE;
     virtual bool DeallocPMemoryReportRequestParent(PMemoryReportRequestParent* actor) MOZ_OVERRIDE;
 
     virtual PCycleCollectWithLogsParent*
@@ -608,6 +618,9 @@ private:
     virtual bool
     RecvBackUpXResources(const FileDescriptor& aXSocketFd) MOZ_OVERRIDE;
 
+    virtual bool
+    RecvOpenAnonymousTemporaryFile(FileDescriptor* aFD) MOZ_OVERRIDE;
+
     virtual PFileDescriptorSetParent*
     AllocPFileDescriptorSetParent(const mozilla::ipc::FileDescriptor&) MOZ_OVERRIDE;
 
@@ -684,8 +697,8 @@ public:
   ParentIdleListener(mozilla::dom::ContentParent* aParent, uint64_t aObserver)
     : mParent(aParent), mObserver(aObserver)
   {}
-  virtual ~ParentIdleListener() {}
 private:
+  virtual ~ParentIdleListener() {}
   nsRefPtr<mozilla::dom::ContentParent> mParent;
   uint64_t mObserver;
 };

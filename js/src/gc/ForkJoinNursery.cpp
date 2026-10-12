@@ -15,9 +15,9 @@
 
 #include "gc/Heap.h"
 #include "jit/IonFrames.h"
+#include "jit/RematerializedFrame.h"
 #include "vm/ArrayObject.h"
 #include "vm/ForkJoin.h"
-#include "vm/TypedArrayObject.h"
 
 #include "jsgcinlines.h"
 #include "gc/Nursery-inl.h"
@@ -177,9 +177,6 @@ ForkJoinNursery::ForkJoinNursery(ForkJoinContext *cx, ForkJoinGCShared *shared, 
         newspace[i] = nullptr;
         fromspace[i] = nullptr;
     }
-    if (!hugeSlots[hugeSlotsNew].init() || !hugeSlots[hugeSlotsFrom].init())
-        CrashAtUnhandlableOOM("Cannot initialize PJS nursery");
-    initNewspace();             // This can fail to return
 }
 
 ForkJoinNursery::~ForkJoinNursery()
@@ -188,6 +185,16 @@ ForkJoinNursery::~ForkJoinNursery()
         if (newspace[i])
             shared_->freeNurseryChunk(newspace[i]);
     }
+}
+
+bool
+ForkJoinNursery::initialize()
+{
+    if (!hugeSlots[hugeSlotsNew].init() || !hugeSlots[hugeSlotsFrom].init())
+        return false;
+    if (!initNewspace())
+        return false;
+    return true;
 }
 
 void
@@ -240,7 +247,8 @@ ForkJoinNursery::pjsCollection(int op)
 
     flip();
     if (recreate) {
-        initNewspace();
+        if (!initNewspace())
+            CrashAtUnhandlableOOM("Cannot expand PJS nursery during GC");
         // newspace must be at least as large as fromSpace
         numActiveChunks_ = currentNumActiveChunks_;
     }
@@ -248,7 +256,7 @@ ForkJoinNursery::pjsCollection(int op)
     forwardFromRoots(&trc);
     collectToFixedPoint(&trc);
 #ifdef JS_ION
-    jit::UpdateJitActivationsForMinorGC(TlsPerThreadData.get(), &trc);
+    jit::UpdateJitActivationsForMinorGC<ForkJoinNursery>(TlsPerThreadData.get(), &trc);
 #endif
     freeFromspace();
 
@@ -343,14 +351,14 @@ ForkJoinNursery::freeFromspace()
     numFromspaceChunks_ = 0;
 }
 
-void
+bool
 ForkJoinNursery::initNewspace()
 {
     JS_ASSERT(newspace[0] == nullptr);
     JS_ASSERT(numActiveChunks_ == 0);
 
     numActiveChunks_ = 1;
-    setCurrentChunk(0);
+    return setCurrentChunk(0);
 }
 
 MOZ_ALWAYS_INLINE bool
@@ -390,6 +398,7 @@ ForkJoinNursery::forwardFromRoots(ForkJoinNurseryCollectionTracer *trc)
     forwardFromUpdatable(trc);
     forwardFromStack(trc);
     forwardFromTenured(trc);
+    forwardFromRematerializedFrames(trc);
 }
 
 void
@@ -410,6 +419,7 @@ void
 ForkJoinNursery::forwardFromTenured(ForkJoinNurseryCollectionTracer *trc)
 {
     JSObject *objs[ArenaCellCount];
+    ArenaLists &lists = tenured_->arenas;
     for (size_t k=0; k < FINALIZE_LIMIT; k++) {
         AllocKind kind = (AllocKind)k;
         if (!IsFJNurseryAllocable(kind))
@@ -420,28 +430,34 @@ ForkJoinNursery::forwardFromTenured(ForkJoinNurseryCollectionTracer *trc)
         // handled.
         JS_ASSERT(kind <= FINALIZE_OBJECT_LAST);
 
+        // Clear the free list that we're currently allocating out of.
+        lists.purge(kind);
+
+        // Since we only purge once, there must not currently be any partially
+        // full arenas left to allocate out of, or we would break out early.
+        JS_ASSERT(!lists.getArenaAfterCursor(kind));
+
         ArenaIter ai;
         ai.init(const_cast<Allocator *>(tenured_), kind);
         for (; !ai.done(); ai.next()) {
-            // Do the walk in two steps to avoid problems resulting from allocating
-            // into the arena that's being walked: ArenaCellIter is not safe for that.
-            // It can happen during evacuation.
-            //
-            // ArenaCellIterUnderFinalize requires any free list to be flushed into
-            // its arena, and since we may allocate within traceObject() we must
-            // purge before each arena scan.  This is probably not very expensive,
-            // it's constant work, and inlined.
-            //
+            if (isEvacuating_ && lists.arenaIsInUse(ai.get(), kind))
+                break;
             // Use ArenaCellIterUnderFinalize, not ...UnderGC, because that side-steps
             // some assertions in the latter that are wrong for PJS collection.
             size_t numObjs = 0;
-            tenured_->arenas.purge(kind);
             for (ArenaCellIterUnderFinalize i(ai.get()); !i.done(); i.next())
                 objs[numObjs++] = i.get<JSObject>();
             for (size_t i=0; i < numObjs; i++)
                 traceObject(trc, objs[i]);
         }
     }
+}
+
+void
+ForkJoinNursery::forwardFromRematerializedFrames(ForkJoinNurseryCollectionTracer *trc)
+{
+    if (cx_->bailoutRecord->hasFrames())
+        jit::RematerializedFrame::MarkInVector(trc, cx_->bailoutRecord->frames());
 }
 
 /*static*/ void
@@ -470,7 +486,7 @@ ForkJoinNursery::collectToFixedPoint(ForkJoinNurseryCollectionTracer *trc)
         traceObject(trc, static_cast<JSObject *>(p->forwardingAddress()));
 }
 
-inline void
+inline bool
 ForkJoinNursery::setCurrentChunk(int index)
 {
     JS_ASSERT((size_t)index < numActiveChunks_);
@@ -479,7 +495,7 @@ ForkJoinNursery::setCurrentChunk(int index)
     currentChunk_ = index;
     ForkJoinNurseryChunk *c = shared_->allocateNurseryChunk();
     if (!c)
-        CrashAtUnhandlableOOM("Cannot expand PJS nursery");
+        return false;
     c->trailer.runtime = shared_->runtime();
     c->trailer.location = gc::ChunkLocationBitPJSNewspace;
     c->trailer.storeBuffer = nullptr;
@@ -487,6 +503,7 @@ ForkJoinNursery::setCurrentChunk(int index)
     currentEnd_ = c->end();
     position_ = currentStart_;
     newspace[index] = c;
+    return true;
 }
 
 void *
@@ -497,7 +514,15 @@ ForkJoinNursery::allocate(size_t size)
     if (currentEnd_ - position_ < size) {
         if (currentChunk_ + 1 == numActiveChunks_)
             return nullptr;
-        setCurrentChunk(currentChunk_ + 1);
+        // Failure to allocate on growth is treated the same as exhaustion
+        // of the nursery.  If this happens during normal execution then
+        // we'll trigger a minor collection.  That collection will likely
+        // fail to obtain a block for the new tospace, and we'll go OOM
+        // immediately; that's expected and acceptable.  If we do continue
+        // to run (because some other thread or process has freed the memory)
+        // then so much the better.
+        if (!setCurrentChunk(currentChunk_ + 1))
+            return nullptr;
     }
 
     void *thing = reinterpret_cast<void *>(position_);
@@ -723,6 +748,18 @@ ForkJoinNursery::getObjectAllocKind(JSObject *obj)
     return GetBackgroundAllocKind(kind);
 }
 
+// Nursery allocation will never fail during GC - apart from true OOM - since
+// newspace is at least as large as fromspace, ergo a nullptr return from the
+// allocator means true OOM, which we catch and signal here.
+void *
+ForkJoinNursery::allocateInTospaceInfallible(size_t thingSize)
+{
+    void *p = allocate(thingSize);
+    if (!p)
+        CrashAtUnhandlableOOM("Cannot expand PJS nursery during GC");
+    return p;
+}
+
 void *
 ForkJoinNursery::allocateInTospace(gc::AllocKind thingKind)
 {
@@ -738,13 +775,8 @@ ForkJoinNursery::allocateInTospace(gc::AllocKind thingKind)
         // budget is used up.  There is a guard in
         // Chunk::allocateArena() against the latter case.
         return tenured_->arenas.allocateFromArena(evacuationZone_, thingKind);
-    } else {
-        // Nursery allocation will never fail during GC - apart from
-        // true OOM - since newspace is at least as large as
-        // fromspace; true OOM is caught and signaled within
-        // ForkJoinNursery::setCurrentChunk().
-        return allocate(thingSize);
     }
+    return allocateInTospaceInfallible(thingSize);
 }
 
 void *
@@ -752,7 +784,7 @@ ForkJoinNursery::allocateInTospace(size_t nelem, size_t elemSize)
 {
     if (isEvacuating_)
         return evacuationZone_->malloc_(nelem * elemSize);
-    return allocate(nelem * elemSize);
+    return allocateInTospaceInfallible(nelem * elemSize);
 }
 
 MOZ_ALWAYS_INLINE void
@@ -795,9 +827,6 @@ ForkJoinNursery::copyObjectToTospace(JSObject *dst, JSObject *src, AllocKind dst
     js_memcpy(dst, src, srcSize);
     movedSize += copySlotsToTospace(dst, src, dstKind);
     movedSize += copyElementsToTospace(dst, src, dstKind);
-
-    if (src->is<TypedArrayObject>())
-        dst->setPrivate(dst->fixedData(TypedArrayObject::FIXED_DATA_START));
 
     // The shape's list head may point into the old object.
     if (&src->shape_ == dst->shape_->listp) {

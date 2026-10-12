@@ -8,7 +8,6 @@
 #include "mozilla/dom/MozCellBroadcastEvent.h"
 #include "nsIDOMMozCellBroadcastMessage.h"
 #include "nsServiceManagerUtils.h"
-#include "GeneratedEvents.h"
 
 #define NS_RILCONTENTHELPER_CONTRACTID "@mozilla.org/ril/content-helper;1"
 
@@ -18,7 +17,7 @@ using namespace mozilla::dom;
  * CellBroadcast::Listener Implementation.
  */
 
-class CellBroadcast::Listener : public nsICellBroadcastListener
+class CellBroadcast::Listener MOZ_FINAL : public nsICellBroadcastListener
 {
 private:
   CellBroadcast* mCellBroadcast;
@@ -37,6 +36,12 @@ public:
   {
     MOZ_ASSERT(mCellBroadcast);
     mCellBroadcast = nullptr;
+  }
+
+private:
+  ~Listener()
+  {
+    MOZ_ASSERT(!mCellBroadcast);
   }
 };
 

@@ -93,6 +93,9 @@ XPCOMUtils.defineLazyModuleGetter(this, "BrowserUITelemetry",
 XPCOMUtils.defineLazyModuleGetter(this, "AsyncShutdown",
                                   "resource://gre/modules/AsyncShutdown.jsm");
 
+XPCOMUtils.defineLazyModuleGetter(this, "LoginManagerParent",
+                                  "resource://gre/modules/LoginManagerParent.jsm");
+
 #ifdef NIGHTLY_BUILD
 XPCOMUtils.defineLazyModuleGetter(this, "SignInToWebsiteUX",
                                   "resource:///modules/SignInToWebsite.jsm");
@@ -318,12 +321,14 @@ BrowserGlue.prototype = {
          // the UI has gone should be finalized in _onQuitApplicationGranted.
         this._dispose();
         break;
-#ifdef MOZ_SERVICES_HEALTHREPORT
       case "keyword-search":
         // This is very similar to code in
         // browser.js:BrowserSearch.recordSearchInHealthReport(). The code could
         // be consolidated if there is will. We need the observer in
         // nsBrowserGlue to prevent double counting.
+        let win = this.getMostRecentBrowserWindow();
+        BrowserUITelemetry.countSearchEvent("urlbar", win.gURLBar.value);
+#ifdef MOZ_SERVICES_HEALTHREPORT
         let reporter = Cc["@mozilla.org/datareporting/service;1"]
                          .getService()
                          .wrappedJSObject
@@ -341,8 +346,8 @@ BrowserGlue.prototype = {
             Cu.reportError(ex);
           }
         });
-        break;
 #endif
+        break;
       case "browser-search-engine-modified":
         if (data != "engine-default" && data != "engine-current") {
           break;
@@ -507,6 +512,8 @@ BrowserGlue.prototype = {
       RemotePrompt.init();
     }
 
+    LoginManagerParent.init();
+
     Services.obs.notifyObservers(null, "browser-ui-startup-complete", "");
   },
 
@@ -630,6 +637,22 @@ BrowserGlue.prototype = {
                           nb.PRIORITY_INFO_LOW, buttons);
   },
 
+  _firstWindowTelemetry: function(aWindow) {
+#ifdef XP_WIN
+    let SCALING_PROBE_NAME = "DISPLAY_SCALING_MSWIN";
+#elifdef XP_MACOSX
+    let SCALING_PROBE_NAME = "DISPLAY_SCALING_OSX";
+#elifdef XP_LINUX
+    let SCALING_PROBE_NAME = "DISPLAY_SCALING_LINUX";
+#else
+    let SCALING_PROBE_NAME = "";
+#endif
+    if (SCALING_PROBE_NAME) {
+      let scaling = aWindow.devicePixelRatio * 100;
+      Services.telemetry.getHistogramById(SCALING_PROBE_NAME).add(scaling);
+    }
+  },
+
   // the first browser window has finished initializing
   _onFirstWindowLoaded: function BG__onFirstWindowLoaded(aWindow) {
 #ifdef XP_WIN
@@ -658,6 +681,8 @@ BrowserGlue.prototype = {
     }
 
     this._checkForOldBuildUpdates();
+
+    this._firstWindowTelemetry(aWindow);
   },
 
   /**

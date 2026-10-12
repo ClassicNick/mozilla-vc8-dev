@@ -170,7 +170,7 @@ NS_NewSVGFEImageFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
 nsIFrame*
 NS_NewSVGFEUnstyledLeafFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
 
-#include "nsINodeInfo.h"
+#include "mozilla/dom/NodeInfo.h"
 #include "prenv.h"
 #include "nsNodeInfoManager.h"
 #include "nsContentCreatorFunctions.h"
@@ -1610,7 +1610,7 @@ nsCSSFrameConstructor::CreateGeneratedContent(nsFrameConstructorState& aState,
     // Create an image content object and pass it the image request.
     // XXX Check if it's an image type we can handle...
 
-    nsCOMPtr<nsINodeInfo> nodeInfo;
+    nsRefPtr<NodeInfo> nodeInfo;
     nodeInfo = mDocument->NodeInfoManager()->
       GetNodeInfo(nsGkAtoms::mozgeneratedcontentimage, nullptr,
                   kNameSpaceID_XHTML, nsIDOMNode::ELEMENT_NODE);
@@ -1786,7 +1786,7 @@ nsCSSFrameConstructor::CreateGeneratedContentItem(nsFrameConstructorState& aStat
     return;
   // |ProbePseudoStyleFor| checked the 'display' property and the
   // |ContentCount()| of the 'content' property for us.
-  nsCOMPtr<nsINodeInfo> nodeInfo;
+  nsRefPtr<NodeInfo> nodeInfo;
   nsIAtom* elemName = aPseudoElement == nsCSSPseudoElements::ePseudo_before ?
     nsGkAtoms::mozgeneratedcontentbefore : nsGkAtoms::mozgeneratedcontentafter;
   nodeInfo = mDocument->NodeInfoManager()->GetNodeInfo(elemName, nullptr,
@@ -5266,8 +5266,9 @@ nsCSSFrameConstructor::AddFrameConstructionItems(nsFrameConstructorState& aState
                                     aItems);
 }
 
-/* static */ void
-nsCSSFrameConstructor::SetAsUndisplayedContent(FrameConstructionItemList& aList,
+void
+nsCSSFrameConstructor::SetAsUndisplayedContent(nsFrameConstructorState& aState,
+                                               FrameConstructionItemList& aList,
                                                nsIContent* aContent,
                                                nsStyleContext* aStyleContext,
                                                bool aIsGeneratedContent)
@@ -5278,8 +5279,13 @@ nsCSSFrameConstructor::SetAsUndisplayedContent(FrameConstructionItemList& aList,
     }
     return;
   }
-
   NS_ASSERTION(!aIsGeneratedContent, "Should have had pseudo type");
+
+  if (aState.mCreatingExtraFrames) {
+    MOZ_ASSERT(GetUndisplayedContent(aContent),
+               "should have called SetUndisplayedContent earlier");
+    return;
+  }
   aList.AppendUndisplayedItem(aContent, aStyleContext);
 }
 
@@ -5345,7 +5351,7 @@ nsCSSFrameConstructor::AddFrameConstructionItemsInternal(nsFrameConstructorState
   // Pre-check for display "none" - if we find that, don't create
   // any frame at all
   if (NS_STYLE_DISPLAY_NONE == display->mDisplay) {
-    SetAsUndisplayedContent(aItems, aContent, styleContext, isGeneratedContent);
+    SetAsUndisplayedContent(aState, aItems, aContent, styleContext, isGeneratedContent);
     return;
   }
 
@@ -5369,7 +5375,7 @@ nsCSSFrameConstructor::AddFrameConstructionItemsInternal(nsFrameConstructorState
         !aContent->IsRootOfNativeAnonymousSubtree()) {
       // No frame for aContent
       if (!isText) {
-        SetAsUndisplayedContent(aItems, aContent, styleContext,
+        SetAsUndisplayedContent(aState, aItems, aContent, styleContext,
                                 isGeneratedContent);
       }
       return;
@@ -5394,7 +5400,7 @@ nsCSSFrameConstructor::AddFrameConstructionItemsInternal(nsFrameConstructorState
           IsFrameForSVG(aParentFrame) &&
           !aParentFrame->IsFrameOfType(nsIFrame::eSVGForeignObject)) ||
          (aFlags & ITEM_IS_WITHIN_SVG_TEXT))) {
-      SetAsUndisplayedContent(aItems, element, styleContext,
+      SetAsUndisplayedContent(aState, aItems, element, styleContext,
                               isGeneratedContent);
       return;
     }
@@ -5427,7 +5433,7 @@ nsCSSFrameConstructor::AddFrameConstructionItemsInternal(nsFrameConstructorState
     NS_ASSERTION(data, "Should have frame construction data now");
 
     if (data->mBits & FCDATA_SUPPRESS_FRAME) {
-      SetAsUndisplayedContent(aItems, element, styleContext, isGeneratedContent);
+      SetAsUndisplayedContent(aState, aItems, element, styleContext, isGeneratedContent);
       return;
     }
 
@@ -5437,7 +5443,7 @@ nsCSSFrameConstructor::AddFrameConstructionItemsInternal(nsFrameConstructorState
          aParentFrame->GetType() != nsGkAtoms::menuFrame)) {
       if (!aState.mPopupItems.containingBlock &&
           !aState.mHavePendingPopupgroup) {
-        SetAsUndisplayedContent(aItems, element, styleContext,
+        SetAsUndisplayedContent(aState, aItems, element, styleContext,
                                 isGeneratedContent);
         return;
       }
@@ -5454,7 +5460,7 @@ nsCSSFrameConstructor::AddFrameConstructionItemsInternal(nsFrameConstructorState
       aParentFrame->GetType() == nsGkAtoms::tableColGroupFrame &&
       (!(bits & FCDATA_IS_TABLE_PART) ||
        display->mDisplay != NS_STYLE_DISPLAY_TABLE_COLUMN)) {
-    SetAsUndisplayedContent(aItems, aContent, styleContext, isGeneratedContent);
+    SetAsUndisplayedContent(aState, aItems, aContent, styleContext, isGeneratedContent);
     return;
   }
 
@@ -8133,14 +8139,15 @@ nsCSSFrameConstructor::CreateContinuingTableFrame(nsIPresShell*     aPresShell,
       headerFooterFrame = static_cast<nsTableRowGroupFrame*>
                                      (NS_NewTableRowGroupFrame(aPresShell, headerFooterStyleContext));
 
+      nsIContent* headerFooter = rowGroupFrame->GetContent();
+      headerFooterFrame->Init(headerFooter, newFrame, nullptr);
+
       nsFrameConstructorSaveState absoluteSaveState;
       MakeTablePartAbsoluteContainingBlockIfNeeded(state,
                                                    headerFooterStyleContext->StyleDisplay(),
                                                    absoluteSaveState,
                                                    headerFooterFrame);
 
-      nsIContent* headerFooter = rowGroupFrame->GetContent();
-      headerFooterFrame->Init(headerFooter, newFrame, nullptr);
       ProcessChildren(state, headerFooter, rowGroupFrame->StyleContext(),
                       headerFooterFrame, true, childItems, false,
                       nullptr);

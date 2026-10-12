@@ -36,6 +36,7 @@
 #include "jit/ParallelSafetyAnalysis.h"
 #include "jit/PerfSpewer.h"
 #include "jit/RangeAnalysis.h"
+#include "jit/ScalarReplacement.h"
 #include "jit/StupidAllocator.h"
 #include "jit/UnreachableCodeElimination.h"
 #include "jit/ValueNumbering.h"
@@ -226,9 +227,16 @@ JitRuntime::initialize(JSContext *cx)
         }
 
         IonSpew(IonSpew_Codegen, "# Emitting bailout handler");
-        bailoutHandler_ = generateBailoutHandler(cx);
+        bailoutHandler_ = generateBailoutHandler(cx, SequentialExecution);
         if (!bailoutHandler_)
             return false;
+
+#ifdef JS_THREADSAFE
+        IonSpew(IonSpew_Codegen, "# Emitting parallel bailout handler");
+        parallelBailoutHandler_ = generateBailoutHandler(cx, ParallelExecution);
+        if (!parallelBailoutHandler_)
+            return false;
+#endif
 
         IonSpew(IonSpew_Codegen, "# Emitting invalidator");
         invalidator_ = generateInvalidator(cx);
@@ -534,6 +542,12 @@ JitCompartment::notifyOfActiveParallelEntryScript(JSContext *cx, HandleScript sc
     return p || activeParallelEntryScripts_->add(p, script);
 }
 
+bool
+JitCompartment::hasRecentParallelActivity() const
+{
+    return activeParallelEntryScripts_ && !activeParallelEntryScripts_->empty();
+}
+
 void
 jit::FinishOffThreadBuilder(IonBuilder *builder)
 {
@@ -603,7 +617,8 @@ JitCompartment::mark(JSTracer *trc, JSCompartment *compartment)
             // off-thread helper too late (i.e., the ForkJoin finished with
             // warmup doing all the work), remove it.
             if (!script->hasParallelIonScript() ||
-                !script->parallelIonScript()->isParallelEntryScript())
+                !script->parallelIonScript()->isParallelEntryScript() ||
+                trc->runtime()->gc.shouldCleanUpEverything())
             {
                 e.removeFront();
                 continue;
@@ -615,9 +630,12 @@ JitCompartment::mark(JSTracer *trc, JSCompartment *compartment)
             // Subtlety: We depend on the tracing of the parallel IonScript's
             // callTargetEntries to propagate the parallel age to the entire
             // call graph.
-            if (ShouldPreserveParallelJITCode(trc->runtime(), script, /* increase = */ true)) {
+            if (script->parallelIonScript()->shouldPreserveParallelCode(IonScript::IncreaseAge)) {
                 MarkScript(trc, const_cast<PreBarrieredScript *>(&e.front()), "par-script");
                 MOZ_ASSERT(script == e.front());
+            } else {
+                script->parallelIonScript()->clearIsParallelEntryScript();
+                e.removeFront();
             }
         }
     }
@@ -952,13 +970,8 @@ IonScript::trace(JSTracer *trc)
 
     // No write barrier is needed for the call target list, as it's attached
     // at compilation time and is read only.
-    for (size_t i = 0; i < callTargetEntries(); i++) {
-        // Propagate the parallelAge to the call targets.
-        if (callTargetList()[i]->hasParallelIonScript())
-            callTargetList()[i]->parallelIonScript()->parallelAge_ = parallelAge_;
-
+    for (size_t i = 0; i < callTargetEntries(); i++)
         gc::MarkScriptUnbarriered(trc, &callTargetList()[i], "callTarget");
-    }
 }
 
 /* static */ void
@@ -1019,15 +1032,21 @@ IonScript::copyCallTargetEntries(JSScript **callTargets)
 
 void
 IonScript::copyPatchableBackedges(JSContext *cx, JitCode *code,
-                                  PatchableBackedgeInfo *backedges)
+                                  PatchableBackedgeInfo *backedges,
+                                  MacroAssembler &masm)
 {
     for (size_t i = 0; i < backedgeEntries_; i++) {
-        const PatchableBackedgeInfo &info = backedges[i];
+        PatchableBackedgeInfo &info = backedges[i];
         PatchableBackedge *patchableBackedge = &backedgeList()[i];
 
+        // Convert to actual offsets for the benefit of the ARM backend.
+        info.backedge.fixup(&masm);
+        uint32_t loopHeaderOffset = masm.actualOffset(info.loopHeader->offset());
+        uint32_t interruptCheckOffset = masm.actualOffset(info.interruptCheck->offset());
+
         CodeLocationJump backedge(code, info.backedge);
-        CodeLocationLabel loopHeader(code, CodeOffsetLabel(info.loopHeader->offset()));
-        CodeLocationLabel interruptCheck(code, CodeOffsetLabel(info.interruptCheck->offset()));
+        CodeLocationLabel loopHeader(code, CodeOffsetLabel(loopHeaderOffset));
+        CodeLocationLabel interruptCheck(code, CodeOffsetLabel(interruptCheckOffset));
         new(patchableBackedge) PatchableBackedge(backedge, loopHeader, interruptCheck);
 
         // Point the backedge to either of its possible targets, according to
@@ -1313,6 +1332,17 @@ OptimizeMIR(MIRGenerator *mir)
             return false;
     }
 
+    if (mir->optimizationInfo().scalarReplacementEnabled()) {
+        AutoTraceLog log(logger, TraceLogger::ScalarReplacement);
+        if (!ScalarReplacement(mir, graph))
+            return false;
+        IonSpewPass("Scalar Replacement");
+        AssertGraphCoherency(graph);
+
+        if (mir->shouldCancel("Scalar Replacement"))
+            return false;
+    }
+
     {
         AutoTraceLog log(logger, TraceLogger::PhiAnalysis);
         // Aggressive phi elimination must occur before any code elimination. If the
@@ -1384,8 +1414,8 @@ OptimizeMIR(MIRGenerator *mir)
 
     if (mir->optimizationInfo().gvnEnabled()) {
         AutoTraceLog log(logger, TraceLogger::GVN);
-        ValueNumberer gvn(mir, graph, mir->optimizationInfo().gvnKind() == GVN_Optimistic);
-        if (!gvn.analyze())
+        ValueNumberer gvn(mir, graph);
+        if (!gvn.run(ValueNumberer::UpdateAliasAnalysis))
             return false;
         IonSpewPass("GVN");
         AssertExtendedGraphCoherency(graph);
@@ -1898,7 +1928,9 @@ IonCompile(JSContext *cx, JSScript *script,
         builderScript->ionScript()->setRecompiling();
     }
 
-    IonSpewNewFunction(graph, builderScript);
+#ifdef DEBUG
+    IonSpewFunction ionSpewFunction(graph, builderScript);
+#endif
 
     bool succeeded = builder->build();
     builder->clearForBackEnd();
@@ -1933,8 +1965,6 @@ IonCompile(JSContext *cx, JSScript *script,
     }
 
     bool success = codegen->link(cx, builder->constraints());
-
-    IonSpewEndFunction();
 
     return success ? AbortReason_NoAbort : AbortReason_Disable;
 }
@@ -2609,14 +2639,14 @@ InvalidateActivation(FreeOp *fop, uint8_t *jitTop, bool invalidateAll)
         CodeLocationLabel dataLabelToMunge(it.returnAddressToFp());
         ptrdiff_t delta = ionScript->invalidateEpilogueDataOffset() -
                           (it.returnAddressToFp() - ionCode->raw());
-        Assembler::patchWrite_Imm32(dataLabelToMunge, Imm32(delta));
+        Assembler::PatchWrite_Imm32(dataLabelToMunge, Imm32(delta));
 
         CodeLocationLabel osiPatchPoint = SafepointReader::InvalidationPatchPoint(ionScript, si);
         CodeLocationLabel invalidateEpilogue(ionCode, CodeOffsetLabel(ionScript->invalidateEpilogueOffset()));
 
         IonSpew(IonSpew_Invalidate, "   ! Invalidate ionScript %p (ref %u) -> patching osipoint %p",
                 ionScript, ionScript->refcount(), (void *) osiPatchPoint.raw());
-        Assembler::patchWrite_NearCall(osiPatchPoint, invalidateEpilogue);
+        Assembler::PatchWrite_NearCall(osiPatchPoint, invalidateEpilogue);
     }
 
     IonSpew(IonSpew_Invalidate, "END invalidating activation");

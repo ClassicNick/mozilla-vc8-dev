@@ -181,11 +181,14 @@ extern const char * const TypeStrings[];
 /*
  * Atom tracing and garbage collection hooks.
  */
-extern void
+void
 MarkAtoms(JSTracer *trc);
 
-extern void
+void
 MarkPermanentAtoms(JSTracer *trc);
+
+void
+MarkWellKnownSymbols(JSTracer *trc);
 
 /* N.B. must correspond to boolean tagging behavior. */
 enum InternBehavior
@@ -205,6 +208,10 @@ AtomizeChars(ExclusiveContext *cx, const CharT *chars, size_t length,
 
 extern JSAtom *
 AtomizeString(ExclusiveContext *cx, JSString *str, js::InternBehavior ib = js::DoNotInternAtom);
+
+extern JSAtom *
+AtomizeSubstring(ExclusiveContext *cx, JSString *str, size_t start, size_t length,
+                 InternBehavior ib = DoNotInternAtom);
 
 template <AllowGC allowGC>
 extern JSAtom *

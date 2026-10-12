@@ -13,6 +13,7 @@
 #include "Layers.h"                     // for Layer, ContainerLayer, etc
 #include "gfxPoint.h"                   // for gfxPoint, gfxSize
 #include "gfxPoint3D.h"                 // for gfxPoint3D
+#include "mozilla/StyleAnimationValue.h" // for StyleAnimationValue, etc
 #include "mozilla/WidgetUtils.h"        // for ComputeTransformForRotation
 #include "mozilla/gfx/BaseRect.h"       // for BaseRect
 #include "mozilla/gfx/Point.h"          // for RoundedToInt, PointTyped
@@ -30,7 +31,6 @@
 #include "nsPoint.h"                    // for nsPoint
 #include "nsRect.h"                     // for nsIntRect
 #include "nsRegion.h"                   // for nsIntRegion
-#include "nsStyleAnimation.h"           // for nsStyleAnimation::Value, etc
 #include "nsTArray.h"                   // for nsTArray, nsTArray_Impl, etc
 #include "nsTArrayForwardDeclare.h"     // for InfallibleTArray
 #if defined(MOZ_WIDGET_ANDROID)
@@ -141,8 +141,13 @@ static void
 TranslateShadowLayer2D(Layer* aLayer,
                        const gfxPoint& aTranslation)
 {
+  // This layer might also be a scrollable layer and have an async transform.
+  // To make sure we don't clobber that, we start with the shadow transform.
+  // Any adjustments to the shadow transform made in this function in previous
+  // frames have been cleared in ClearAsyncTransforms(), so such adjustments
+  // will not compound over successive frames.
   Matrix layerTransform;
-  if (!GetBaseTransform2D(aLayer, &layerTransform)) {
+  if (!aLayer->GetLocalTransform().Is2D(&layerTransform)) {
     return;
   }
 
@@ -239,6 +244,7 @@ void
 AsyncCompositionManager::AlignFixedAndStickyLayers(Layer* aLayer,
                                                    Layer* aTransformedSubtreeRoot,
                                                    const Matrix4x4& aPreviousTransformForRoot,
+                                                   const Matrix4x4& aCurrentTransformForRoot,
                                                    const LayerMargin& aFixedLayerMargins)
 {
   bool isRootFixed = aLayer->GetIsFixedPosition() &&
@@ -262,7 +268,7 @@ AsyncCompositionManager::AlignFixedAndStickyLayers(Layer* aLayer,
     Matrix oldRootTransform;
     Matrix newRootTransform;
     if (!aPreviousTransformForRoot.Is2D(&oldRootTransform) ||
-        !aTransformedSubtreeRoot->GetLocalTransform().Is2D(&newRootTransform)) {
+        !aCurrentTransformForRoot.Is2D(&newRootTransform)) {
       return;
     }
 
@@ -335,31 +341,33 @@ AsyncCompositionManager::AlignFixedAndStickyLayers(Layer* aLayer,
   }
 
   // Fixed layers are relative to their nearest scrollable layer, so when we
-  // encounter a scrollable layer, reset the transform to that layer and remove
-  // the fixed margins.
+  // encounter a scrollable layer, bail. ApplyAsyncContentTransformToTree will
+  // have already recursed on this layer and called AlignFixedAndStickyLayers
+  // on it with its own transforms.
   if (aLayer->AsContainerLayer() &&
       aLayer->AsContainerLayer()->GetFrameMetrics().IsScrollable() &&
       aLayer != aTransformedSubtreeRoot) {
-    AlignFixedAndStickyLayers(aLayer, aLayer, aLayer->GetTransform(), LayerMargin(0, 0, 0, 0));
     return;
   }
 
   for (Layer* child = aLayer->GetFirstChild();
        child; child = child->GetNextSibling()) {
     AlignFixedAndStickyLayers(child, aTransformedSubtreeRoot,
-                              aPreviousTransformForRoot, aFixedLayerMargins);
+                              aPreviousTransformForRoot,
+                              aCurrentTransformForRoot, aFixedLayerMargins);
   }
 }
 
 static void
-SampleValue(float aPortion, Animation& aAnimation, nsStyleAnimation::Value& aStart,
-            nsStyleAnimation::Value& aEnd, Animatable* aValue)
+SampleValue(float aPortion, Animation& aAnimation, StyleAnimationValue& aStart,
+            StyleAnimationValue& aEnd, Animatable* aValue)
 {
-  nsStyleAnimation::Value interpolatedValue;
+  StyleAnimationValue interpolatedValue;
   NS_ASSERTION(aStart.GetUnit() == aEnd.GetUnit() ||
-               aStart.GetUnit() == nsStyleAnimation::eUnit_None ||
-               aEnd.GetUnit() == nsStyleAnimation::eUnit_None, "Must have same unit");
-  nsStyleAnimation::Interpolate(aAnimation.property(), aStart, aEnd,
+               aStart.GetUnit() == StyleAnimationValue::eUnit_None ||
+               aEnd.GetUnit() == StyleAnimationValue::eUnit_None,
+               "Must have same unit");
+  StyleAnimationValue::Interpolate(aAnimation.property(), aStart, aEnd,
                                 aPortion, interpolatedValue);
   if (aAnimation.property() == eCSSProperty_opacity) {
     *aValue = interpolatedValue.GetFloatValue();
@@ -433,6 +441,9 @@ SampleAnimations(Layer* aLayer, TimeStamp aPoint)
 
     AnimationTiming timing;
     timing.mIterationDuration = animation.duration();
+    // Currently animations run on the compositor have their delay factored
+    // into their start time, hence the delay is effectively zero.
+    timing.mDelay = TimeDuration(0);
     timing.mIterationCount = animation.iterationCount();
     timing.mDirection = animation.direction();
     // Animations typically only run on the compositor during their active
@@ -442,7 +453,8 @@ SampleAnimations(Layer* aLayer, TimeStamp aPoint)
     timing.mFillMode = NS_STYLE_ANIMATION_FILL_MODE_BOTH;
 
     ComputedTiming computedTiming =
-      ElementAnimation::GetComputedTimingAt(elapsedDuration, timing);
+      ElementAnimation::GetComputedTimingAt(
+        Nullable<TimeDuration>(elapsedDuration), timing);
 
     NS_ABORT_IF_FALSE(0.0 <= computedTiming.mTimeFraction &&
                       computedTiming.mTimeFraction <= 1.0,
@@ -498,6 +510,15 @@ SampleAnimations(Layer* aLayer, TimeStamp aPoint)
   return activeAnimations;
 }
 
+Matrix4x4
+CombineWithCSSTransform(const gfx3DMatrix& treeTransform, Layer* aLayer)
+{
+  Matrix4x4 result;
+  ToMatrix4x4(treeTransform, result);
+  result = result * aLayer->GetTransform();
+  return result;
+}
+
 bool
 AsyncCompositionManager::ApplyAsyncContentTransformToTree(TimeStamp aCurrentFrame,
                                                           Layer *aLayer,
@@ -519,12 +540,13 @@ AsyncCompositionManager::ApplyAsyncContentTransformToTree(TimeStamp aCurrentFram
     LayerComposite* layerComposite = aLayer->AsLayerComposite();
     Matrix4x4 oldTransform = aLayer->GetTransform();
 
-    ViewTransform treeTransform;
+    ViewTransform treeTransformWithoutOverscroll, overscrollTransform;
     ScreenPoint scrollOffset;
     *aWantNextFrame |=
       controller->SampleContentTransformForFrame(aCurrentFrame,
-                                                 &treeTransform,
-                                                 scrollOffset);
+                                                 &treeTransformWithoutOverscroll,
+                                                 scrollOffset,
+                                                 &overscrollTransform);
 
     const FrameMetrics& metrics = container->GetFrameMetrics();
     CSSToLayerScale paintScale = metrics.LayersPixelsPerCSSPixel();
@@ -532,9 +554,9 @@ AsyncCompositionManager::ApplyAsyncContentTransformToTree(TimeStamp aCurrentFram
                         metrics.mDisplayPort : metrics.mCriticalDisplayPort);
     LayerMargin fixedLayerMargins(0, 0, 0, 0);
     ScreenPoint offset(0, 0);
-    SyncFrameMetrics(scrollOffset, treeTransform.mScale.scale, metrics.mScrollableRect,
-                     mLayersUpdated, displayPort, paintScale,
-                     mIsFirstPaint, fixedLayerMargins, offset);
+    SyncFrameMetrics(scrollOffset, treeTransformWithoutOverscroll.mScale.scale,
+                     metrics.mScrollableRect, mLayersUpdated, displayPort,
+                     paintScale, mIsFirstPaint, fixedLayerMargins, offset);
 
     mIsFirstPaint = false;
     mLayersUpdated = false;
@@ -542,9 +564,8 @@ AsyncCompositionManager::ApplyAsyncContentTransformToTree(TimeStamp aCurrentFram
     // Apply the render offset
     mLayerManager->GetCompositor()->SetScreenRenderOffset(offset);
 
-    Matrix4x4 transform;
-    ToMatrix4x4(gfx3DMatrix(treeTransform), transform);
-    transform = transform * aLayer->GetTransform();
+    Matrix4x4 transform = CombineWithCSSTransform(
+        treeTransformWithoutOverscroll * overscrollTransform, aLayer);
 
     // GetTransform already takes the pre- and post-scale into account.  Since we
     // will apply the pre- and post-scale again when computing the effective
@@ -564,7 +585,14 @@ AsyncCompositionManager::ApplyAsyncContentTransformToTree(TimeStamp aCurrentFram
     LayoutDeviceToLayerScale resolution = metrics.mCumulativeResolution;
     oldTransform.Scale(resolution.scale, resolution.scale, 1);
 
-    AlignFixedAndStickyLayers(aLayer, aLayer, oldTransform, fixedLayerMargins);
+    // For the purpose of aligning fixed and sticky layers, we disregard
+    // the overscroll transform when computing the 'aCurrentTransformForRoot'
+    // parameter. This ensures that the overscroll transform is not unapplied,
+    // and therefore that the visual effect applies to fixed and sticky layers.
+    Matrix4x4 transformWithoutOverscroll = CombineWithCSSTransform(
+        treeTransformWithoutOverscroll, aLayer);
+    AlignFixedAndStickyLayers(aLayer, aLayer, oldTransform,
+                              transformWithoutOverscroll, fixedLayerMargins);
 
     appliedTransform = true;
   }
@@ -867,7 +895,20 @@ AsyncCompositionManager::TransformScrollableLayer(Layer* aLayer)
 
   // Make sure fixed position layers don't move away from their anchor points
   // when we're asynchronously panning or zooming
-  AlignFixedAndStickyLayers(aLayer, aLayer, oldTransform, fixedLayerMargins);
+  AlignFixedAndStickyLayers(aLayer, aLayer, oldTransform,
+                            aLayer->GetLocalTransform(), fixedLayerMargins);
+}
+
+void
+ClearAsyncTransforms(Layer* aLayer)
+{
+  if (!aLayer->AsLayerComposite()->GetShadowTransformSetByAnimation()) {
+    aLayer->AsLayerComposite()->SetShadowTransform(aLayer->GetBaseTransform());
+  }
+  for (Layer* child = aLayer->GetFirstChild();
+      child; child = child->GetNextSibling()) {
+    ClearAsyncTransforms(child);
+  }
 }
 
 bool
@@ -884,6 +925,12 @@ AsyncCompositionManager::TransformShadowTree(TimeStamp aCurrentFrame)
   // NB: we must sample animations *before* sampling pan/zoom
   // transforms.
   bool wantNextFrame = SampleAnimations(root, aCurrentFrame);
+
+  // Clear any async transforms (not due to animations) set in previous frames.
+  // This is necessary because some things called by
+  // ApplyAsyncContentTransformToTree (in particular, TranslateShadowLayer2D),
+  // add to the shadow transform rather than overwriting it.
+  ClearAsyncTransforms(root);
 
   // FIXME/bug 775437: unify this interface with the ~native-fennec
   // derived code

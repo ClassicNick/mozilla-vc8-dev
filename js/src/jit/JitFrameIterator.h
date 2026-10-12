@@ -191,6 +191,10 @@ class JitFrameIterator
         return returnAddressToFp_;
     }
 
+    // Returns the resume address. As above, except taking
+    // BaselineDebugModeOSRInfo into account, if present.
+    uint8_t *resumeAddressToFp() const;
+
     // Previous frame information extracted from the current frame.
     inline size_t prevFrameLocalSize() const;
     inline FrameType prevType() const;
@@ -325,6 +329,8 @@ class SnapshotIterator
         return snapshot_.numAllocationsRead() < numAllocations();
     }
 
+    int32_t readOuterNumActualArgs() const;
+
   public:
     // Exhibits frame properties contained in the snapshot.
     uint32_t pcOffset() const;
@@ -389,13 +395,13 @@ class SnapshotIterator
     Value read() {
         return allocationValue(readAllocation());
     }
-    Value maybeRead(bool silentFailure = false) {
+    Value maybeRead(const Value &placeholder = UndefinedValue(), bool silentFailure = false) {
         RValueAllocation a = readAllocation();
         if (allocationReadable(a))
             return allocationValue(a);
         if (!silentFailure)
             warnUnreadableAllocation();
-        return UndefinedValue();
+        return placeholder;
     }
 
     void readCommonFrameSlots(Value *scopeChain, Value *rval) {
@@ -412,7 +418,9 @@ class SnapshotIterator
 
     template <class Op>
     void readFunctionFrameArgs(Op &op, ArgumentsObject **argsObj, Value *thisv,
-                               unsigned start, unsigned end, JSScript *script)
+                               unsigned start, unsigned end, JSScript *script,
+                               const Value &unreadablePlaceholder = UndefinedValue(),
+                               bool silentFailure = false)
     {
         // Assumes that the common frame arguments have already been read.
         if (script->argumentsHasVarBinding()) {
@@ -440,7 +448,7 @@ class SnapshotIterator
             // We are not always able to read values from the snapshots, some values
             // such as non-gc things may still be live in registers and cause an
             // error while reading the machine state.
-            Value v = maybeRead();
+            Value v = maybeRead(unreadablePlaceholder, silentFailure);
             op(v);
         }
     }
@@ -451,7 +459,7 @@ class SnapshotIterator
             skip();
         }
 
-        Value s = maybeRead(true);
+        Value s = maybeRead(/* placeholder = */ UndefinedValue(), true);
 
         while (moreAllocations())
             skip();
@@ -527,7 +535,9 @@ class InlineFrameIterator
     void readFrameArgsAndLocals(ThreadSafeContext *cx, ArgOp &argOp, LocalOp &localOp,
                                 JSObject **scopeChain, Value *rval,
                                 ArgumentsObject **argsObj, Value *thisv,
-                                ReadFrameArgsBehavior behavior) const
+                                ReadFrameArgsBehavior behavior,
+                                const Value &unreadablePlaceholder = UndefinedValue(),
+                                bool silentFailure = false) const
     {
         SnapshotIterator s(si_);
 
@@ -546,8 +556,10 @@ class InlineFrameIterator
             // Get the non overflown arguments, which are taken from the inlined
             // frame, because it will have the updated value when JSOP_SETARG is
             // done.
-            if (behavior != ReadFrame_Overflown)
-                s.readFunctionFrameArgs(argOp, argsObj, thisv, 0, nformal, script());
+            if (behavior != ReadFrame_Overflown) {
+                s.readFunctionFrameArgs(argOp, argsObj, thisv, 0, nformal, script(),
+                                        unreadablePlaceholder, silentFailure);
+            }
 
             if (behavior != ReadFrame_Formals) {
                 if (more()) {
@@ -575,7 +587,8 @@ class InlineFrameIterator
                     // Get the overflown arguments
                     parent_s.readCommonFrameSlots(nullptr, nullptr);
                     parent_s.readFunctionFrameArgs(argOp, nullptr, nullptr,
-                                                   nformal, nactual, it.script());
+                                                   nformal, nactual, it.script(),
+                                                   unreadablePlaceholder);
                 } else {
                     // There is no parent frame to this inlined frame, we can read
                     // from the frame's Value vector directly.
@@ -588,8 +601,14 @@ class InlineFrameIterator
 
         // At this point we've read all the formals in s, and can read the
         // locals.
-        for (unsigned i = 0; i < script()->nfixed(); i++)
-            localOp(s.read());
+        for (unsigned i = 0; i < script()->nfixed(); i++) {
+            // We have to use maybeRead here, some of these might be recover
+            // instructions, and currently InlineFrameIter does not support
+            // recovering slots.
+            //
+            // FIXME bug 1029963.
+            localOp(s.maybeRead(unreadablePlaceholder, silentFailure));
+        }
     }
 
     template <class Op>

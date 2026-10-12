@@ -57,12 +57,13 @@ class TabParent : public PBrowserParent
     typedef mozilla::dom::ClonedMessageData ClonedMessageData;
     typedef mozilla::layout::ScrollingBehavior ScrollingBehavior;
 
+    virtual ~TabParent();
+
 public:
     // nsITabParent
     NS_DECL_NSITABPARENT
 
     TabParent(nsIContentParent* aManager, const TabContext& aContext, uint32_t aChromeFlags);
-    virtual ~TabParent();
     Element* GetOwnerElement() const { return mFrameElement; }
     void SetOwnerElement(Element* aElement);
 
@@ -127,7 +128,16 @@ public:
                                             const nsString& aName,
                                             const nsString& aFeatures,
                                             bool* aOutWindowOpened) MOZ_OVERRIDE;
-    virtual bool AnswerCreateWindow(PBrowserParent** retval) MOZ_OVERRIDE;
+    virtual bool AnswerCreateWindow(const uint32_t& aChromeFlags,
+                                    const bool& aCalledFromJS,
+                                    const bool& aPositionSpecified,
+                                    const bool& aSizeSpecified,
+                                    const nsString& aURI,
+                                    const nsString& aName,
+                                    const nsString& aFeatures,
+                                    const nsString& aBaseURI,
+                                    bool* aWindowIsNew,
+                                    PBrowserParent** aRetVal) MOZ_OVERRIDE;
     virtual bool RecvSyncMessage(const nsString& aMessage,
                                  const ClonedMessageData& aData,
                                  const InfallibleTArray<CpowEntry>& aCpows,
@@ -299,6 +309,8 @@ public:
      */
     bool IsDestroyed() const { return mIsDestroyed; }
 
+    already_AddRefed<nsIWidget> GetWidget() const;
+
 protected:
     bool ReceiveMessage(const nsString& aMessage,
                         bool aSync,
@@ -370,7 +382,6 @@ protected:
 
 private:
     already_AddRefed<nsFrameLoader> GetFrameLoader() const;
-    already_AddRefed<nsIWidget> GetWidget() const;
     layout::RenderFrameParent* GetRenderFrame();
     nsRefPtr<nsIContentParent> mManager;
     void TryCacheDPIAndScale();

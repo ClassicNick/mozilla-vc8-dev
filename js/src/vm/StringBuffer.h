@@ -51,6 +51,9 @@ class StringBuffer
      */
     mozilla::DebugOnly<bool> hasEnsuredTwoByteChars_;
 
+    /* Number of reserve()'d chars, see inflateChars. */
+    size_t reserved_;
+
     StringBuffer(const StringBuffer &other) MOZ_DELETE;
     void operator=(const StringBuffer &other) MOZ_DELETE;
 
@@ -67,13 +70,11 @@ class StringBuffer
         return cb.ref<TwoByteCharBuffer>();
     }
 
-    static const Latin1Char MaxLatin1Char = 0xff;
-
     bool inflateChars();
 
   public:
     explicit StringBuffer(ExclusiveContext *cx)
-      : cx(cx), hasEnsuredTwoByteChars_(false)
+      : cx(cx), hasEnsuredTwoByteChars_(false), reserved_(0)
     {
         if (EnableLatin1Strings)
             cb.construct<Latin1CharBuffer>(cx);
@@ -82,6 +83,8 @@ class StringBuffer
     }
 
     inline bool reserve(size_t len) {
+        if (len > reserved_)
+            reserved_ = len;
         return isLatin1() ? latin1Chars().reserve(len) : twoByteChars().reserve(len);
     }
     inline bool resize(size_t len) {
@@ -107,7 +110,7 @@ class StringBuffer
 
     inline bool append(const jschar c) {
         if (isLatin1()) {
-            if (c <= MaxLatin1Char)
+            if (c <= JSString::MAX_LATIN1_CHAR)
                 return latin1Chars().append(Latin1Char(c));
             if (!inflateChars())
                 return false;
@@ -174,6 +177,8 @@ class StringBuffer
         infallibleAppend(reinterpret_cast<const Latin1Char *>(chars), len);
     }
 
+    void infallibleAppendSubstring(JSLinearString *base, size_t off, size_t len);
+
     /*
      * Because inflation is fallible, these methods should only be used after
      * calling ensureTwoByteChars().
@@ -224,7 +229,7 @@ StringBuffer::append(const jschar *begin, const jschar *end)
         while (true) {
             if (begin >= end)
                 return true;
-            if (*begin > MaxLatin1Char)
+            if (*begin > JSString::MAX_LATIN1_CHAR)
                 break;
             if (!latin1Chars().append(*begin))
                 return false;
@@ -246,7 +251,22 @@ StringBuffer::append(JSLinearString *str)
         if (!inflateChars())
             return false;
     }
-    return twoByteChars().append(str->twoByteChars(nogc), str->length());
+    return str->hasLatin1Chars()
+           ? twoByteChars().append(str->latin1Chars(nogc), str->length())
+           : twoByteChars().append(str->twoByteChars(nogc), str->length());
+}
+
+inline void
+StringBuffer::infallibleAppendSubstring(JSLinearString *base, size_t off, size_t len)
+{
+    MOZ_ASSERT(off + len <= base->length());
+    MOZ_ASSERT_IF(base->hasTwoByteChars(), isTwoByte());
+
+    JS::AutoCheckCannotGC nogc;
+    if (base->hasLatin1Chars())
+        infallibleAppend(base->latin1Chars(nogc) + off, len);
+    else
+        infallibleAppend(base->twoByteChars(nogc) + off, len);
 }
 
 inline bool
@@ -261,7 +281,9 @@ StringBuffer::appendSubstring(JSLinearString *base, size_t off, size_t len)
         if (!inflateChars())
             return false;
     }
-    return twoByteChars().append(base->twoByteChars(nogc) + off, len);
+    return base->hasLatin1Chars()
+           ? twoByteChars().append(base->latin1Chars(nogc) + off, len)
+           : twoByteChars().append(base->twoByteChars(nogc) + off, len);
 }
 
 inline bool

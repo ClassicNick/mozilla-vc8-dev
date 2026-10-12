@@ -12,6 +12,7 @@
 #include "nsCOMPtr.h"
 #include "nsAutoPtr.h"
 
+#include "gfxPrefs.h"
 #include "gfxTypes.h"
 #include "gfxFontFamilyList.h"
 #include "gfxBlur.h"
@@ -25,7 +26,6 @@
 #include "mozilla/layers/CompositorTypes.h"
 
 class gfxASurface;
-class gfxImageSurface;
 class gfxFont;
 class gfxFontGroup;
 struct gfxFontStyle;
@@ -58,6 +58,13 @@ BackendTypeBit(BackendType b)
 }
 }
 }
+
+#define MOZ_PERFORMANCE_WARNING(module, ...) \
+  do { \
+    if (gfxPrefs::PerfWarnings()) { \
+      printf_stderr("[" module "] " __VA_ARGS__); \
+    } \
+  } while (0)
 
 extern cairo_user_data_key_t kDrawTarget;
 
@@ -222,9 +229,6 @@ public:
     virtual mozilla::TemporaryRef<mozilla::gfx::ScaledFont>
       GetScaledFontForFont(mozilla::gfx::DrawTarget* aTarget, gfxFont *aFont);
 
-    virtual already_AddRefed<gfxASurface>
-      GetThebesSurfaceForDrawTarget(mozilla::gfx::DrawTarget *aTarget);
-
     mozilla::TemporaryRef<DrawTarget>
       CreateOffscreenContentDrawTarget(const mozilla::gfx::IntSize& aSize, mozilla::gfx::SurfaceFormat aFormat);
 
@@ -388,13 +392,6 @@ public:
      * (for fonts that include Graphite tables)
      */
     bool UseGraphiteShaping();
-
-    /**
-     * Whether to use the harfbuzz shaper (depending on script complexity).
-     *
-     * This allows harfbuzz to be enabled selectively via the preferences.
-     */
-    bool UseHarfBuzzForScript(int32_t aScriptCode);
 
     // check whether format is supported on a platform or not (if unclear, returns true)
     virtual bool IsFontFormatSupported(nsIURI *aFontURI, uint32_t aFormatFlags) { return false; }
@@ -609,9 +606,6 @@ protected:
     // whether to always search font cmaps globally 
     // when doing system font fallback
     int8_t  mFallbackUsesCmaps;
-
-    // which scripts should be shaped with harfbuzz
-    int32_t mUseHarfBuzzScripts;
 
     // max character limit for words in word cache
     int32_t mWordCacheCharLimit;

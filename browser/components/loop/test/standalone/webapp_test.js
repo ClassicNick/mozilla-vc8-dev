@@ -23,10 +23,12 @@ describe("loop.webapp", function() {
       error: sandbox.spy(),
       errorL10n: sandbox.spy(),
     };
+    loop.config.pendingCallTimeout = 1000;
   });
 
   afterEach(function() {
     sandbox.restore();
+    delete loop.config.pendingCallTimeout;
   });
 
   describe("#init", function() {
@@ -69,12 +71,16 @@ describe("loop.webapp", function() {
     var router, conversation;
 
     beforeEach(function() {
-      conversation = new sharedModels.ConversationModel({}, {sdk: {}});
+      conversation = new sharedModels.ConversationModel({}, {
+        sdk: {},
+        pendingCallTimeout: 1000
+      });
       router = new loop.webapp.WebappRouter({
         conversation: conversation,
         notifier: notifier
       });
       sandbox.stub(router, "loadView");
+      sandbox.stub(router, "loadReactComponent");
       sandbox.stub(router, "navigate");
     });
 
@@ -162,14 +168,16 @@ describe("loop.webapp", function() {
 
       describe("#loadConversation", function() {
         it("should load the ConversationView if session is set", function() {
-          sandbox.stub(sharedViews.ConversationView.prototype, "initialize");
           conversation.set("sessionId", "fakeSessionId");
 
           router.loadConversation();
 
-          sinon.assert.calledOnce(router.loadView);
-          sinon.assert.calledWith(router.loadView,
-            sinon.match.instanceOf(sharedViews.ConversationView));
+          sinon.assert.calledOnce(router.loadReactComponent);
+          sinon.assert.calledWith(router.loadReactComponent,
+            sinon.match(function(value) {
+              return React.addons.TestUtils.isComponentOfType(
+                value, loop.shared.views.ConversationView);
+            }));
         });
 
         it("should navigate to #call/{token} if session isn't ready",
@@ -250,7 +258,9 @@ describe("loop.webapp", function() {
     var conversation;
 
     beforeEach(function() {
-      conversation = new sharedModels.ConversationModel({}, {sdk: {}});
+      conversation = new sharedModels.ConversationModel({}, {
+        sdk: {},
+        pendingCallTimeout: 1000});
     });
 
     describe("#initialize", function() {
@@ -265,7 +275,10 @@ describe("loop.webapp", function() {
       var conversation, initiate, view, fakeSubmitEvent;
 
       beforeEach(function() {
-        conversation = new sharedModels.ConversationModel({}, {sdk: {}});
+        conversation = new sharedModels.ConversationModel({}, {
+          sdk: {},
+          pendingCallTimeout: 1000
+        });
         view = new loop.webapp.ConversationFormView({
           model: conversation,
           notifier: notifier
@@ -281,10 +294,11 @@ describe("loop.webapp", function() {
 
         sinon.assert.calledOnce(fakeSubmitEvent.preventDefault);
         sinon.assert.calledOnce(initiate);
-        sinon.assert.calledWith(initiate, {
-          baseServerUrl: loop.webapp.baseServerUrl,
-          outgoing: true
-        });
+        sinon.assert.calledWith(initiate, sinon.match(function (value) {
+          return !!value.outgoing &&
+            (value.client instanceof loop.StandaloneClient) &&
+            value.client.settings.baseServerUrl === loop.webapp.baseServerUrl;
+        }, "{client: <properly constructed client>, outgoing: true}"));
       });
 
       it("should disable current form once session is initiated", function() {
@@ -303,7 +317,10 @@ describe("loop.webapp", function() {
       beforeEach(function() {
         conversation = new sharedModels.ConversationModel({
           loopToken: "fake"
-        }, {sdk: {}});
+        }, {
+          sdk: {},
+          pendingCallTimeout: 1000
+        });
         view = new loop.webapp.ConversationFormView({
           model: conversation,
           notifier: notifier

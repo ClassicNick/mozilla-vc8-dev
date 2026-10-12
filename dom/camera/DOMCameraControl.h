@@ -26,10 +26,10 @@ namespace mozilla {
 
 namespace dom {
   class CameraCapabilities;
-  class CameraPictureOptions;
-  class CameraStartRecordingOptions;
-  class CameraRegion;
-  class CameraSize;
+  struct CameraPictureOptions;
+  struct CameraStartRecordingOptions;
+  struct CameraRegion;
+  struct CameraSize;
   template<typename T> class Optional;
 }
 class ErrorResult;
@@ -214,7 +214,7 @@ protected:
   DOMCameraControlListener* mListener;
 
   // our viewfinder stream
-  CameraPreviewMediaStream* mInput;
+  nsRefPtr<CameraPreviewMediaStream> mInput;
 
   // set once when this object is created
   nsCOMPtr<nsPIDOMWindow>   mWindow;

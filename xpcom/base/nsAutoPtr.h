@@ -329,14 +329,6 @@ operator!=(const U* aLhs, const nsAutoPtr<T>& aRhs)
   return static_cast<const U*>(aLhs) != static_cast<const T*>(aRhs.get());
 }
 
-// To avoid ambiguities caused by the presence of builtin |operator==|s
-// creating a situation where one of the |operator==| defined above
-// has a better conversion for one argument and the builtin has a
-// better conversion for the other argument, define additional
-// |operator==| without the |const| on the raw pointer.
-// See bug 65664 for details.
-
-#ifndef NSCAP_DONT_PROVIDE_NONCONST_OPEQ
 template <class T, class U>
 inline bool
 operator==(const nsAutoPtr<T>& aLhs, U* aRhs)
@@ -364,7 +356,6 @@ operator!=(U* aLhs, const nsAutoPtr<T>& aRhs)
 {
   return const_cast<const U*>(aLhs) != static_cast<const T*>(aRhs.get());
 }
-#endif
 
 
 
@@ -713,14 +704,6 @@ operator!=(const U* aLhs, const nsAutoArrayPtr<T>& aRhs)
   return static_cast<const U*>(aLhs) != static_cast<const T*>(aRhs.get());
 }
 
-// To avoid ambiguities caused by the presence of builtin |operator==|s
-// creating a situation where one of the |operator==| defined above
-// has a better conversion for one argument and the builtin has a
-// better conversion for the other argument, define additional
-// |operator==| without the |const| on the raw pointer.
-// See bug 65664 for details.
-
-#ifndef NSCAP_DONT_PROVIDE_NONCONST_OPEQ
 template <class T, class U>
 inline bool
 operator==(const nsAutoArrayPtr<T>& aLhs, U* aRhs)
@@ -748,7 +731,6 @@ operator!=(U* aLhs, const nsAutoArrayPtr<T>& aRhs)
 {
   return const_cast<const U*>(aLhs) != static_cast<const T*>(aRhs.get());
 }
-#endif
 
 
 
@@ -1205,14 +1187,6 @@ operator!=(const U* aLhs, const nsRefPtr<T>& aRhs)
   return static_cast<const U*>(aLhs) != static_cast<const T*>(aRhs.get());
 }
 
-// To avoid ambiguities caused by the presence of builtin |operator==|s
-// creating a situation where one of the |operator==| defined above
-// has a better conversion for one argument and the builtin has a
-// better conversion for the other argument, define additional
-// |operator==| without the |const| on the raw pointer.
-// See bug 65664 for details.
-
-#ifndef NSCAP_DONT_PROVIDE_NONCONST_OPEQ
 template <class T, class U>
 inline bool
 operator==(const nsRefPtr<T>& aLhs, U* aRhs)
@@ -1240,7 +1214,6 @@ operator!=(U* aLhs, const nsRefPtr<T>& aRhs)
 {
   return const_cast<const U*>(aLhs) != static_cast<const T*>(aRhs.get());
 }
-#endif
 
 
 

@@ -55,6 +55,10 @@ class Vector
 
   public:
     explicit Vector(AllocPolicy alloc = AllocPolicy()) : Base(alloc) {}
+	explicit Vector(Vector& vec) : Base(vec) {}
+    Vector &operator=(Vector& vec) {
+        return Base::operator=(vec);
+    }
     Vector(mozilla::MoveRef<Vector> vec) : Base(vec) {}
     Vector &operator=(mozilla::MoveRef<Vector> vec) {
         return Base::operator=(vec);

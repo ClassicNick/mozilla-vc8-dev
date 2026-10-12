@@ -29,8 +29,12 @@ class DesktopNotificationRequest : public nsIContentPermissionRequest,
                                    public PCOMContentPermissionRequestChild
 
 {
+  ~DesktopNotificationRequest()
+  {
+  }
+
 public:
-  NS_DECL_ISUPPORTS
+  NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSICONTENTPERMISSIONREQUEST
 
   DesktopNotificationRequest(DesktopNotification* notification)
@@ -44,10 +48,6 @@ public:
       prompt->Prompt(this);
     }
     return NS_OK;
-  }
-
-  ~DesktopNotificationRequest()
-  {
   }
 
   virtual bool Recv__delete__(const bool& aAllow,
@@ -309,9 +309,8 @@ DesktopNotificationCenter::WrapObject(JSContext* aCx)
 /* DesktopNotificationRequest                                               */
 /* ------------------------------------------------------------------------ */
 
-NS_IMPL_ISUPPORTS(DesktopNotificationRequest,
-                  nsIContentPermissionRequest,
-                  nsIRunnable)
+NS_IMPL_ISUPPORTS_INHERITED(DesktopNotificationRequest, nsRunnable,
+			    nsIContentPermissionRequest)
 
 NS_IMETHODIMP
 DesktopNotificationRequest::GetPrincipal(nsIPrincipal * *aRequestingPrincipal)

@@ -24,7 +24,7 @@ namespace layers {
 
 class CompositableClient;
 class AsyncTransactionTracker;
-class TextureFactoryIdentifier;
+struct TextureFactoryIdentifier;
 class SurfaceDescriptor;
 class SurfaceDescriptorTiles;
 class ThebesBufferData;
@@ -197,8 +197,6 @@ public:
   }
 
   bool IsOnCompositorSide() const MOZ_OVERRIDE { return false; }
-
-  virtual bool IsImageBridgeChild() const { return false; }
 
   /**
    * Returns the type of backend that is used off the main thread.

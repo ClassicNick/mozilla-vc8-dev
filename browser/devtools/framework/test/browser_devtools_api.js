@@ -11,9 +11,7 @@ Cu.import("resource://gre/modules/devtools/event-emitter.js", tempScope);
 let EventEmitter = tempScope.EventEmitter;
 
 function test() {
-  addTab("about:blank", function(aBrowser, aTab) {
-    runTests(aTab);
-  });
+  addTab("about:blank").then(runTests);
 }
 
 function runTests(aTab) {
@@ -39,13 +37,7 @@ function runTests(aTab) {
 
   let target = TargetFactory.forTab(gBrowser.selectedTab);
 
-  gDevTools.showToolbox(target, toolId).then(function(toolbox) {
-    // Wait for the test tool to be visible and selected.
-    let { promise: testToolShown, resolve } = promise.defer();
-    toolbox.once("test-tool-selected", resolve);
-
-    return testToolShown.then(() => toolbox);
-  }).then(function (toolbox) {
+  gDevTools.showToolbox(target, toolId).then(function (toolbox) {
     is(toolbox.target, target, "toolbox target is correct");
     is(toolbox._host.hostTab, gBrowser.selectedTab, "toolbox host is correct");
     continueTests(toolbox);
@@ -122,11 +114,11 @@ DevToolPanel.prototype = {
   open: function() {
     let deferred = promise.defer();
 
-    executeSoon(function() {
+    executeSoon(() => {
       this._isReady = true;
       this.emit("ready");
       deferred.resolve(this);
-    }.bind(this));
+    });
 
     return deferred.promise;
   },

@@ -26,6 +26,7 @@ struct ResourceMapping;
 struct OverrideMapping;
 
 namespace mozilla {
+class RemoteSpellcheckEngineChild;
 
 namespace ipc {
 class OptionalURIParams;
@@ -152,17 +153,19 @@ public:
     virtual bool DeallocPIndexedDBChild(PIndexedDBChild* aActor) MOZ_OVERRIDE;
 
     virtual PMemoryReportRequestChild*
-    AllocPMemoryReportRequestChild(const uint32_t& generation,
-                                   const bool &minimizeMemoryUsage,
-                                   const nsString &aDMDDumpIdent) MOZ_OVERRIDE;
+    AllocPMemoryReportRequestChild(const uint32_t& aGeneration,
+                                   const bool& aAnonymize,
+                                   const bool& aMinimizeMemoryUsage,
+                                   const FileDescriptor& aDMDFile) MOZ_OVERRIDE;
     virtual bool
     DeallocPMemoryReportRequestChild(PMemoryReportRequestChild* actor) MOZ_OVERRIDE;
 
     virtual bool
-    RecvPMemoryReportRequestConstructor(PMemoryReportRequestChild* child,
-                                        const uint32_t& generation,
-                                        const bool &minimizeMemoryUsage,
-                                        const nsString &aDMDDumpIdent) MOZ_OVERRIDE;
+    RecvPMemoryReportRequestConstructor(PMemoryReportRequestChild* aChild,
+                                        const uint32_t& aGeneration,
+                                        const bool& aAnonymize,
+                                        const bool &aMinimizeMemoryUsage,
+                                        const FileDescriptor &aDMDFile) MOZ_OVERRIDE;
 
     virtual PCycleCollectWithLogsChild*
     AllocPCycleCollectWithLogsChild(const bool& aDumpAllTraces,
@@ -190,6 +193,12 @@ public:
 
     virtual PNeckoChild* AllocPNeckoChild() MOZ_OVERRIDE;
     virtual bool DeallocPNeckoChild(PNeckoChild*) MOZ_OVERRIDE;
+
+    virtual PScreenManagerChild*
+    AllocPScreenManagerChild(uint32_t* aNumberOfScreens,
+                             float* aSystemDefaultScale,
+                             bool* aSuccess) MOZ_OVERRIDE;
+    virtual bool DeallocPScreenManagerChild(PScreenManagerChild*) MOZ_OVERRIDE;
 
     virtual PExternalHelperAppChild *AllocPExternalHelperAppChild(
             const OptionalURIParams& uri,
@@ -235,6 +244,8 @@ public:
 
     virtual mozilla::jsipc::PJavaScriptChild* AllocPJavaScriptChild() MOZ_OVERRIDE;
     virtual bool DeallocPJavaScriptChild(mozilla::jsipc::PJavaScriptChild*) MOZ_OVERRIDE;
+    virtual PRemoteSpellcheckEngineChild* AllocPRemoteSpellcheckEngineChild() MOZ_OVERRIDE;
+    virtual bool DeallocPRemoteSpellcheckEngineChild(PRemoteSpellcheckEngineChild*) MOZ_OVERRIDE;
 
     virtual bool RecvSetOffline(const bool& offline) MOZ_OVERRIDE;
 

@@ -1,3 +1,4 @@
+// -*- Mode: js; tab-width: 2; indent-tabs-mode: nil; js2-basic-offset: 2; js2-skip-preprocessor-directives: t; -*-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,7 +11,33 @@ var rokuTarget = {
   factory: function(aService) {
     Cu.import("resource://gre/modules/RokuApp.jsm");
     return new RokuApp(aService);
-  }
+  },
+  types: ["video/mp4"],
+  extensions: ["mp4"]
+};
+
+var fireflyTarget = {
+  target: "urn:dial-multiscreen-org:service:dial:1",
+  filters: {
+    server: null,
+    modelName: "Eureka Dongle"
+  },
+  factory: function(aService) {
+    Cu.import("resource://gre/modules/FireflyApp.jsm");
+    return new FireflyApp(aService);
+  },
+  types: ["video/mp4", "video/webm"],
+  extensions: ["mp4", "webm"]
+};
+
+var mediaPlayerTarget = {
+  target: "media:router",
+  factory: function(aService) {
+    Cu.import("resource://gre/modules/MediaPlayerApp.jsm");
+    return new MediaPlayerApp(aService);
+  },
+  types: ["video/mp4", "video/webm", "application/x-mpegurl"],
+  extensions: ["mp4", "webm", "m3u", "m3u8"]
 };
 
 var CastingApps = {
@@ -23,6 +50,8 @@ var CastingApps = {
 
     // Register targets
     SimpleServiceDiscovery.registerTarget(rokuTarget);
+    SimpleServiceDiscovery.registerTarget(fireflyTarget);
+    SimpleServiceDiscovery.registerTarget(mediaPlayerTarget);
 
     // Search for devices continuously every 120 seconds
     SimpleServiceDiscovery.search(120 * 1000);
@@ -151,8 +180,11 @@ var CastingApps = {
   },
 
   getVideo: function(aElement, aX, aY) {
+    let extensions = SimpleServiceDiscovery.getSupportedExtensions();
+    let types = SimpleServiceDiscovery.getSupportedMimeTypes();
+
     // Fast path: Is the given element a video element
-    let video = this._getVideo(aElement);
+    let video = this._getVideo(aElement, types, extensions);
     if (video) {
       return video;
     }
@@ -167,7 +199,7 @@ var CastingApps = {
         // Look for a video element contained in the overlay bounds
         let rect = element.getBoundingClientRect();
         if (aY >= rect.top && aX >= rect.left && aY <= rect.bottom && aX <= rect.right) {
-          video = this._getVideo(element);
+          video = this._getVideo(element, types, extensions);
           if (video) {
             break;
           }
@@ -179,18 +211,11 @@ var CastingApps = {
     return video;
   },
 
-  _getVideo: function(aElement) {
+  _getVideo: function(aElement, aTypes, aExtensions) {
     if (!(aElement instanceof HTMLVideoElement)) {
       return null;
     }
 
-    // Given the hardware support for H264, let's only look for 'mp4' sources
-    function allowableExtension(aURI) {
-      if (aURI && aURI instanceof Ci.nsIURL) {
-        return (aURI.fileExtension == "mp4");
-      }
-      return false;
-    }
 
     // Grab the poster attribute from the <video>
     let posterURL = aElement.poster;
@@ -206,8 +231,8 @@ var CastingApps = {
     if (sourceURL) {
       // Use the file extension to guess the mime type
       let sourceURI = this.makeURI(sourceURL, null, this.makeURI(aElement.baseURI));
-      if (allowableExtension(sourceURI)) {
-        return { element: aElement, source: sourceURI.spec, poster: posterURL };
+      if (this.allowableExtension(sourceURI, aExtensions)) {
+        return { element: aElement, source: sourceURI.spec, poster: posterURL, sourceURI: sourceURI};
       }
     }
 
@@ -219,8 +244,8 @@ var CastingApps = {
 
       // Using the type attribute is our ideal way to guess the mime type. Otherwise,
       // fallback to using the file extension to guess the mime type
-      if (sourceNode.type == "video/mp4" || allowableExtension(sourceURI)) {
-        return { element: aElement, source: sourceURI.spec, poster: posterURL };
+      if (this.allowableMimeType(sourceNode.type, aTypes) || this.allowableExtension(sourceURI, aExtensions)) {
+        return { element: aElement, source: sourceURI.spec, poster: posterURL, sourceURI: sourceURI, type: sourceNode.type };
       }
     }
 
@@ -250,8 +275,7 @@ var CastingApps = {
       // Look for a castable <video> that is playing, and start casting it
       let videos = browser.contentDocument.querySelectorAll("video");
       for (let video of videos) {
-        let unwrappedVideo = XPCNativeWrapper.unwrap(video);
-        if (!video.paused && unwrappedVideo.mozAllowCasting) {
+        if (!video.paused && video.mozAllowCasting) {
           UITelemetry.addEvent("cast.1", "pageaction", null);
           CastingApps.openExternal(video, 0, 0);
           return;
@@ -270,13 +294,12 @@ var CastingApps = {
       let castableVideo = null;
       let videos = aBrowser.contentDocument.querySelectorAll("video");
       for (let video of videos) {
-        let unwrappedVideo = XPCNativeWrapper.unwrap(video);
-        if (unwrappedVideo.mozIsCasting) {
+        if (video.mozIsCasting) {
           // This <video> is cast-active. Break out of loop.
           return video;
         }
 
-        if (!video.paused && unwrappedVideo.mozAllowCasting) {
+        if (!video.paused && video.mozAllowCasting) {
           // This <video> is cast-ready. Keep looking so cast-active could be found.
           castableVideo = video;
         }
@@ -324,15 +347,14 @@ var CastingApps = {
     // 1. The video is actively being cast
     // 2. The video is allowed to be cast and is currently playing
     // Both states have the same action: Show the cast page action
-    let unwrappedVideo = XPCNativeWrapper.unwrap(aVideo);
-    if (unwrappedVideo.mozIsCasting) {
+    if (aVideo.mozIsCasting) {
       this.pageAction.id = NativeWindow.pageactions.add({
         title: Strings.browser.GetStringFromName("contextmenu.castToScreen"),
         icon: "drawable://casting_active",
         clickCallback: this.pageAction.click,
         important: true
       });
-    } else if (unwrappedVideo.mozAllowCasting) {
+    } else if (aVideo.mozAllowCasting) {
       this.pageAction.id = NativeWindow.pageactions.add({
         title: Strings.browser.GetStringFromName("contextmenu.castToScreen"),
         icon: "drawable://casting",
@@ -342,27 +364,32 @@ var CastingApps = {
     }
   },
 
-  prompt: function(aCallback) {
+  prompt: function(aCallback, aFilterFunc) {
     let items = [];
+    let filteredServices = [];
     SimpleServiceDiscovery.services.forEach(function(aService) {
       let item = {
         label: aService.friendlyName,
         selected: false
       };
-      items.push(item);
+      if (!aFilterFunc || aFilterFunc(aService)) {
+        filteredServices.push(aService);
+        items.push(item);
+      }
     });
 
     let prompt = new Prompt({
       title: Strings.browser.GetStringFromName("casting.prompt")
     }).setSingleChoiceItems(items).show(function(data) {
       let selected = data.button;
-      let service = selected == -1 ? null : SimpleServiceDiscovery.services[selected];
+      let service = selected == -1 ? null : filteredServices[selected];
       if (aCallback)
         aCallback(service);
     });
   },
 
   handleContextMenu: function(aElement, aX, aY) {
+    UITelemetry.addEvent("action.1", "contextmenu", null, "web_cast");
     UITelemetry.addEvent("cast.1", "contextmenu", null);
     this.openExternal(aElement, aX, aY);
   },
@@ -372,6 +399,10 @@ var CastingApps = {
     let video = this.getVideo(aElement, aX, aY);
     if (!video) {
       return;
+    }
+
+    function filterFunc(service) {
+      return this.allowableExtension(video.sourceURI, service.extensions) || this.allowableMimeType(video.type, service.types);
     }
 
     this.prompt(function(aService) {
@@ -418,7 +449,7 @@ var CastingApps = {
           }.bind(this), this);
         }.bind(this));
       }.bind(this));
-    }.bind(this));
+    }.bind(this), filterFunc.bind(this));
   },
 
   closeExternal: function() {
@@ -467,5 +498,21 @@ var CastingApps = {
     if (status == "completed") {
       this.closeExternal();
     }
+  },
+
+  allowableExtension: function(aURI, aExtensions) {
+    if (aURI && aURI instanceof Ci.nsIURL) {
+      for (let x in aExtensions) {
+        if (aURI.fileExtension == aExtensions[x]) return true;
+      }
+    }
+    return false;
+  },
+
+  allowableMimeType: function(aType, aTypes) {
+    for (let x in aTypes) {
+      if (aType == aTypes[x]) return true;
+    }
+    return false;
   }
 };

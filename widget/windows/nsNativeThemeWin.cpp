@@ -1597,7 +1597,7 @@ nsNativeThemeWin::DrawWidgetBackground(nsRenderingContext* aContext,
     return NS_OK;
   }
 
-  gfxFloat p2a = gfxFloat(aContext->AppUnitsPerDevPixel());
+  gfxFloat p2a = gfxFloat(aFrame->PresContext()->AppUnitsPerDevPixel());
   RECT widgetRect;
   RECT clipRect;
   gfxRect tr(aRect.x, aRect.y, aRect.width, aRect.height),
@@ -1622,8 +1622,8 @@ RENDER_AGAIN:
 #if 0
   {
     PR_LOG(gWindowsLog, PR_LOG_ERROR,
-           (stderr, "xform: %f %f %f %f [%f %f]\n", m.xx, m.yx, m.xy, m.yy, 
-            m.x0, m.y0));
+           (stderr, "xform: %f %f %f %f [%f %f]\n", m._11, m._21, m._12, m._22,
+            m._31, m._32));
     PR_LOG(gWindowsLog, PR_LOG_ERROR,
            (stderr, "tr: [%d %d %d %d]\ndr: [%d %d %d %d]\noff: [%f %f]\n",
             tr.x, tr.y, tr.width, tr.height, dr.x, dr.y, dr.width, dr.height,
@@ -2242,7 +2242,7 @@ nsNativeThemeWin::GetWidgetOverflow(nsDeviceContext* aContext,
 }
 
 NS_IMETHODIMP
-nsNativeThemeWin::GetMinimumWidgetSize(nsRenderingContext* aContext, nsIFrame* aFrame,
+nsNativeThemeWin::GetMinimumWidgetSize(nsPresContext* aPresContext, nsIFrame* aFrame,
                                        uint8_t aWidgetType,
                                        nsIntSize* aResult, bool* aIsOverridable)
 {
@@ -2251,7 +2251,7 @@ nsNativeThemeWin::GetMinimumWidgetSize(nsRenderingContext* aContext, nsIFrame* a
 
   HANDLE theme = GetTheme(aWidgetType);
   if (!theme)
-    return ClassicGetMinimumWidgetSize(aContext, aFrame, aWidgetType, aResult, aIsOverridable);
+    return ClassicGetMinimumWidgetSize(aPresContext, aFrame, aWidgetType, aResult, aIsOverridable);
 
   switch (aWidgetType) {
     case NS_THEME_GROUPBOX:
@@ -2295,7 +2295,7 @@ nsNativeThemeWin::GetMinimumWidgetSize(nsRenderingContext* aContext, nsIFrame* a
     case NS_THEME_SCROLLBAR_TRACK_HORIZONTAL:
     case NS_THEME_SCROLLBAR_TRACK_VERTICAL:
     case NS_THEME_DROPDOWN_BUTTON:
-      return ClassicGetMinimumWidgetSize(aContext, aFrame, aWidgetType, aResult, aIsOverridable);
+      return ClassicGetMinimumWidgetSize(aPresContext, aFrame, aWidgetType, aResult, aIsOverridable);
 
     case NS_THEME_MENUITEM:
     case NS_THEME_CHECKMENUITEM:
@@ -2528,7 +2528,7 @@ nsNativeThemeWin::WidgetStateChanged(nsIFrame* aFrame, uint8_t aWidgetType,
       aWidgetType == NS_THEME_WINDOW_FRAME_BOTTOM ||
       aWidgetType == NS_THEME_WINDOW_BUTTON_CLOSE ||
       aWidgetType == NS_THEME_WINDOW_BUTTON_MINIMIZE ||
-      aWidgetType == NS_THEME_WINDOW_BUTTON_MINIMIZE ||
+      aWidgetType == NS_THEME_WINDOW_BUTTON_MAXIMIZE ||
       aWidgetType == NS_THEME_WINDOW_BUTTON_RESTORE) {
     *aShouldRepaint = true;
     return NS_OK;
@@ -2892,7 +2892,7 @@ nsNativeThemeWin::ClassicGetWidgetPadding(nsDeviceContext* aContext,
 }
 
 nsresult
-nsNativeThemeWin::ClassicGetMinimumWidgetSize(nsRenderingContext* aContext, nsIFrame* aFrame,
+nsNativeThemeWin::ClassicGetMinimumWidgetSize(nsPresContext* aPresContext, nsIFrame* aFrame,
                                        uint8_t aWidgetType,
                                        nsIntSize* aResult, bool* aIsOverridable)
 {
@@ -3578,7 +3578,7 @@ nsresult nsNativeThemeWin::ClassicDrawWidgetBackground(nsRenderingContext* aCont
     return NS_OK;
   }
 
-  gfxFloat p2a = gfxFloat(aContext->AppUnitsPerDevPixel());
+  gfxFloat p2a = gfxFloat(aFrame->PresContext()->AppUnitsPerDevPixel());
   RECT widgetRect;
   gfxRect tr(aRect.x, aRect.y, aRect.width, aRect.height),
           dr(aDirtyRect.x, aDirtyRect.y, aDirtyRect.width, aDirtyRect.height);

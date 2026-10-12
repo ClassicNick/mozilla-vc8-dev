@@ -14,7 +14,6 @@
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/dom/MediaSourceBinding.h"
 #include "mozilla/Monitor.h"
-#include "nsAutoPtr.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionNoteChild.h"
 #include "nsCycleCollectionParticipant.h"
@@ -49,8 +48,6 @@ public:
   static already_AddRefed<MediaSource>
   Constructor(const GlobalObject& aGlobal,
               ErrorResult& aRv);
-
-  ~MediaSource();
 
   SourceBufferList* SourceBuffers();
   SourceBufferList* ActiveSourceBuffers();
@@ -99,6 +96,8 @@ public:
   void NotifyGotData();
 
 private:
+  ~MediaSource();
+
   explicit MediaSource(nsPIDOMWindow* aWindow);
 
   friend class AsyncEventRunner<MediaSource>;

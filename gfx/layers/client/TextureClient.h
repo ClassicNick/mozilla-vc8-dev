@@ -31,6 +31,11 @@ class gfxReusableSurfaceWrapper;
 class gfxImageSurface;
 
 namespace mozilla {
+namespace gl {
+class GLContext;
+class SurfaceStream;
+}
+
 namespace layers {
 
 class AsyncTransactionTracker;
@@ -39,7 +44,7 @@ class CompositableForwarder;
 class ISurfaceAllocator;
 class CompositableClient;
 class PlanarYCbCrImage;
-class PlanarYCbCrData;
+struct PlanarYCbCrData;
 class Image;
 class PTextureChild;
 class TextureChild;
@@ -53,7 +58,8 @@ class TextureClient;
 
 enum TextureAllocationFlags {
   ALLOC_DEFAULT = 0,
-  ALLOC_CLEAR_BUFFER = 1
+  ALLOC_CLEAR_BUFFER = 1,
+  ALLOC_CLEAR_BUFFER_WHITE = 2
 };
 
 /**
@@ -111,18 +117,42 @@ public:
   TextureClient(TextureFlags aFlags = TextureFlags::DEFAULT);
   virtual ~TextureClient();
 
+  // Creates a TextureClient that can be accessed through a raw pointer.
+  // XXX - this doesn't allocate the texture data.
+  // Prefer CreateForRawBufferAccess which returns a BufferTextureClient
+  // only if allocation suceeded.
   static TemporaryRef<BufferTextureClient>
   CreateBufferTextureClient(ISurfaceAllocator* aAllocator,
                             gfx::SurfaceFormat aFormat,
                             TextureFlags aTextureFlags,
                             gfx::BackendType aMoz2dBackend);
 
+  // Creates and allocates a TextureClient usable with Moz2D.
   static TemporaryRef<TextureClient>
-  CreateTextureClientForDrawing(ISurfaceAllocator* aAllocator,
-                                gfx::SurfaceFormat aFormat,
-                                TextureFlags aTextureFlags,
-                                gfx::BackendType aMoz2dBackend,
-                                const gfx::IntSize& aSizeHint);
+  CreateForDrawing(ISurfaceAllocator* aAllocator,
+                   gfx::SurfaceFormat aFormat,
+                   gfx::IntSize aSize,
+                   gfx::BackendType aMoz2dBackend,
+                   TextureFlags aTextureFlags,
+                   TextureAllocationFlags flags = ALLOC_DEFAULT);
+
+  // Creates and allocates a BufferTextureClient supporting the YCbCr format.
+  static TemporaryRef<BufferTextureClient>
+  CreateForYCbCr(ISurfaceAllocator* aAllocator,
+                 gfx::IntSize aYSize,
+                 gfx::IntSize aCbCrSize,
+                 StereoMode aStereoMode,
+                 TextureFlags aTextureFlags);
+
+  // Creates and allocates a BufferTextureClient (can beaccessed through raw
+  // pointers).
+  static TemporaryRef<BufferTextureClient>
+  CreateForRawBufferAccess(ISurfaceAllocator* aAllocator,
+                           gfx::SurfaceFormat aFormat,
+                           gfx::IntSize aSize,
+                           gfx::BackendType aMoz2dBackend,
+                           TextureFlags aTextureFlags,
+                           TextureAllocationFlags flags = ALLOC_DEFAULT);
 
   virtual TextureClientYCbCr* AsTextureClientYCbCr() { return nullptr; }
 
@@ -355,7 +385,13 @@ protected:
     mFlags |= aFlags;
   }
 
+  ISurfaceAllocator* GetAllocator()
+  {
+    return mAllocator;
+  }
+
   RefPtr<TextureChild> mActor;
+  RefPtr<ISurfaceAllocator> mAllocator;
   TextureFlags mFlags;
   bool mShared;
   bool mValid;
@@ -363,8 +399,28 @@ protected:
   FenceHandle mAcquireFenceHandle;
 
   friend class TextureChild;
+  friend class RemoveTextureFromCompositableTracker;
   friend void TestTextureClientSurface(TextureClient*, gfxImageSurface*);
   friend void TestTextureClientYCbCr(TextureClient*, PlanarYCbCrData&);
+};
+
+/**
+ * Task that releases TextureClient pointer on a specified thread.
+ */
+class TextureClientReleaseTask : public Task
+{
+public:
+    TextureClientReleaseTask(TextureClient* aClient)
+        : mTextureClient(aClient) {
+    }
+
+    virtual void Run() MOZ_OVERRIDE
+    {
+        mTextureClient = nullptr;
+    }
+
+private:
+    mozilla::RefPtr<TextureClient> mTextureClient;
 };
 
 /**
@@ -444,8 +500,10 @@ public:
   ShmemTextureClient(ISurfaceAllocator* aAllocator, gfx::SurfaceFormat aFormat,
                      gfx::BackendType aBackend, TextureFlags aFlags);
 
+protected:
   ~ShmemTextureClient();
 
+public:
   virtual bool ToSurfaceDescriptor(SurfaceDescriptor& aDescriptor) MOZ_OVERRIDE;
 
   virtual bool Allocate(uint32_t aSize) MOZ_OVERRIDE;
@@ -476,8 +534,10 @@ public:
   MemoryTextureClient(ISurfaceAllocator* aAllocator, gfx::SurfaceFormat aFormat,
                       gfx::BackendType aBackend, TextureFlags aFlags);
 
+protected:
   ~MemoryTextureClient();
 
+public:
   virtual bool ToSurfaceDescriptor(SurfaceDescriptor& aDescriptor) MOZ_OVERRIDE;
 
   virtual bool Allocate(uint32_t aSize) MOZ_OVERRIDE;
@@ -493,6 +553,51 @@ public:
 protected:
   uint8_t* mBuffer;
   size_t mBufSize;
+};
+
+/**
+ * A TextureClient implementation to share SurfaceStream.
+ */
+class StreamTextureClient : public TextureClient
+{
+public:
+  StreamTextureClient(TextureFlags aFlags);
+
+protected:
+  ~StreamTextureClient();
+
+public:
+  virtual bool IsAllocated() const MOZ_OVERRIDE;
+
+  virtual bool Lock(OpenMode mode) MOZ_OVERRIDE;
+
+  virtual void Unlock() MOZ_OVERRIDE;
+
+  virtual bool IsLocked() const MOZ_OVERRIDE { return mIsLocked; }
+
+  virtual bool ToSurfaceDescriptor(SurfaceDescriptor& aOutDescriptor) MOZ_OVERRIDE;
+
+  virtual bool HasInternalBuffer() const MOZ_OVERRIDE { return false; }
+
+  void InitWith(gl::SurfaceStream* aStream);
+
+  virtual gfx::IntSize GetSize() const { return gfx::IntSize(); }
+
+  virtual gfx::SurfaceFormat GetFormat() const MOZ_OVERRIDE
+  {
+    return gfx::SurfaceFormat::UNKNOWN;
+  }
+
+  virtual bool AllocateForSurface(gfx::IntSize aSize, TextureAllocationFlags aFlags) MOZ_OVERRIDE
+  {
+    MOZ_CRASH("Should never hit this.");
+    return false;
+  }
+
+protected:
+  bool mIsLocked;
+  RefPtr<gl::SurfaceStream> mStream;
+  RefPtr<gl::GLContext> mGL; // Just for reference holding.
 };
 
 struct TextureClientAutoUnlock

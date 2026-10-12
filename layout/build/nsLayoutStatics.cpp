@@ -30,7 +30,6 @@
 #include "nsGkAtoms.h"
 #include "nsImageFrame.h"
 #include "nsLayoutStylesheetCache.h"
-#include "nsNodeInfo.h"
 #include "nsRange.h"
 #include "nsRegion.h"
 #include "nsRepeatService.h"
@@ -86,8 +85,8 @@
 #include "nsSynthVoiceRegistry.h"
 #endif
 
-#ifdef MOZ_MEDIA_PLUGINS
-#include "MediaPluginHost.h"
+#ifdef MOZ_ANDROID_OMX
+#include "AndroidMediaPluginHost.h"
 #endif
 
 #ifdef MOZ_WMF
@@ -132,6 +131,7 @@ using namespace mozilla::system;
 #include "mozilla/IMEStateManager.h"
 #include "nsDocument.h"
 #include "mozilla/dom/HTMLVideoElement.h"
+#include "CameraPreferences.h"
 
 using namespace mozilla;
 using namespace mozilla::net;
@@ -296,6 +296,10 @@ nsLayoutStatics::Initialize()
 
   CounterStyleManager::InitializeBuiltinCounterStyles();
 
+  CameraPreferences::Initialize();
+
+  IMEStateManager::Init();
+
   return NS_OK;
 }
 
@@ -315,7 +319,6 @@ nsLayoutStatics::Shutdown()
   Attr::Shutdown();
   EventListenerManager::Shutdown();
   IMEStateManager::Shutdown();
-  nsComputedDOMStyle::Shutdown();
   nsCSSParser::Shutdown();
   nsCSSRuleProcessor::Shutdown();
   nsTextFrameTextRunCache::Shutdown();
@@ -363,8 +366,8 @@ nsLayoutStatics::Shutdown()
   nsAutoCopyListener::Shutdown();
   FrameLayerBuilder::Shutdown();
 
-#ifdef MOZ_MEDIA_PLUGINS
-  MediaPluginHost::Shutdown();
+#ifdef MOZ_ANDROID_OMX
+  AndroidMediaPluginHost::Shutdown();
 #endif
 
 #ifdef MOZ_GSTREAMER
@@ -426,4 +429,6 @@ nsLayoutStatics::Shutdown()
   nsDocument::XPCOMShutdown();
 
   CacheObserver::Shutdown();
+
+  CameraPreferences::Shutdown();
 }

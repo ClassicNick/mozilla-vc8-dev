@@ -52,7 +52,6 @@
 #include "gfxBlur.h"
 #include "gfxUtils.h"
 
-#include "nsFrameManager.h"
 #include "nsFrameLoader.h"
 #include "nsBidi.h"
 #include "nsBidiPresUtils.h"
@@ -146,11 +145,12 @@ static int64_t gCanvasAzureMemoryUsed = 0;
 // underlying surface implementations.  See bug 655638 for details.
 class Canvas2dPixelsReporter MOZ_FINAL : public nsIMemoryReporter
 {
+  ~Canvas2dPixelsReporter() {}
 public:
   NS_DECL_ISUPPORTS
 
   NS_IMETHOD CollectReports(nsIHandleReportCallback* aHandleReport,
-                            nsISupports* aData)
+                            nsISupports* aData, bool aAnonymize)
   {
     return MOZ_COLLECT_REPORT(
       "canvas-2d-pixels", KIND_OTHER, UNITS_BYTES,
@@ -367,7 +367,7 @@ public:
                                          mCtx->CurrentState().op);
   }
 
-  operator DrawTarget*() 
+  operator DrawTarget*()
   {
     return mTarget;
   }
@@ -559,7 +559,11 @@ DrawTarget* CanvasRenderingContext2D::sErrorTarget = nullptr;
 
 
 CanvasRenderingContext2D::CanvasRenderingContext2D()
-  : mForceSoftware(false), mZero(false), mOpaque(false), mResetLayer(true)
+  : mForceSoftware(false)
+  // these are the default values from the Canvas spec
+  , mWidth(300), mHeight(150)
+  , mZero(false), mOpaque(false)
+  , mResetLayer(true)
   , mIPC(false)
   , mStream(nullptr)
   , mIsEntireFrameInvalid(false)
@@ -940,7 +944,8 @@ CanvasRenderingContext2D::EnsureTarget()
         if (glue && glue->GetGrContext() && glue->GetGLContext()) {
           mTarget = Factory::CreateDrawTargetSkiaWithGrContext(glue->GetGrContext(), size, format);
           if (mTarget) {
-            mStream = gfx::SurfaceStream::CreateForType(SurfaceStreamType::TripleBuffer, glue->GetGLContext());
+            mStream = gl::SurfaceStream::CreateForType(gl::SurfaceStreamType::TripleBuffer,
+                                                       glue->GetGLContext());
             AddDemotableContext(this);
           } else {
             printf_stderr("Failed to create a SkiaGL DrawTarget, falling back to software\n");
@@ -971,6 +976,15 @@ CanvasRenderingContext2D::EnsureTarget()
     }
 
     mTarget->ClearRect(mgfx::Rect(Point(0, 0), Size(mWidth, mHeight)));
+    if (mTarget->GetBackendType() == mgfx::BackendType::CAIRO) {
+      // Cairo doesn't play well with huge clips. When given a very big clip it
+      // will try to allocate big mask surface without taking the target
+      // size into account which can cause OOM. See bug 1034593.
+      // This limits the clip extents to the size of the canvas.
+      // A fix in Cairo would probably be preferable, but requires somewhat
+      // invasive changes.
+      mTarget->PushClipRect(mgfx::Rect(Point(0, 0), Size(mWidth, mHeight)));
+    }
     // Force a full layer transaction since we didn't have a layer before
     // and now we might need one.
     if (mCanvasElement) {
@@ -1058,6 +1072,11 @@ CanvasRenderingContext2D::InitializeWithSurface(nsIDocShell *shell,
     mTarget = sErrorTarget;
   }
 
+  if (mTarget->GetBackendType() == mgfx::BackendType::CAIRO) {
+    // Cf comment in EnsureTarget
+    mTarget->PushClipRect(mgfx::Rect(Point(0, 0), Size(mWidth, mHeight)));
+  }
+
   return NS_OK;
 }
 
@@ -1067,10 +1086,6 @@ CanvasRenderingContext2D::SetIsOpaque(bool isOpaque)
   if (isOpaque != mOpaque) {
     mOpaque = isOpaque;
     ClearTarget();
-  }
-
-  if (mOpaque) {
-    EnsureTarget();
   }
 
   return NS_OK;
@@ -2326,7 +2341,8 @@ CanvasRenderingContext2D::SetFont(const nsAString& font,
                      fontStyle->mFont.sizeAdjust,
                      fontStyle->mFont.systemFont,
                      printerFont,
-                     fontStyle->mFont.variant == NS_STYLE_FONT_VARIANT_SMALL_CAPS,
+                     fontStyle->mFont.synthesis & NS_FONT_SYNTHESIS_WEIGHT,
+                     fontStyle->mFont.synthesis & NS_FONT_SYNTHESIS_STYLE,
                      fontStyle->mFont.languageOverride);
 
   fontStyle->mFont.AddFontFeaturesToStyle(&style);
@@ -2507,7 +2523,7 @@ CanvasRenderingContext2D::AddHitRegion(const HitRegionOptions& options, ErrorRes
                                 nsINode::DeleteProperty<bool>);
 #endif
   }
-  
+
   // finally, add the region to the list
   RegionInfo info;
   info.mId = options.mId;
@@ -3449,7 +3465,7 @@ CanvasRenderingContext2D::DrawDirectlyToCanvas(
 
   nsRefPtr<gfxContext> context = new gfxContext(tempTarget);
   context->SetMatrix(contextMatrix);
-  
+
   // FLAG_CLAMP is added for increased performance
   uint32_t modifiedFlags = image.mDrawingFlags | imgIContainer::FLAG_CLAMP;
 
@@ -3655,7 +3671,11 @@ CanvasRenderingContext2D::DrawWindow(nsGlobalWindow& window, double x,
   }
   nsRefPtr<gfxContext> thebes;
   RefPtr<DrawTarget> drawDT;
-  if (gfxPlatform::GetPlatform()->SupportsAzureContentForDrawTarget(mTarget)) {
+  // Rendering directly is faster and can be done if mTarget supports Azure
+  // and does not need alpha blending.
+  if (gfxPlatform::GetPlatform()->SupportsAzureContentForDrawTarget(mTarget) &&
+      GlobalAlpha() == 1.0f)
+  {
     thebes = new gfxContext(mTarget);
     thebes->SetMatrix(gfxMatrix(matrix._11, matrix._12, matrix._21,
                                 matrix._22, matrix._31, matrix._32));
@@ -3693,7 +3713,7 @@ CanvasRenderingContext2D::DrawWindow(nsGlobalWindow& window, double x,
     mgfx::Rect sourceRect(0, 0, sw, sh);
     mTarget->DrawSurface(source, destRect, sourceRect,
                          DrawSurfaceOptions(mgfx::Filter::POINT),
-                         DrawOptions(1.0f, CompositionOp::OP_OVER,
+                         DrawOptions(GlobalAlpha(), CompositionOp::OP_OVER,
                                      AntialiasMode::NONE));
     mTarget->Flush();
   } else {
@@ -4235,6 +4255,12 @@ CanvasRenderingContext2D::GetCanvasLayer(nsDisplayListBuilder* aBuilder,
                                          CanvasLayer *aOldLayer,
                                          LayerManager *aManager)
 {
+  if (mOpaque) {
+    // If we're opaque then make sure we have a surface so we paint black
+    // instead of transparent.
+    EnsureTarget();
+  }
+
   // Don't call EnsureTarget() ... if there isn't already a surface, then
   // we have nothing to paint and there is no need to create a surface just
   // to paint nothing. Also, EnsureTarget() can cause creation of a persistent
@@ -4358,7 +4384,7 @@ CanvasPath::CanvasPath(nsISupports* aParent)
   mPathBuilder = gfxPlatform::GetPlatform()->ScreenReferenceDrawTarget()->CreatePathBuilder();
 }
 
-CanvasPath::CanvasPath(nsISupports* aParent, RefPtr<PathBuilder> aPathBuilder)
+CanvasPath::CanvasPath(nsISupports* aParent, TemporaryRef<PathBuilder> aPathBuilder)
   : mParent(aParent), mPathBuilder(aPathBuilder)
 {
   SetIsDOMBinding();
@@ -4555,8 +4581,8 @@ CanvasPath::BezierTo(const gfx::Point& aCP1,
   mPathBuilder->BezierTo(aCP1, aCP2, aCP3);
 }
 
-RefPtr<gfx::Path>
-CanvasPath::GetPath(const CanvasWindingRule& winding, const mozilla::RefPtr<mozilla::gfx::DrawTarget>& mTarget) const
+TemporaryRef<gfx::Path>
+CanvasPath::GetPath(const CanvasWindingRule& winding, const DrawTarget* aTarget) const
 {
   FillRule fillRule = FillRule::FILL_WINDING;
   if (winding == CanvasWindingRule::Evenodd) {
@@ -4564,7 +4590,7 @@ CanvasPath::GetPath(const CanvasWindingRule& winding, const mozilla::RefPtr<mozi
   }
 
   if (mPath &&
-      (mPath->GetBackendType() == mTarget->GetType()) &&
+      (mPath->GetBackendType() == aTarget->GetBackendType()) &&
       (mPath->GetFillRule() == fillRule)) {
     return mPath;
   }
@@ -4580,8 +4606,8 @@ CanvasPath::GetPath(const CanvasWindingRule& winding, const mozilla::RefPtr<mozi
   }
 
   // retarget our backend if we're used with a different backend
-  if (mPath->GetBackendType() != mTarget->GetType()) {
-    RefPtr<PathBuilder> tmpPathBuilder = mTarget->CreatePathBuilder(fillRule);
+  if (mPath->GetBackendType() != aTarget->GetBackendType()) {
+    RefPtr<PathBuilder> tmpPathBuilder = aTarget->CreatePathBuilder(fillRule);
     mPath->StreamToSink(tmpPathBuilder);
     mPath = tmpPathBuilder->Finish();
   } else if (mPath->GetFillRule() != fillRule) {

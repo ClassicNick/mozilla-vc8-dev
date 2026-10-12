@@ -70,6 +70,10 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(DOMSVGTranslatePoint)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
+SVGSVGElement::~SVGSVGElement()
+{
+}
+
 nsISVGPoint*
 DOMSVGTranslatePoint::Clone()
 {
@@ -157,8 +161,8 @@ NS_INTERFACE_TABLE_TAIL_INHERITING(SVGSVGElementBase)
 //----------------------------------------------------------------------
 // Implementation
 
-SVGSVGElement::SVGSVGElement(already_AddRefed<nsINodeInfo> aNodeInfo,
-                                 FromParser aFromParser)
+SVGSVGElement::SVGSVGElement(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo,
+                             FromParser aFromParser)
   : SVGSVGElementBase(aNodeInfo),
     mViewportWidth(0),
     mViewportHeight(0),
@@ -181,11 +185,11 @@ SVGSVGElement::SVGSVGElement(already_AddRefed<nsINodeInfo> aNodeInfo,
 
 // From NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGSVGElement)
 nsresult
-SVGSVGElement::Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const
+SVGSVGElement::Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const
 {
   *aResult = nullptr;
-  nsCOMPtr<nsINodeInfo> ni = aNodeInfo;
-  SVGSVGElement *it = new SVGSVGElement(ni.forget(), NOT_FROM_PARSER);
+  already_AddRefed<mozilla::dom::NodeInfo> ni = nsRefPtr<mozilla::dom::NodeInfo>(aNodeInfo).forget();
+  SVGSVGElement *it = new SVGSVGElement(ni, NOT_FROM_PARSER);
 
   nsCOMPtr<nsINode> kungFuDeathGrip = it;
   nsresult rv1 = it->Init();

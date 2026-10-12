@@ -11,6 +11,7 @@
 #include "nsWrapperCache.h"
 
 #include "mozilla/LinkedList.h"
+#include "mozilla/TypedEnum.h"
 
 namespace mozilla {
 
@@ -29,10 +30,6 @@ class WebGLFramebuffer MOZ_FINAL
 {
 public:
     WebGLFramebuffer(WebGLContext* context);
-
-    ~WebGLFramebuffer() {
-        DeleteOnce();
-    }
 
     struct Attachment
     {
@@ -56,7 +53,15 @@ public:
         bool IsDeleteRequested() const;
 
         bool HasAlpha() const;
-        bool IsReadableFloat() const;
+
+        // For IsFloatType()
+        MOZ_BEGIN_NESTED_ENUM_CLASS(FloatType)
+            Any = 0,
+            Half,
+            Full
+        MOZ_END_NESTED_ENUM_CLASS(FloatType)
+
+        bool IsFloatType(FloatType floatType = FloatType::Any) const;
 
         void SetTexImage(WebGLTexture* tex, GLenum target, GLint level);
         void SetRenderbuffer(WebGLRenderbuffer* rb);
@@ -114,6 +119,8 @@ public:
                               GLint level);
 
 private:
+    void DetachAttachment(WebGLFramebuffer::Attachment& attachment);
+    void DetachAllAttachments();
     const WebGLRectangleObject& GetAnyRectObject() const;
     Attachment* GetAttachmentOrNull(GLenum attachment);
 
@@ -181,6 +188,10 @@ public:
     void NotifyAttachableChanged() const;
 
 private:
+    ~WebGLFramebuffer() {
+        DeleteOnce();
+    }
+
     mutable GLenum mStatus;
 
     GLuint mGLName;
@@ -193,6 +204,8 @@ private:
                mStencilAttachment,
                mDepthStencilAttachment;
 };
+
+MOZ_FINISH_NESTED_ENUM_CLASS(WebGLFramebuffer::Attachment::FloatType)
 
 } // namespace mozilla
 

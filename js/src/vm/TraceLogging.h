@@ -118,6 +118,7 @@ namespace jit {
     _(Interpreter)                                    \
     _(Invalidation)                                   \
     _(IonCompilation)                                 \
+    _(IonCompilationPaused)                           \
     _(IonLinking)                                     \
     _(IonMonkey)                                      \
     _(MinorGC)                                        \
@@ -132,6 +133,7 @@ namespace jit {
     /* Specific passes during ion compilation */      \
     _(SplitCriticalEdges)                             \
     _(RenumberBlocks)                                 \
+    _(ScalarReplacement)                              \
     _(DominatorTree)                                  \
     _(PhiAnalysis)                                    \
     _(MakeLoopsContiguous)                            \

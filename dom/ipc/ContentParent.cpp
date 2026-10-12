@@ -66,6 +66,7 @@
 #include "mozilla/Services.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/unused.h"
+#include "nsAnonymousTemporaryFile.h"
 #include "nsAppRunner.h"
 #include "nsAutoPtr.h"
 #include "nsCDefaultURIFixup.h"
@@ -102,6 +103,7 @@
 #include "nsIURIFixup.h"
 #include "nsIWindowWatcher.h"
 #include "nsIXULRuntime.h"
+#include "nsMemoryInfoDumper.h"
 #include "nsMemoryReporterManager.h"
 #include "nsServiceManagerUtils.h"
 #include "nsStyleSheetService.h"
@@ -111,6 +113,7 @@
 #include "PreallocatedProcessManager.h"
 #include "ProcessPriorityManager.h"
 #include "SandboxHal.h"
+#include "ScreenManagerParent.h"
 #include "StructuredCloneUtils.h"
 #include "TabParent.h"
 #include "URIUtils.h"
@@ -118,6 +121,8 @@
 #include "nsIDocShell.h"
 #include "mozilla/net/NeckoMessageUtils.h"
 #include "gfxPrefs.h"
+#include "prio.h"
+#include "private/pprio.h"
 
 #if defined(ANDROID) || defined(LINUX)
 #include "nsSystemInfo.h"
@@ -153,6 +158,8 @@ using namespace mozilla::system;
 
 #include "JavaScriptParent.h"
 
+#include "mozilla/RemoteSpellCheckEngineParent.h"
+
 #ifdef MOZ_B2G_FM
 #include "mozilla/dom/FMRadioParent.h"
 #endif
@@ -185,6 +192,7 @@ using namespace mozilla::ipc;
 using namespace mozilla::layers;
 using namespace mozilla::net;
 using namespace mozilla::jsipc;
+using namespace mozilla::widget;
 
 #ifdef ENABLE_TESTS
 
@@ -445,6 +453,7 @@ private:
 // A memory reporter for ContentParent objects themselves.
 class ContentParentsMemoryReporter MOZ_FINAL : public nsIMemoryReporter
 {
+    ~ContentParentsMemoryReporter() {}
 public:
     NS_DECL_ISUPPORTS
     NS_DECL_NSIMEMORYREPORTER
@@ -454,7 +463,8 @@ NS_IMPL_ISUPPORTS(ContentParentsMemoryReporter, nsIMemoryReporter)
 
 NS_IMETHODIMP
 ContentParentsMemoryReporter::CollectReports(nsIMemoryReporterCallback* cb,
-                                             nsISupports* aClosure)
+                                             nsISupports* aClosure,
+                                             bool aAnonymize)
 {
     nsAutoTArray<ContentParent*, 16> cps;
     ContentParent::GetAllEvenIfDead(cps);
@@ -464,7 +474,7 @@ ContentParentsMemoryReporter::CollectReports(nsIMemoryReporterCallback* cb,
         MessageChannel* channel = cp->GetIPCChannel();
 
         nsString friendlyName;
-        cp->FriendlyName(friendlyName);
+        cp->FriendlyName(friendlyName, aAnonymize);
 
         cp->AddRef();
         nsrefcnt refcnt = cp->Release();
@@ -601,23 +611,28 @@ ContentParent::MaybeTakePreallocatedAppProcess(const nsAString& aAppManifestURL,
 /*static*/ void
 ContentParent::StartUp()
 {
+    // We could launch sub processes from content process
+    // FIXME Bug 1023701 - Stop using ContentParent static methods in
+    // child process
+    sCanLaunchSubprocesses = true;
+
+    if (XRE_GetProcessType() != GeckoProcessType_Default) {
+        return;
+    }
+
     // Note: This reporter measures all ContentParents.
     RegisterStrongMemoryReporter(new ContentParentsMemoryReporter());
 
     mozilla::dom::time::InitializeDateCacheCleaner();
 
-    sCanLaunchSubprocesses = true;
+    BackgroundChild::Startup();
 
-    if (XRE_GetProcessType() == GeckoProcessType_Default) {
-        BackgroundChild::Startup();
+    // Try to preallocate a process that we can transform into an app later.
+    PreallocatedProcessManager::AllocateAfterDelay();
 
-        // Try to preallocate a process that we can transform into an app later.
-        PreallocatedProcessManager::AllocateAfterDelay();
-
-        // Test the PBackground infrastructure on ENABLE_TESTS builds when a special
-        // testing preference is set.
-        MaybeTestPBackground();
-    }
+    // Test the PBackground infrastructure on ENABLE_TESTS builds when a special
+    // testing preference is set.
+    MaybeTestPBackground();
 }
 
 /*static*/ void
@@ -797,7 +812,7 @@ ContentParent::RecvCreateChildProcess(const IPCTabContext& aContext,
     *aIsForApp = cp->IsForApp();
     *aIsForBrowser = cp->IsForBrowser();
     sContentParentMap[*aId] = cp;
-    auto iter = sGrandchildProcessMap.find(this);
+    std::map<ContentParent*, std::set<ContentParent*> >::iterator iter = sGrandchildProcessMap.find(this);
     if (iter == sGrandchildProcessMap.end()) {
         std::set<ContentParent*> children;
         children.insert(cp);
@@ -812,7 +827,7 @@ bool
 ContentParent::AnswerBridgeToChildProcess(const uint64_t& id)
 {
     ContentParent* cp = sContentParentMap[id];
-    auto iter = sGrandchildProcessMap.find(this);
+    std::map<ContentParent*, std::set<ContentParent*> >::iterator iter = sGrandchildProcessMap.find(this);
     if (iter != sGrandchildProcessMap.end() &&
         iter->second.find(cp) != iter->second.end()) {
         return PContentBridge::Bridge(this, cp);
@@ -825,7 +840,8 @@ ContentParent::AnswerBridgeToChildProcess(const uint64_t& id)
 
 /*static*/ TabParent*
 ContentParent::CreateBrowserOrApp(const TabContext& aContext,
-                                  Element* aFrameElement)
+                                  Element* aFrameElement,
+                                  ContentParent* aOpenerContentParent)
 {
     if (!sCanLaunchSubprocesses) {
         return nullptr;
@@ -857,9 +873,12 @@ ContentParent::CreateBrowserOrApp(const TabContext& aContext,
             parent->SetIsForApp(isForApp);
             parent->SetIsForBrowser(isForBrowser);
             constructorSender = parent;
-        } else if (nsRefPtr<ContentParent> cp =
-                   GetNewOrUsed(aContext.IsBrowserElement(), initialPriority)) {
-            constructorSender = cp;
+        } else {
+          if (aOpenerContentParent) {
+            constructorSender = aOpenerContentParent;
+          } else {
+            constructorSender = GetNewOrUsed(aContext.IsBrowserElement(), initialPriority);
+          }
         }
         if (constructorSender) {
             uint32_t chromeFlags = 0;
@@ -967,18 +986,15 @@ ContentParent::CreateBrowserOrApp(const TabContext& aContext,
         }
     }
 
+    bool reused = !!p;
+    bool tookPreallocated = false;
     if (!p) {
         p = MaybeTakePreallocatedAppProcess(manifestURL,
                                             initialPriority);
-        if (!p) {
-#ifdef MOZ_NUWA_PROCESS
-            if (Preferences::GetBool("dom.ipc.processPrelaunch.enabled",
-                                     false)) {
-                // Returning nullptr from here so the frame loader will retry
-                // later when we have a spare process.
-                return nullptr;
-            }
-#endif
+        tookPreallocated = !!p;
+        if (!tookPreallocated) {
+            // XXXkhuey Nuwa wants the frame loader to try again later, but the
+            // frame loader is really not set up to do that ...
             NS_WARNING("Unable to use pre-allocated app process");
             p = new ContentParent(ownApp,
                                   /* aOpener = */ nullptr,
@@ -1002,6 +1018,29 @@ ContentParent::CreateBrowserOrApp(const TabContext& aContext,
         p->ChildID(),
         p->IsForApp(),
         p->IsForBrowser());
+    if (!browser) {
+        // We failed to actually start the PBrowser.  This can happen if the
+        // other process has already died.
+        if (!reused) {
+            // Don't leave a broken ContentParent in the hashtable.
+            p->KillHard();
+            sAppContentParents->Remove(manifestURL);
+            p = nullptr;
+        }
+
+        // If we took the preallocated process and it was already dead, try
+        // again with a non-preallocated process.  We can be sure this won't
+        // loop forever, because the next time through there will be no
+        // preallocated process to take.
+        if (tookPreallocated) {
+          return ContentParent::CreateBrowserOrApp(aContext,
+                                                   aFrameElement,
+                                                   aOpenerContentParent);
+        }
+
+        // Otherwise just give up.
+        return nullptr;
+    }
 
     p->MaybeTakeCPUWakeLock(aFrameElement);
 
@@ -1125,6 +1164,8 @@ public:
     }
 
 private:
+    ~SystemMessageHandledListener() {}
+
     static StaticAutoPtr<LinkedList<SystemMessageHandledListener> > sListeners;
 
     void ShutDown()
@@ -1328,7 +1369,7 @@ ContentParent::MarkAsDead()
     mIsAlive = false;
 
     sGrandchildProcessMap.erase(this);
-    for (auto iter = sGrandchildProcessMap.begin();
+    for (std::map<ContentParent*, std::set<ContentParent*> >::iterator iter = sGrandchildProcessMap.begin();
          iter != sGrandchildProcessMap.end();
          iter++) {
         iter->second.erase(this);
@@ -1412,7 +1453,7 @@ ContentParent::RecvAllocateLayerTreeId(uint64_t* aId)
 {
     *aId = CompositorParent::AllocateLayerTreeId();
 
-    auto iter = NestedBrowserLayerIds().find(this);
+    std::map<ContentParent*, std::set<uint64_t> >::iterator iter = NestedBrowserLayerIds().find(this);
     if (iter == NestedBrowserLayerIds().end()) {
         std::set<uint64_t> ids;
         ids.insert(*aId);
@@ -1426,7 +1467,7 @@ ContentParent::RecvAllocateLayerTreeId(uint64_t* aId)
 bool
 ContentParent::RecvDeallocateLayerTreeId(const uint64_t& aId)
 {
-    auto iter = NestedBrowserLayerIds().find(this);
+    std::map<ContentParent*, std::set<uint64_t> >::iterator iter = NestedBrowserLayerIds().find(this);
     if (iter != NestedBrowserLayerIds().end() &&
         iter->second.find(aId) != iter->second.end()) {
         CompositorParent::DeallocateLayerTreeId(aId);
@@ -1570,9 +1611,9 @@ ContentParent::ActorDestroy(ActorDestroyReason why)
     NS_DispatchToCurrentThread(new DelayedDeleteContentParentTask(this));
 
     // Destroy any processes created by this ContentParent
-    auto iter = sGrandchildProcessMap.find(this);
+    std::map<ContentParent*, std::set<ContentParent*> >::iterator iter = sGrandchildProcessMap.find(this);
     if (iter != sGrandchildProcessMap.end()) {
-        for(auto child = iter->second.begin();
+        for(std::set<ContentParent*, std::less<ContentParent*> >::iterator child = iter->second.begin();
             child != iter->second.end();
             child++) {
             MessageLoop::current()->PostTask(
@@ -1720,7 +1761,6 @@ ContentParent::ContentParent(mozIApplication* aApp,
         ? base::PRIVILEGES_INHERIT
         : base::PRIVILEGES_DEFAULT;
     mSubprocess = new GeckoChildProcessHost(GeckoProcessType_Content, privs);
-    mSubprocess->SetSandboxEnabled(ShouldSandboxContentProcesses());
 
     IToplevelProtocol::SetTransport(mSubprocess->GetChannel());
 
@@ -1877,16 +1917,21 @@ ContentParent::InitInternal(ProcessPriority aInitialPriority,
             DebugOnly<bool> opened = PCompositor::Open(this);
             MOZ_ASSERT(opened);
 
+#ifndef MOZ_WIDGET_GONK
             if (gfxPrefs::AsyncVideoOOPEnabled()) {
                 opened = PImageBridge::Open(this);
                 MOZ_ASSERT(opened);
             }
-        }
-    }
-#ifdef MOZ_WIDGET_GONK
-    DebugOnly<bool> opened = PSharedBufferManager::Open(this);
-    MOZ_ASSERT(opened);
+#else
+            opened = PImageBridge::Open(this);
+            MOZ_ASSERT(opened);
 #endif
+        }
+#ifdef MOZ_WIDGET_GONK
+        DebugOnly<bool> opened = PSharedBufferManager::Open(this);
+        MOZ_ASSERT(opened);
+#endif
+    }
 
     if (aSendRegisteredChrome) {
         nsCOMPtr<nsIChromeRegistry> registrySvc = nsChromeRegistry::GetService();
@@ -2423,21 +2468,35 @@ ContentParent::Observe(nsISupports* aSubject,
 #endif
         if (!isNuwa) {
             unsigned generation;
-            int minimize, identOffset = -1;
+            int anonymize, minimize, identOffset = -1;
             nsDependentString msg(aData);
             NS_ConvertUTF16toUTF8 cmsg(msg);
 
             if (sscanf(cmsg.get(),
-                       "generation=%x minimize=%d DMDident=%n",
-                       &generation, &minimize, &identOffset) < 2
+                       "generation=%x anonymize=%d minimize=%d DMDident=%n",
+                       &generation, &anonymize, &minimize, &identOffset) < 3
                 || identOffset < 0) {
                 return NS_ERROR_INVALID_ARG;
             }
             // The pre-%n part of the string should be all ASCII, so the byte
             // offset in identOffset should be correct as a char offset.
             MOZ_ASSERT(cmsg[identOffset - 1] == '=');
+            FileDescriptor dmdFileDesc;
+#ifdef MOZ_DMD
+            FILE *dmdFile;
+            nsAutoString dmdIdent(Substring(msg, identOffset));
+            nsresult rv = nsMemoryInfoDumper::OpenDMDFile(dmdIdent, Pid(), &dmdFile);
+            if (NS_WARN_IF(NS_FAILED(rv))) {
+                // Proceed with the memory report as if DMD were disabled.
+                dmdFile = nullptr;
+            }
+            if (dmdFile) {
+                dmdFileDesc = FILEToFileDescriptor(dmdFile);
+                fclose(dmdFile);
+            }
+#endif
             unused << SendPMemoryReportRequestConstructor(
-              generation, minimize, nsString(Substring(msg, identOffset)));
+              generation, anonymize, minimize, dmdFileDesc);
         }
     }
     else if (!strcmp(aTopic, "child-gc-request")){
@@ -2637,6 +2696,20 @@ ContentParent::DeallocPBlobParent(PBlobParent* aActor)
     return true;
 }
 
+mozilla::PRemoteSpellcheckEngineParent *
+ContentParent::AllocPRemoteSpellcheckEngineParent()
+{
+    mozilla::RemoteSpellcheckEngineParent *parent = new mozilla::RemoteSpellcheckEngineParent();
+    return parent;
+}
+
+bool
+ContentParent::DeallocPRemoteSpellcheckEngineParent(PRemoteSpellcheckEngineParent *parent)
+{
+    delete parent;
+    return true;
+}
+
 void
 ContentParent::KillHard()
 {
@@ -2678,7 +2751,7 @@ ContentParent::IsPreallocated()
 }
 
 void
-ContentParent::FriendlyName(nsAString& aName)
+ContentParent::FriendlyName(nsAString& aName, bool aAnonymize)
 {
     aName.Truncate();
 #ifdef MOZ_NUWA_PROCESS
@@ -2690,6 +2763,8 @@ ContentParent::FriendlyName(nsAString& aName)
         aName.AssignLiteral("(Preallocated)");
     } else if (mIsForBrowser) {
         aName.AssignLiteral("Browser");
+    } else if (aAnonymize) {
+        aName.AssignLiteral("<anonymized-name>");
     } else if (!mAppName.IsEmpty()) {
         aName = mAppName;
     } else if (!mAppManifestURL.IsEmpty()) {
@@ -2777,9 +2852,10 @@ ContentParent::RecvPIndexedDBConstructor(PIndexedDBParent* aActor)
 }
 
 PMemoryReportRequestParent*
-ContentParent::AllocPMemoryReportRequestParent(const uint32_t& generation,
-                                               const bool &minimizeMemoryUsage,
-                                               const nsString &aDMDDumpIdent)
+ContentParent::AllocPMemoryReportRequestParent(const uint32_t& aGeneration,
+                                               const bool &aAnonymize,
+                                               const bool &aMinimizeMemoryUsage,
+                                               const FileDescriptor &aDMDFile)
 {
     MemoryReportRequestParent* parent = new MemoryReportRequestParent();
     return parent;
@@ -2841,6 +2917,21 @@ bool
 ContentParent::DeallocPNeckoParent(PNeckoParent* necko)
 {
     delete necko;
+    return true;
+}
+
+PScreenManagerParent*
+ContentParent::AllocPScreenManagerParent(uint32_t* aNumberOfScreens,
+                                         float* aSystemDefaultScale,
+                                         bool* aSuccess)
+{
+    return new ScreenManagerParent(aNumberOfScreens, aSystemDefaultScale, aSuccess);
+}
+
+bool
+ContentParent::DeallocPScreenManagerParent(PScreenManagerParent* aActor)
+{
+    delete aActor;
     return true;
 }
 
@@ -3539,16 +3630,6 @@ ContentParent::ShouldContinueFromReplyTimeout()
 }
 
 bool
-ContentParent::ShouldSandboxContentProcesses()
-{
-#ifdef MOZ_CONTENT_SANDBOX
-    return !PR_GetEnv("MOZ_DISABLE_CONTENT_SANDBOX");
-#else
-    return true;
-#endif
-}
-
-bool
 ContentParent::RecvRecordingDeviceEvents(const nsString& aRecordingStatus,
                                          const nsString& aPageURL,
                                          const bool& aIsAudio,
@@ -3635,6 +3716,21 @@ ContentParent::RecvBackUpXResources(const FileDescriptor& aXSocketFd)
         mChildXSocketFdDup.reset(aXSocketFd.PlatformHandle());
     }
 #endif
+    return true;
+}
+
+bool
+ContentParent::RecvOpenAnonymousTemporaryFile(FileDescriptor *aFD)
+{
+    PRFileDesc *prfd;
+    nsresult rv = NS_OpenAnonymousTemporaryFile(&prfd);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+        return false;
+    }
+    *aFD = FileDescriptor::PlatformHandleType(PR_FileDesc2NativeHandle(prfd));
+    // The FileDescriptor object owns a duplicate of the file handle; we
+    // must close the original (and clean up the NSPR descriptor).
+    PR_Close(prfd);
     return true;
 }
 

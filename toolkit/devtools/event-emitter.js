@@ -12,6 +12,7 @@
   } else { // Cu.import
       const Cu = Components.utils;
       const { devtools } = Cu.import("resource://gre/modules/devtools/Loader.jsm", {});
+      this.isWorker = false;
       this.promise = Cu.import("resource://gre/modules/Promise.jsm", {}).Promise;
       factory.call(this, devtools.require, this, { exports: this });
       this.EXPORTED_SYMBOLS = ["EventEmitter"];
@@ -23,6 +24,7 @@ module.exports = EventEmitter;
 
 const { Cu, components } = require("chrome");
 const Services = require("Services");
+const promise = require("promise");
 
 /**
  * Decorate an object with event emitter functionality.
@@ -74,13 +76,13 @@ EventEmitter.prototype = {
   once: function EventEmitter_once(aEvent, aListener) {
     let deferred = promise.defer();
 
-    let handler = function(aEvent, aFirstArg) {
+    let handler = (aEvent, aFirstArg) => {
       this.off(aEvent, handler);
       if (aListener) {
         aListener.apply(null, arguments);
       }
       deferred.resolve(aFirstArg);
-    }.bind(this);
+    };
 
     handler._originalListener = aListener;
     this.on(aEvent, handler);
@@ -145,12 +147,19 @@ EventEmitter.prototype = {
   },
 
   logEvent: function(aEvent, args) {
-    let logging = Services.prefs.getBoolPref("devtools.dump.emit");
+    let logging = isWorker ? true : Services.prefs.getBoolPref("devtools.dump.emit");
 
     if (logging) {
-      let caller = components.stack.caller.caller;
-      let func = caller.name;
-      let path = caller.filename.split(/ -> /)[1] + ":" + caller.lineNumber;
+      let caller, func, path;
+      if (!isWorker) {
+        caller = components.stack.caller.caller;
+        func = caller.name;
+        let file = caller.filename;
+        if (file.contains(" -> ")) {
+          file = caller.filename.split(/ -> /)[1];
+        }
+        path = file + ":" + caller.lineNumber;
+      }
 
       let argOut = "(";
       if (args.length === 1) {

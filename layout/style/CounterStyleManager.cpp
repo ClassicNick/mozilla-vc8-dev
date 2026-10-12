@@ -55,7 +55,7 @@ GetCyclicCounterText(CounterValue aOrdinal,
 {
   NS_ABORT_IF_FALSE(aSymbols.Length() >= 1,
                     "No symbol available for cyclic counter.");
-  auto n = aSymbols.Length();
+  CounterValue n = aSymbols.Length();
   CounterValue index = (aOrdinal - 1) % n;
   aResult = aSymbols[index >= 0 ? index : index + n];
   return true;
@@ -89,10 +89,10 @@ GetSymbolicCounterText(CounterValue aOrdinal,
   }
 
   aResult.Truncate();
-  auto n = aSymbols.Length();
+  CounterValue n = aSymbols.Length();
   const nsString& symbol = aSymbols[(aOrdinal - 1) % n];
   size_t len = (aOrdinal + n - 1) / n;
-  auto symbolLength = symbol.Length();
+  CounterValue symbolLength = symbol.Length();
   if (symbolLength > 0) {
     if (len > LENGTH_LIMIT || symbolLength > LENGTH_LIMIT ||
         len * symbolLength > LENGTH_LIMIT) {
@@ -117,7 +117,7 @@ GetAlphabeticCounterText(CounterValue aOrdinal,
     return false;
   }
 
-  auto n = aSymbols.Length();
+  CounterValue n = aSymbols.Length();
   // The precise length of this array should be
   // ceil(log((double) aOrdinal / n * (n - 1) + 1) / log(n)).
   // The max length is slightly smaller than which defined below.
@@ -129,7 +129,7 @@ GetAlphabeticCounterText(CounterValue aOrdinal,
   }
 
   aResult.Truncate();
-  for (auto i = indexes.Length(); i > 0; --i) {
+  for (CounterValue i = indexes.Length(); i > 0; --i) {
     aResult.Append(aSymbols[indexes[i - 1]]);
   }
   return true;
@@ -149,7 +149,7 @@ GetNumericCounterText(CounterValue aOrdinal,
     return true;
   }
 
-  auto n = aSymbols.Length();
+  CounterValue n = aSymbols.Length();
   nsAutoTArray<int32_t, std::numeric_limits<CounterValue>::digits> indexes;
   while (aOrdinal > 0) {
     indexes.AppendElement(aOrdinal % n);
@@ -157,7 +157,7 @@ GetNumericCounterText(CounterValue aOrdinal,
   }
 
   aResult.Truncate();
-  for (auto i = indexes.Length(); i > 0; --i) {
+  for (CounterValue i = indexes.Length(); i > 0; --i) {
     aResult.Append(aSymbols[indexes[i - 1]]);
   }
   return true;
@@ -188,7 +188,7 @@ GetAdditiveCounterText(CounterValue aOrdinal,
     }
     CounterValue times = aOrdinal / symbol.weight;
     if (times > 0) {
-      auto symbolLength = symbol.symbol.Length();
+      CounterValue symbolLength = symbol.symbol.Length();
       if (symbolLength > 0) {
         length += times * symbolLength;
         if (times > LENGTH_LIMIT ||
@@ -933,6 +933,8 @@ BuiltinCounterStyle::GetInitialCounterText(CounterValue aOrdinal,
 
 class DependentBuiltinCounterStyle MOZ_FINAL : public BuiltinCounterStyle
 {
+private:
+  ~DependentBuiltinCounterStyle() {}
 public:
   DependentBuiltinCounterStyle(int32_t aStyle, CounterStyleManager* aManager)
     : BuiltinCounterStyle(aStyle), 
@@ -978,6 +980,8 @@ DependentBuiltinCounterStyle::GetFallback()
 
 class CustomCounterStyle MOZ_FINAL : public CounterStyle
 {
+private:
+  ~CustomCounterStyle() {}
 public:
   CustomCounterStyle(CounterStyleManager* aManager,
                      nsCSSCounterStyleRule* aRule)
@@ -1725,7 +1729,7 @@ CounterStyle::GetCounterText(CounterValue aOrdinal,
         initialText.Append(negative.after);
       }
       if (diff > 0) {
-        auto length = pad.symbol.Length();
+        CounterValue length = pad.symbol.Length();
         if (diff > LENGTH_LIMIT || length > LENGTH_LIMIT ||
             diff * length > LENGTH_LIMIT) {
           success = false;
@@ -1864,11 +1868,6 @@ CounterStyleManager::GetBuiltinStyle(int32_t aStyle)
                     "Require a valid builtin style constant");
   NS_ABORT_IF_FALSE(!gBuiltinStyleTable[aStyle].IsDependentStyle(),
                     "Cannot get dependent builtin style");
-  NS_ASSERTION(aStyle != NS_STYLE_LIST_STYLE_LOWER_ROMAN &&
-               aStyle != NS_STYLE_LIST_STYLE_UPPER_ROMAN &&
-               aStyle != NS_STYLE_LIST_STYLE_LOWER_ALPHA &&
-               aStyle != NS_STYLE_LIST_STYLE_UPPER_ALPHA,
-               "lower/upper-roman/alpha should be custom counter style");
   return &gBuiltinStyleTable[aStyle];
 }
 

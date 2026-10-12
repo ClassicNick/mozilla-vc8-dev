@@ -148,8 +148,8 @@ namespace mozilla {
  * - First, when a function template takes an argument that is an rvalue
  *   reference to a template argument (like 'XArg&& x' and 'YArg&& y' above),
  *   then when the argument is applied to an lvalue, the template argument
- *   resolves to 'T &'; and when it is applied to an rvalue, the template
- *   argument resolves to 'T &&'. Thus, in a call to C::C like:
+ *   resolves to 'T&'; and when it is applied to an rvalue, the template
+ *   argument resolves to 'T&&'. Thus, in a call to C::C like:
  *
  *      X foo(int);
  *      Y yy;
@@ -248,14 +248,14 @@ OldMove(const T& t)
   return MoveRef<T>(const_cast<T&>(t));
 }
 
-/** Swap |t| and |u| using move-construction if possible. */
+/** Swap |aX| and |aY| using move-construction if possible. */
 template<typename T>
 inline void
-Swap(T& t, T& u)
+Swap(T& aX, T& aY)
 {
-  T tmp(OldMove(t));
-  t = OldMove(u);
-  u = OldMove(tmp);
+  T tmp(OldMove(aX));
+  aX = OldMove(aY);
+  aY = OldMove(tmp);
 }
 
 } // namespace mozilla

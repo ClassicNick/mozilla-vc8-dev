@@ -21,7 +21,8 @@ public:
 
   bool Init(const TileSet& mTiles);
 
-  virtual BackendType GetType() const { return mTiles[0].mDrawTarget->GetType(); }
+  virtual DrawTargetType GetType() const MOZ_OVERRIDE { return mTiles[0].mDrawTarget->GetType(); }
+  virtual BackendType GetBackendType() const { return mTiles[0].mDrawTarget->GetBackendType(); }
   virtual TemporaryRef<SourceSurface> Snapshot();
   virtual IntSize GetSize() { return IntSize(mRect.XMost(), mRect.YMost()); }
 

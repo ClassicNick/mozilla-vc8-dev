@@ -816,12 +816,25 @@ FilterNodeSoftware::GetInputDataSourceSurface(uint32_t aInputEnumIndex,
   RefPtr<DataSourceSurface> result =
     GetDataSurfaceInRect(surface, surfaceRect, aRect, aEdgeMode);
 
-  if (result &&
-      (result->Stride() != GetAlignedStride<16>(result->Stride()) ||
-       reinterpret_cast<uintptr_t>(result->GetData()) % 16 != 0)) {
-    // Align unaligned surface.
-    result = CloneAligned(result);
+  if (result) {
+    // TODO: This isn't safe since we don't have a guarantee
+    // that future Maps will have the same stride
+    DataSourceSurface::MappedSurface map;
+    if (result->Map(DataSourceSurface::READ, &map)) {
+       // Unmap immediately since CloneAligned hasn't been updated
+       // to use the Map API yet. We can still read the stride/data
+       // values as long as we don't try to dereference them.
+      result->Unmap();
+      if (map.mStride != GetAlignedStride<16>(map.mStride) ||
+          reinterpret_cast<uintptr_t>(map.mData) % 16 != 0) {
+        // Align unaligned surface.
+        result = CloneAligned(result);
+      }
+    } else {
+      result = nullptr;
+    }
   }
+
 
   if (!result) {
 #ifdef DEBUG_DUMP_SURFACES
@@ -2210,15 +2223,6 @@ ColorComponentAtPoint(const uint8_t *aData, int32_t aStride, Float x, Float y, s
   const uint8_t &cuu = ColorComponentAtPoint(aData, aStride, lx + 1, ly + 1, bpp, c);
   return ((cll * tlx + cul * tux) * tly +
           (clu * tlx + cuu * tux) * tuy + f * f / 2) / (f * f);
-}
-
-static inline uint32_t
-ColorAtPoint(const uint8_t *aData, int32_t aStride, Float x, Float y)
-{
-  return ColorComponentAtPoint(aData, aStride, x, y, 4, 0) |
-         (ColorComponentAtPoint(aData, aStride, x, y, 4, 1) << 8) |
-         (ColorComponentAtPoint(aData, aStride, x, y, 4, 2) << 16) |
-         (ColorComponentAtPoint(aData, aStride, x, y, 4, 3) << 24);
 }
 
 static int32_t

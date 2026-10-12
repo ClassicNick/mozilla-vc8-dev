@@ -6,15 +6,19 @@
 package org.mozilla.gecko.db;
 
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 
 import org.mozilla.gecko.db.BrowserContract.ExpirePriority;
 import org.mozilla.gecko.db.SuggestedSites;
+import org.mozilla.gecko.distribution.Distribution;
 import org.mozilla.gecko.favicons.decoders.LoadFaviconResult;
 import org.mozilla.gecko.mozglue.RobocopTarget;
+import org.mozilla.gecko.util.StringUtils;
 
 import android.content.ContentResolver;
 import android.content.ContentValues;
+import android.content.Context;
 import android.database.ContentObserver;
 import android.database.Cursor;
 import android.graphics.drawable.BitmapDrawable;
@@ -33,6 +37,10 @@ public class BrowserDB {
         public static String KEYWORD = "keyword";
     }
 
+    public static enum FilterFlags {
+        EXCLUDE_PINNED_SITES
+    }
+
     private static BrowserDBIface sDb = null;
     private static SuggestedSites sSuggestedSites;
 
@@ -40,7 +48,8 @@ public class BrowserDB {
         public void invalidateCachedState();
 
         @RobocopTarget
-        public Cursor filter(ContentResolver cr, CharSequence constraint, int limit);
+        public Cursor filter(ContentResolver cr, CharSequence constraint, int limit,
+                             EnumSet<FilterFlags> flags);
 
         // This should only return frecent sites. BrowserDB.getTopSites will do the
         // work to combine that list with the pinned sites list.
@@ -138,6 +147,9 @@ public class BrowserDB {
 
         @RobocopTarget
         public Cursor getBookmarkForUrl(ContentResolver cr, String url);
+
+        public int addDefaultBookmarks(Context context, ContentResolver cr, int offset);
+        public int addDistributionBookmarks(ContentResolver cr, Distribution distribution, int offset);
     }
 
     static {
@@ -147,6 +159,14 @@ public class BrowserDB {
 
     public static void initialize(String profile) {
         sDb = new LocalBrowserDB(profile);
+    }
+
+    public static int addDefaultBookmarks(Context context, ContentResolver cr, final int offset) {
+        return sDb.addDefaultBookmarks(context, cr, offset);
+    }
+
+    public static int addDistributionBookmarks(ContentResolver cr, Distribution distribution, int offset) {
+        return sDb.addDistributionBookmarks(cr, distribution, offset);
     }
 
     public static void setSuggestedSites(SuggestedSites suggestedSites) {
@@ -163,13 +183,27 @@ public class BrowserDB {
 
     @RobocopTarget
     public static Cursor filter(ContentResolver cr, CharSequence constraint, int limit) {
-        return sDb.filter(cr, constraint, limit);
+        return filter(cr, constraint, limit, EnumSet.noneOf(FilterFlags.class));
+    }
+
+    @RobocopTarget
+    public static Cursor filter(ContentResolver cr, CharSequence constraint, int limit,
+                                EnumSet<FilterFlags> flags) {
+        return sDb.filter(cr, constraint, limit, flags);
     }
 
     private static void appendUrlsFromCursor(List<String> urls, Cursor c) {
         c.moveToPosition(-1);
         while (c.moveToNext()) {
-            urls.add(c.getString(c.getColumnIndex(URLColumns.URL)));
+            String url = c.getString(c.getColumnIndex(URLColumns.URL));
+
+            // Do a simpler check before decoding to avoid parsing
+            // all URLs unnecessarily.
+            if (StringUtils.isUserEnteredUrl(url)) {
+                url = StringUtils.decodeUserEnteredUrl(url);
+            }
+
+            urls.add(url);
         };
     }
 

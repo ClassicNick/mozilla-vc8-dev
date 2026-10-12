@@ -83,7 +83,7 @@ interface NavigatorStorageUtils {
 
 [NoInterfaceObject]
 interface NavigatorFeatures {
-  [Func="Navigator::HasFeatureDetectionSupport"]
+  [CheckPermissions="feature-detection", Throws]
   Promise getFeature(DOMString name);
 };
 
@@ -152,10 +152,17 @@ callback interface MozIdleObserver {
 };
 
 #ifdef MOZ_B2G
+dictionary MobileIdOptions {
+  boolean forceSelection = false;
+};
+
 [NoInterfaceObject]
 interface NavigatorMobileId {
-    [Throws, NewObject]
-    Promise getMobileIdAssertion();
+    // Ideally we would use [CheckPermissions] here, but the "mobileid"
+    // permission is set to PROMPT_ACTION and [CheckPermissions] only checks
+    // for ALLOW_ACTION.
+    [Throws, NewObject, Func="Navigator::HasMobileIdSupport"]
+    Promise getMobileIdAssertion(optional MobileIdOptions options);
 };
 Navigator implements NavigatorMobileId;
 #endif // MOZ_B2G
@@ -245,12 +252,12 @@ partial interface Navigator {
   boolean mozIsLocallyAvailable(DOMString uri, boolean whenOffline);
 };
 
-// nsIDOMMozNavigatorMobileMessage
-interface MozMobileMessageManager;
+#ifdef MOZ_WEBSMS_BACKEND
 partial interface Navigator {
-  [Func="Navigator::HasMobileMessageSupport"]
+  [CheckPermissions="sms", Pref="dom.sms.enabled"]
   readonly attribute MozMobileMessageManager? mozMobileMessage;
 };
+#endif
 
 // NetworkInformation
 partial interface Navigator {
@@ -326,7 +333,7 @@ partial interface Navigator {
 #ifdef MOZ_TIME_MANAGER
 // nsIDOMMozNavigatorTime
 partial interface Navigator {
-  [Throws, Func="Navigator::HasTimeSupport"]
+  [Throws, CheckPermissions="time"]
   readonly attribute MozTimeManager mozTime;
 };
 #endif // MOZ_TIME_MANAGER

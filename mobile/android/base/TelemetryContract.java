@@ -126,6 +126,9 @@ public interface TelemetryContract {
         // Action occurred via an intent.
         INTENT("intent"),
 
+        // Action occurred via a homescreen launcher.
+        HOMESCREEN("homescreen"),
+
         // Action triggered from a list.
         LIST("list"),
 
@@ -181,9 +184,6 @@ public interface TelemetryContract {
 
         // Awesomescreen frecency search is active.
         FRECENCY("frecency.1"),
-
-        // Started when a user enters about:home.
-        HOME("home.1"),
 
         // Started when a user enters a given home panel.
         // Session name is dynamic, encoded as "homepanel.1:<panel_id>"

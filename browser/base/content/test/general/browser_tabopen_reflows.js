@@ -42,7 +42,7 @@ const EXPECTED_REFLOWS = [
 
   // SessionStore.getWindowDimensions()
   "ssi_getWindowDimension@resource:///modules/sessionstore/SessionStore.jsm|" +
-    "@resource:///modules/sessionstore/SessionStore.jsm|" +
+    "ssi_updateWindowFeatures/<@resource:///modules/sessionstore/SessionStore.jsm|" +
     "ssi_updateWindowFeatures@resource:///modules/sessionstore/SessionStore.jsm|" +
     "ssi_collectWindowData@resource:///modules/sessionstore/SessionStore.jsm|",
 
@@ -107,8 +107,8 @@ function test() {
   });
 
   Services.prefs.setBoolPref(PREF_PRELOAD, false);
-  // set directory source to empty links
-  Services.prefs.setCharPref(PREF_NEWTAB_DIRECTORYSOURCE, "data:application/json,{}");
+  // set directory source to dummy/empty links
+  Services.prefs.setCharPref(PREF_NEWTAB_DIRECTORYSOURCE, 'data:application/json,{"test":1}');
 }
 
 let observer = {

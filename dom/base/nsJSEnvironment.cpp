@@ -56,7 +56,7 @@
 #include "mozilla/AutoRestore.h"
 #include "mozilla/dom/ErrorEvent.h"
 #include "mozilla/dom/ImageData.h"
-#include "mozilla/dom/Key.h"
+#include "mozilla/dom/CryptoKey.h"
 #include "mozilla/dom/ImageDataBinding.h"
 #include "mozilla/dom/SubtleCryptoBinding.h"
 #include "nsAXPCNativeCallContext.h"
@@ -70,9 +70,6 @@
 #endif
 #include "AccessCheck.h"
 
-#ifdef MOZ_JSDEBUGGER
-#include "jsdIDebuggerService.h"
-#endif
 #ifdef MOZ_LOGGING
 // Force PR_LOGGING so we can get JS strict warnings even in release builds
 #define FORCE_PR_LOG 1
@@ -260,6 +257,7 @@ NeedsGCAfterCC()
 
 class nsJSEnvironmentObserver MOZ_FINAL : public nsIObserver
 {
+  ~nsJSEnvironmentObserver() {}
 public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIOBSERVER
@@ -372,10 +370,9 @@ AsyncErrorReporter::AsyncErrorReporter(JSRuntime* aRuntime,
 
   const char16_t* m = static_cast<const char16_t*>(aErrorReport->ucmessage);
   if (m) {
-    const char16_t* n = static_cast<const char16_t*>
-      (js::GetErrorTypeName(aRuntime, aErrorReport->exnType));
-    if (n) {
-      mErrorMsg.Assign(n);
+    JSFlatString* name = js::GetErrorTypeName(aRuntime, aErrorReport->exnType);
+    if (name) {
+      AssignJSFlatString(mErrorMsg, name);
       mErrorMsg.AppendLiteral(": ");
     }
     mErrorMsg.Append(m);
@@ -717,7 +714,6 @@ static const char js_strict_option_str[] = JS_OPTIONS_DOT_STR "strict";
 #ifdef DEBUG
 static const char js_strict_debug_option_str[] = JS_OPTIONS_DOT_STR "strict.debug";
 #endif
-static const char js_werror_option_str[] = JS_OPTIONS_DOT_STR "werror";
 #ifdef JS_GC_ZEAL
 static const char js_zeal_option_str[]        = JS_OPTIONS_DOT_STR "gczeal";
 static const char js_zeal_frequency_str[]     = JS_OPTIONS_DOT_STR "gczeal.frequency";
@@ -754,8 +750,6 @@ nsJSContext::JSOptionChangedCallback(const char *pref, void *data)
     JS::ContextOptionsRef(cx).setExtraWarnings(true);
   }
 #endif
-
-  JS::ContextOptionsRef(cx).setWerror(Preferences::GetBool(js_werror_option_str));
 
 #ifdef JS_GC_ZEAL
   int32_t zeal = Preferences::GetInt(js_zeal_option_str, -1);
@@ -912,53 +906,14 @@ AtomIsEventHandlerName(nsIAtom *aName)
 nsIScriptGlobalObject *
 nsJSContext::GetGlobalObject()
 {
-  AutoJSContext cx;
-  JS::Rooted<JSObject*> global(mContext, GetWindowProxy());
-  if (!global) {
+  // Note: this could probably be simplified somewhat more; see bug 974327
+  // comments 1 and 3.
+  if (!mWindowProxy) {
     return nullptr;
   }
 
-  if (mGlobalObjectRef)
-    return mGlobalObjectRef;
-
-#ifdef DEBUG
-  {
-    JSObject *inner = JS_ObjectToInnerObject(cx, global);
-
-    // If this assertion hits then it means that we have a window object as
-    // our global, but we never called CreateOuterObject.
-    NS_ASSERTION(inner == global, "Shouldn't be able to innerize here");
-  }
-#endif
-
-  const JSClass *c = JS_GetClass(global);
-
-  nsCOMPtr<nsIScriptGlobalObject> sgo;
-  if (IsDOMClass(c)) {
-    sgo = do_QueryInterface(UnwrapDOMObjectToISupports(global));
-  } else {
-    if ((~c->flags) & (JSCLASS_HAS_PRIVATE |
-                       JSCLASS_PRIVATE_IS_NSISUPPORTS)) {
-      return nullptr;
-    }
-
-    nsISupports *priv = static_cast<nsISupports*>(js::GetObjectPrivate(global));
-
-    nsCOMPtr<nsIXPConnectWrappedNative> wrapped_native =
-      do_QueryInterface(priv);
-    if (wrapped_native) {
-      // The global object is a XPConnect wrapped native, the native in
-      // the wrapper might be the nsIScriptGlobalObject
-
-      sgo = do_QueryWrappedNative(wrapped_native);
-    } else {
-      sgo = do_QueryInterface(priv);
-    }
-  }
-
-  // This'll return a pointer to something we're about to release, but
-  // that's ok, the JS object will hold it alive long enough.
-  return sgo;
+  MOZ_ASSERT(mGlobalObjectRef);
+  return mGlobalObjectRef;
 }
 
 JSContext*
@@ -987,8 +942,12 @@ nsJSContext::InitContext()
 nsresult
 nsJSContext::SetProperty(JS::Handle<JSObject*> aTarget, const char* aPropName, nsISupports* aArgs)
 {
-  nsCxPusher pusher;
-  pusher.Push(mContext);
+  AutoJSAPI jsapi;
+  if (NS_WARN_IF(!jsapi.InitWithLegacyErrorReporting(GetGlobalObject()))) {
+    return NS_ERROR_FAILURE;
+  }
+  MOZ_ASSERT(jsapi.cx() == mContext,
+             "AutoJSAPI should have found our own JSContext*");
 
   JS::AutoValueVector args(mContext);
 
@@ -1640,6 +1599,7 @@ nsJSContext::InitClasses(JS::Handle<JSObject*> aGlobalObj)
 {
   JSOptionChangedCallback(js_options_dot_str, this);
   AutoJSAPI jsapi;
+  jsapi.Init();
   JSContext* cx = jsapi.cx();
   JSAutoCompartment ac(cx, aGlobalObj);
 
@@ -2848,23 +2808,33 @@ NS_DOMReadStructuredClone(JSContext* cx,
     }
     MOZ_ASSERT(dataArray.isObject());
 
-    // Construct the ImageData.
-    nsRefPtr<ImageData> imageData = new ImageData(width, height,
-                                                  dataArray.toObject());
-    // Wrap it in a JS::Value.
-    return imageData->WrapObject(cx);
+    // Protect the result from a moving GC in ~nsRefPtr.
+    JS::Rooted<JSObject*> result(cx);
+    {
+      // Construct the ImageData.
+      nsRefPtr<ImageData> imageData = new ImageData(width, height,
+                                                    dataArray.toObject());
+      // Wrap it in a JS::Value.
+      result = imageData->WrapObject(cx);
+    }
+    return result;
   } else if (tag == SCTAG_DOM_WEBCRYPTO_KEY) {
     nsIGlobalObject *global = xpc::GetNativeForGlobal(JS::CurrentGlobalOrNull(cx));
     if (!global) {
       return nullptr;
     }
 
-    nsRefPtr<Key> key = new Key(global);
-    if (!key->ReadStructuredClone(reader)) {
-      return nullptr;
+    // Prevent the return value from being trashed by a GC during ~nsRefPtr.
+    JS::Rooted<JSObject*> result(cx);
+    {
+      nsRefPtr<CryptoKey> key = new CryptoKey(global);
+      if (!key->ReadStructuredClone(reader)) {
+        result = nullptr;
+      } else {
+        result = key->WrapObject(cx);
+      }
     }
-
-    return key->WrapObject(cx);
+    return result;
   }
 
   // Don't know what this is. Bail.
@@ -2895,8 +2865,8 @@ NS_DOMWriteStructuredClone(JSContext* cx,
   }
 
   // Handle Key cloning
-  Key* key;
-  if (NS_SUCCEEDED(UNWRAP_OBJECT(Key, obj, key))) {
+  CryptoKey* key;
+  if (NS_SUCCEEDED(UNWRAP_OBJECT(CryptoKey, obj, key))) {
     return JS_WriteUint32Pair(writer, SCTAG_DOM_WEBCRYPTO_KEY, 0) &&
            key->WriteStructuredClone(writer);
   }
@@ -2987,11 +2957,6 @@ nsJSContext::EnsureStatics()
   };
   JS_SetStructuredCloneCallbacks(sRuntime, &cloneCallbacks);
 
-  static js::DOMCallbacks DOMcallbacks = {
-    InstanceClassHasProtoAtDepth
-  };
-  SetDOMCallbacks(sRuntime, &DOMcallbacks);
-
   // Set up the asm.js cache callbacks
   static JS::AsmJSCacheOps asmJSCacheOps = {
     AsmJSCacheOpenEntryForRead,
@@ -3061,6 +3026,14 @@ nsJSContext::EnsureStatics()
 
   Preferences::RegisterCallbackAndCall(SetIncrementalCCPrefChangedCallback,
                                        "dom.cycle_collector.incremental");
+
+  Preferences::RegisterCallbackAndCall(SetMemoryGCPrefChangedCallback,
+                                       "javascript.options.mem.gc_min_empty_chunk_count",
+                                       (void *)JSGC_MIN_EMPTY_CHUNK_COUNT);
+
+  Preferences::RegisterCallbackAndCall(SetMemoryGCPrefChangedCallback,
+                                       "javascript.options.mem.gc_max_empty_chunk_count",
+                                       (void *)JSGC_MAX_EMPTY_CHUNK_COUNT);
 
   nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
   if (!obs) {
@@ -3133,7 +3106,7 @@ class nsJSArgArray MOZ_FINAL : public nsIJSArgArray {
 public:
   nsJSArgArray(JSContext *aContext, uint32_t argc, JS::Value *argv,
                nsresult *prv);
-  ~nsJSArgArray();
+
   // nsISupports
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_AMBIGUOUS(nsJSArgArray,
@@ -3148,6 +3121,7 @@ public:
   void ReleaseJSObjects();
 
 protected:
+  ~nsJSArgArray();
   JSContext *mContext;
   JS::Heap<JS::Value> *mArgv;
   uint32_t mArgc;
@@ -3277,13 +3251,11 @@ nsresult NS_CreateJSArgv(JSContext *aContext, uint32_t argc, void *argv,
                          nsIJSArgArray **aArray)
 {
   nsresult rv;
-  nsJSArgArray *ret = new nsJSArgArray(aContext, argc,
-                                       static_cast<JS::Value *>(argv), &rv);
-  if (ret == nullptr)
-    return NS_ERROR_OUT_OF_MEMORY;
+  nsCOMPtr<nsIJSArgArray> ret = new nsJSArgArray(aContext, argc,
+                                                static_cast<JS::Value *>(argv), &rv);
   if (NS_FAILED(rv)) {
-    delete ret;
     return rv;
   }
-  return ret->QueryInterface(NS_GET_IID(nsIArray), (void **)aArray);
+  ret.forget(aArray);
+  return NS_OK;
 }

@@ -1,4 +1,4 @@
-﻿/* This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -349,6 +349,28 @@ MediaElementChecker.prototype = {
 };
 
 /**
+ * Only calls info() if SimpleTest.info() is available
+ */
+function safeInfo(message) {
+  if (typeof(info) === "function") {
+    info(message);
+  }
+}
+
+// Also remove mode 0 if it's offered
+// Note, we don't bother removing the fmtp lines, which makes a good test
+// for some SDP parsing issues.
+function removeVP8(sdp) {
+  var updated_sdp = sdp.replace("a=rtpmap:120 VP8/90000\r\n","");
+  updated_sdp = updated_sdp.replace("RTP/SAVPF 120 126 97\r\n","RTP/SAVPF 126 97\r\n");
+  updated_sdp = updated_sdp.replace("RTP/SAVPF 120 126\r\n","RTP/SAVPF 126\r\n");
+  updated_sdp = updated_sdp.replace("a=rtcp-fb:120 nack\r\n","");
+  updated_sdp = updated_sdp.replace("a=rtcp-fb:120 nack pli\r\n","");
+  updated_sdp = updated_sdp.replace("a=rtcp-fb:120 ccm fir\r\n","");
+  return updated_sdp;
+}
+
+/**
  * Query function for determining if any IP address is available for
  * generating SDP.
  *
@@ -374,16 +396,16 @@ function isNetworkReady() {
         var ip = ips.value[j];
         // skip IPv6 address until bug 797262 is implemented
         if (ip.indexOf(":") < 0) {
-          info("Network interface is ready with address: " + ip);
+          safeInfo("Network interface is ready with address: " + ip);
           return true;
         }
       }
     }
     // ip address is not available
-    info("Network interface is not ready, required additional network setup");
+    safeInfo("Network interface is not ready, required additional network setup");
     return false;
   }
-  info("Network setup is not required");
+  safeInfo("Network setup is not required");
   return true;
 }
 
@@ -515,12 +537,12 @@ function PeerConnectionTest(options) {
   }
 
   if (options.is_local)
-    this.pcLocal = new PeerConnectionWrapper('pcLocal', options.config_local);
+    this.pcLocal = new PeerConnectionWrapper('pcLocal', options.config_local, options.h264);
   else
     this.pcLocal = null;
 
   if (options.is_remote)
-    this.pcRemote = new PeerConnectionWrapper('pcRemote', options.config_remote || options.config_local);
+    this.pcRemote = new PeerConnectionWrapper('pcRemote', options.config_remote || options.config_local, options.h264);
   else
     this.pcRemote = null;
 
@@ -737,10 +759,10 @@ function PCT_setMediaConstraints(constraintsLocal, constraintsRemote) {
  *
  * @param {object} constraints the media constraints to use on createOffer
  */
-PeerConnectionTest.prototype.setOfferConstraints =
-function PCT_setOfferConstraints(constraints) {
+PeerConnectionTest.prototype.setOfferOptions =
+function PCT_setOfferOptions(options) {
   if (this.pcLocal)
-    this.pcLocal.offerConstraints = constraints;
+    this.pcLocal.offerOptions = options;
 };
 
 /**
@@ -1110,32 +1132,55 @@ DataChannelTest.prototype = Object.create(PeerConnectionTest.prototype, {
      */
     value : function DCT_waitForInitialDataChannel(peer, onSuccess, onFailure) {
       var dcConnectionTimeout = null;
+      var dcOpened = false;
 
       function dataChannelConnected(channel) {
-        clearTimeout(dcConnectionTimeout);
-        is(channel.readyState, "open", peer + " dataChannels[0] is in state: 'open'");
-        onSuccess();
-      }
-
-      if ((peer.dataChannels.length >= 1) &&
-          (peer.dataChannels[0].readyState === "open")) {
-        is(peer.dataChannels[0].readyState, "open", peer + " dataChannels[0] is in state: 'open'");
-        onSuccess();
-        return;
+        // in case the switch statement below had called onSuccess already we
+        // don't want to call it again
+        if (!dcOpened) {
+          clearTimeout(dcConnectionTimeout);
+          is(channel.readyState, "open", peer + " dataChannels[0] switched to state: 'open'");
+          dcOpened = true;
+          onSuccess();
+        }
       }
 
       // TODO: drno: convert dataChannels into an object and make
-      //             registerDataChannelOPenEvent a generic function
+      //             registerDataChannelOpenEvent a generic function
       if (peer == this.pcLocal) {
         peer.dataChannels[0].onopen = dataChannelConnected;
       } else {
         peer.registerDataChannelOpenEvents(dataChannelConnected);
       }
 
-      dcConnectionTimeout = setTimeout(function () {
-        info(peer + " timed out while waiting for dataChannels[0] to connect");
-        onFailure();
-      }, 60000);
+      if (peer.dataChannels.length >= 1) {
+        // snapshot of the live value as it might change during test execution
+        const readyState = peer.dataChannels[0].readyState;
+        switch (readyState) {
+          case "open": {
+            is(readyState, "open", peer + " dataChannels[0] is already in state: 'open'");
+            dcOpened = true;
+            onSuccess();
+            break;
+          }
+          case "connecting": {
+            is(readyState, "connecting", peer + " dataChannels[0] is in state: 'connecting'");
+            if (onFailure) {
+              dcConnectionTimeout = setTimeout(function () {
+                is(peer.dataChannels[0].readyState, "open", peer + " timed out while waiting for dataChannels[0] to open");
+                onFailure();
+              }, 60000);
+            }
+            break;
+          }
+          default: {
+            ok(false, "dataChannels[0] is in unexpected state " + readyState);
+            if (onFailure) {
+              onFailure()
+            }
+          }
+        }
+      }
     }
   }
 
@@ -1311,13 +1356,13 @@ DataChannelWrapper.prototype = {
  * @param {object} configuration
  *        Configuration for the peer connection instance
  */
-function PeerConnectionWrapper(label, configuration) {
+function PeerConnectionWrapper(label, configuration, h264) {
   this.configuration = configuration;
   this.label = label;
   this.whenCreated = Date.now();
 
   this.constraints = [ ];
-  this.offerConstraints = {};
+  this.offerOptions = {};
   this.streams = [ ];
   this.mediaCheckers = [ ];
 
@@ -1325,6 +1370,8 @@ function PeerConnectionWrapper(label, configuration) {
 
   this.onAddStreamFired = false;
   this.addStreamCallbacks = {};
+
+  this.h264 = typeof h264 !== "undefined" ? true : false;
 
   info("Creating " + this);
   this._pc = new mozRTCPeerConnection(this.configuration);
@@ -1372,7 +1419,7 @@ function PeerConnectionWrapper(label, configuration) {
     self.attachMedia(event.stream, type, 'remote');
 
     Object.keys(self.addStreamCallbacks).forEach(function(name) {
-      info(this + " calling addStreamCallback " + name);
+      info(self + " calling addStreamCallback " + name);
       self.addStreamCallbacks[name]();
     });
    };
@@ -1585,8 +1632,12 @@ PeerConnectionWrapper.prototype = {
     this._pc.createOffer(function (offer) {
       info("Got offer: " + JSON.stringify(offer));
       self._last_offer = offer;
+      if (self.h264) {
+        isnot(offer.sdp.search("H264/90000"), -1, "H.264 should be present in the SDP offer");
+        offer.sdp = removeVP8(offer.sdp);
+      }
       onSuccess(offer);
-    }, generateErrorCallback(), this.offerConstraints);
+    }, generateErrorCallback(), this.offerOptions);
   },
 
   /**
@@ -1911,8 +1962,8 @@ PeerConnectionWrapper.prototype = {
     var addStreamTimeout = null;
 
     function _checkMediaTracks(constraintsRemote, onSuccess) {
-      if (self.addStreamTimeout !== null) {
-        clearTimeout(self.addStreamTimeout);
+      if (addStreamTimeout !== null) {
+        clearTimeout(addStreamTimeout);
       }
 
       var localConstraintAudioTracks =
@@ -1961,8 +2012,10 @@ PeerConnectionWrapper.prototype = {
         _checkMediaTracks(constraintsRemote, onSuccess);
       };
       addStreamTimeout = setTimeout(function () {
-        ok(false, self + " checkMediaTracks() timed out waiting for onaddstream event to fire");
-        onSuccess();
+        ok(self.onAddStreamFired, self + " checkMediaTracks() timed out waiting for onaddstream event to fire");
+        if (!self.onAddStreamFired) {
+          onSuccess();
+        }
       }, 60000);
     }
   },
