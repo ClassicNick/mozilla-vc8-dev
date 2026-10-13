@@ -2218,6 +2218,12 @@ IndexedDBDeleteDatabaseRequestParent::HandleEvent(nsIDOMEvent* aEvent)
   return NS_OK;
 }
 
+void
+IndexedDBDeleteDatabaseRequestParent::ActorDestroy(ActorDestroyReason aWhy)
+{
+  // Implement me! Bug 1005149
+}
+
 nsresult
 IndexedDBDeleteDatabaseRequestParent::SetOpenRequest(
                                                  IDBOpenDBRequest* aOpenRequest)

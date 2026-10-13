@@ -20,6 +20,10 @@
 
 class MessageLoop;
 
+namespace base {
+class Thread;
+}
+
 namespace mozilla {
 namespace ipc {
 class Shmem;
@@ -49,13 +53,6 @@ public:
   static PImageBridgeParent*
   Create(Transport* aTransport, ProcessId aOtherProcess);
 
-  virtual PGrallocBufferParent*
-  AllocPGrallocBufferParent(const IntSize&, const uint32_t&, const uint32_t&,
-                            MaybeMagicGrallocBufferHandle*) MOZ_OVERRIDE;
-
-  virtual bool
-  DeallocPGrallocBufferParent(PGrallocBufferParent* actor) MOZ_OVERRIDE;
-
   // PImageBridge
   virtual bool RecvUpdate(const EditArray& aEdits, EditReplyArray* aReply) MOZ_OVERRIDE;
   virtual bool RecvUpdateNoSwap(const EditArray& aEdits) MOZ_OVERRIDE;
@@ -70,10 +67,7 @@ public:
                                               const TextureFlags& aFlags) MOZ_OVERRIDE;
   virtual bool DeallocPTextureParent(PTextureParent* actor) MOZ_OVERRIDE;
 
-  // Shutdown step 1
-  virtual bool RecvWillStop() MOZ_OVERRIDE;
-  // Shutdown step 2
-  virtual bool RecvStop() MOZ_OVERRIDE;
+  bool RecvStop() MOZ_OVERRIDE;
 
   MessageLoop * GetMessageLoop();
 

@@ -12,7 +12,7 @@
 #include "base/process_util.h"          // for OpenProcessHandle
 #include "base/task.h"                  // for CancelableTask, DeleteTask, etc
 #include "base/tracked.h"               // for FROM_HERE
-#include "mozilla/gfx/Point.h"          // for IntSize
+#include "mozilla/gfx/Point.h"                   // for IntSize
 #include "mozilla/ipc/MessageChannel.h" // for MessageChannel, etc
 #include "mozilla/ipc/ProtocolUtils.h"
 #include "mozilla/ipc/Transport.h"      // for Transport
@@ -39,8 +39,6 @@ using namespace mozilla::gfx;
 
 namespace mozilla {
 namespace layers {
-
-class PGrallocBufferParent;
 
 ImageBridgeParent::ImageBridgeParent(MessageLoop* aLoop, Transport* aTransport)
   : mMessageLoop(aLoop)
@@ -139,7 +137,7 @@ ImageBridgeParent::Create(Transport* aTransport, ProcessId aOtherProcess)
   return bridge.get();
 }
 
-bool ImageBridgeParent::RecvWillStop()
+bool ImageBridgeParent::RecvStop()
 {
   // If there is any texture still alive we have to force it to deallocate the
   // device data (GL textures, etc.) now because shortly after SenStop() returns
@@ -154,44 +152,11 @@ bool ImageBridgeParent::RecvWillStop()
   return true;
 }
 
-bool ImageBridgeParent::RecvStop()
-{
-  // Nothing to do. This message just serves as synchronization between the
-  // child and parent threads during shutdown.
-  return true;
-}
-
 static  uint64_t GenImageContainerID() {
   static uint64_t sNextImageID = 1;
 
   ++sNextImageID;
   return sNextImageID;
-}
-
-PGrallocBufferParent*
-ImageBridgeParent::AllocPGrallocBufferParent(const IntSize& aSize,
-                                             const uint32_t& aFormat,
-                                             const uint32_t& aUsage,
-                                             MaybeMagicGrallocBufferHandle* aOutHandle)
-{
-#ifdef MOZ_HAVE_SURFACEDESCRIPTORGRALLOC
-  return GrallocBufferActor::Create(aSize, aFormat, aUsage, aOutHandle);
-#else
-  NS_RUNTIMEABORT("No gralloc buffers for you");
-  return nullptr;
-#endif
-}
-
-bool
-ImageBridgeParent::DeallocPGrallocBufferParent(PGrallocBufferParent* actor)
-{
-#ifdef MOZ_HAVE_SURFACEDESCRIPTORGRALLOC
-  delete actor;
-  return true;
-#else
-  NS_RUNTIMEABORT("Um, how did we get here?");
-  return false;
-#endif
 }
 
 PCompositableParent*
