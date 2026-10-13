@@ -8,7 +8,7 @@
 using namespace mozilla;
 using namespace mozilla::dom;
 
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(DOMCameraDetectedFace, mParent,
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_5(DOMCameraDetectedFace, mParent,
                                       mBounds, mLeftEye, mRightEye, mMouth)
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(DOMCameraDetectedFace)
