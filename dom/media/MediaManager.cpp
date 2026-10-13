@@ -1352,8 +1352,6 @@ MediaManager::GetUserMedia(bool aPrivileged,
   
   MediaStreamConstraints c(aConstraints); // copy
 
-  MediaStreamConstraints c(aConstraints); // copy
-
   /**
    * If we were asked to get a picture, before getting a snapshot, we check if
    * the calling page is allowed to open a popup. We do this because

@@ -6,7 +6,7 @@
 /* This is an automatically generated file. If you're not                    */
 /* PublicKeyPinningService.cpp, you shouldn't be #including it.              */
 /*****************************************************************************/
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 /* Baltimore CyberTrust Root */
 static const char kBaltimore_CyberTrust_RootFingerprint[]=
   "Y9mvm0exBk1JoQ57f9Vm28jKo5lFm/woKcVxrYxu80o=";

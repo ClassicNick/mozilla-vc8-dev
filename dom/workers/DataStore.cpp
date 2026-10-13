@@ -819,7 +819,7 @@ DataStoreChangeEventProxy::GetWorkerStore() const
 
 // nsIDOMEventListener implementation.
 
-NS_IMPL_ISUPPORTS(DataStoreChangeEventProxy, nsIDOMEventListener)
+NS_IMPL_ISUPPORTS1(DataStoreChangeEventProxy, nsIDOMEventListener)
 
 NS_IMETHODIMP
 DataStoreChangeEventProxy::HandleEvent(nsIDOMEvent* aEvent)

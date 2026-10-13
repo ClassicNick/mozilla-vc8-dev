@@ -88,7 +88,7 @@ HashBuf(const SECItem& item, /*out*/ uint8_t *hashBuf, size_t hashBufLen)
     return der::Fail(SEC_ERROR_INVALID_ARGS);
   }
   if (item.len >
-      static_cast<decltype(item.len)>(std::numeric_limits<int32_t>::max())) {
+      std::numeric_limits<int32_t>::max()) {
     PR_NOT_REACHED("large OCSP responses should have already been rejected");
     return der::Fail(SEC_ERROR_INVALID_ARGS);
   }

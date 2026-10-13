@@ -1133,15 +1133,15 @@ class PromiseWorkerProxyRunnable : public workers::WorkerRunnable
 public:
   PromiseWorkerProxyRunnable(PromiseWorkerProxy* aPromiseWorkerProxy,
                              JSStructuredCloneCallbacks* aCallbacks,
-                             JSAutoStructuredCloneBuffer&& aBuffer,
+                             JSAutoStructuredCloneBuffer& aBuffer,
                              PromiseWorkerProxy::RunCallbackFunc aFunc)
     : WorkerRunnable(aPromiseWorkerProxy->GetWorkerPrivate(),
                      WorkerThreadUnchangedBusyCount)
     , mPromiseWorkerProxy(aPromiseWorkerProxy)
     , mCallbacks(aCallbacks)
-    , mBuffer(Move(aBuffer))
     , mFunc(aFunc)
   {
+	mBuffer.swap(aBuffer);
     MOZ_ASSERT(NS_IsMainThread());
     MOZ_ASSERT(mPromiseWorkerProxy);
   }
@@ -1264,7 +1264,7 @@ PromiseWorkerProxy::RunCallback(JSContext* aCx,
   nsRefPtr<PromiseWorkerProxyRunnable> runnable =
     new PromiseWorkerProxyRunnable(this,
                                    mCallbacks,
-                                   Move(buffer),
+                                   buffer,
                                    aFunc);
 
   runnable->Dispatch(aCx);
