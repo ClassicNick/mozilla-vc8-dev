@@ -1026,7 +1026,7 @@ class nsDirEnumerator MOZ_FINAL : public nsISimpleEnumerator,
         nsCOMPtr<nsIFile>  mNext;
 };
 
-NS_IMPL_ISUPPORTS2(nsDirEnumerator, nsISimpleEnumerator, nsIDirectoryEnumerator)
+NS_IMPL_ISUPPORTS(nsDirEnumerator, nsISimpleEnumerator, nsIDirectoryEnumerator)
 
 
 //-----------------------------------------------------------------------------
@@ -1066,11 +1066,11 @@ nsLocalFile::nsLocalFileConstructor(nsISupports* outer, const nsIID& aIID, void*
 // nsLocalFile::nsISupports
 //-----------------------------------------------------------------------------
 
-NS_IMPL_ISUPPORTS4(nsLocalFile,
-                   nsILocalFile,
-                   nsIFile,
-                   nsILocalFileWin,
-                   nsIHashable)
+NS_IMPL_ISUPPORTS(nsLocalFile,
+                  nsILocalFile,
+                  nsIFile,
+                  nsILocalFileWin,
+                  nsIHashable)
 
 
 //-----------------------------------------------------------------------------
@@ -3589,7 +3589,7 @@ nsLocalFile::GlobalShutdown()
     NS_DestroyShortcutResolver();
 }
 
-NS_IMPL_ISUPPORTS1(nsDriveEnumerator, nsISimpleEnumerator)
+NS_IMPL_ISUPPORTS(nsDriveEnumerator, nsISimpleEnumerator)
 
 nsDriveEnumerator::nsDriveEnumerator()
 {

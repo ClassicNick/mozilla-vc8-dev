@@ -1588,13 +1588,13 @@ nsHttpHandler::SetAcceptEncodings(const char *aAcceptEncodings)
 // nsHttpHandler::nsISupports
 //-----------------------------------------------------------------------------
 
-NS_IMPL_ISUPPORTS6(nsHttpHandler,
-                   nsIHttpProtocolHandler,
-                   nsIProxiedProtocolHandler,
-                   nsIProtocolHandler,
-                   nsIObserver,
-                   nsISupportsWeakReference,
-                   nsISpeculativeConnect)
+NS_IMPL_ISUPPORTS(nsHttpHandler,
+                  nsIHttpProtocolHandler,
+                  nsIProxiedProtocolHandler,
+                  nsIProtocolHandler,
+                  nsIObserver,
+                  nsISupportsWeakReference,
+                  nsISpeculativeConnect)
 
 //-----------------------------------------------------------------------------
 // nsHttpHandler::nsIProtocolHandler
@@ -1919,8 +1919,11 @@ nsHttpHandler::SpeculativeConnect(nsIURI *aURI,
     if (NS_FAILED(rv))
         return rv;
 
+    nsAutoCString username;
+    aURI->GetUsername(username);
+
     nsHttpConnectionInfo *ci =
-        new nsHttpConnectionInfo(host, port, nullptr, usingSSL);
+        new nsHttpConnectionInfo(host, port, username, nullptr, usingSSL);
 
     return SpeculativeConnect(ci, aCallbacks);
 }
@@ -1972,12 +1975,12 @@ nsHttpHandler::TickleWifi(nsIInterfaceRequestor *cb)
 // nsHttpsHandler implementation
 //-----------------------------------------------------------------------------
 
-NS_IMPL_ISUPPORTS5(nsHttpsHandler,
-                   nsIHttpProtocolHandler,
-                   nsIProxiedProtocolHandler,
-                   nsIProtocolHandler,
-                   nsISupportsWeakReference,
-                   nsISpeculativeConnect)
+NS_IMPL_ISUPPORTS(nsHttpsHandler,
+                  nsIHttpProtocolHandler,
+                  nsIProxiedProtocolHandler,
+                  nsIProtocolHandler,
+                  nsISupportsWeakReference,
+                  nsISpeculativeConnect)
 
 nsresult
 nsHttpsHandler::Init()
