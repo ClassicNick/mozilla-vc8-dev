@@ -1983,6 +1983,21 @@ nsJSContext::RunCycleCollectorSlice()
   gCCStats.FinishCycleCollectionSlice();
 }
 
+//static
+void
+nsJSContext::RunCycleCollectorWorkSlice(int64_t aWorkBudget)
+{
+  if (!NS_IsMainThread()) {
+    return;
+  }
+
+  PROFILER_LABEL("CC", "RunCycleCollectorWorkSlice");
+
+  gCCStats.PrepareForCycleCollectionSlice();
+  nsCycleCollector_collectSliceWork(aWorkBudget);
+  gCCStats.FinishCycleCollectionSlice();
+}
+
 static void
 ICCTimerFired(nsITimer* aTimer, void* aClosure)
 {

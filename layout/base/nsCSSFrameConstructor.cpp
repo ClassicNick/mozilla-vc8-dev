@@ -93,6 +93,7 @@
 #include "nsRefreshDriver.h"
 #include "nsRuleProcessorData.h"
 #include "nsTextNode.h"
+#include "ActiveLayerTracker.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -3826,6 +3827,7 @@ nsCSSFrameConstructor::ConstructFrameFromItemInternal(FrameConstructionItem& aIt
         !aItem.mContent->GetPrimaryFrame())) &&
        !(bits & FCDATA_SKIP_FRAMESET)) {
     aItem.mContent->SetPrimaryFrame(primaryFrame);
+    ActiveLayerTracker::TransferActivityToFrame(aItem.mContent, primaryFrame);
   }
 }
 
