@@ -114,7 +114,6 @@
 #include "nsIRequest.h"
 #include "nsHostObjectProtocolHandler.h"
 
-#include "nsCharsetAlias.h"
 #include "nsCharsetSource.h"
 #include "nsIParser.h"
 #include "nsIContentSink.h"
@@ -192,6 +191,7 @@
 #include "nsWrapperCacheInlines.h"
 #include "nsSandboxFlags.h"
 #include "nsIAppsService.h"
+#include "mozilla/dom/AnimationTimeline.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/DocumentFragment.h"
 #include "mozilla/dom/Event.h"
@@ -315,6 +315,13 @@ struct FireChangeArgs {
   bool mImageOnly;
   bool mHaveImageOverride;
 };
+
+// XXX Workaround for bug 980560 to maintain the existing broken semantics
+template<>
+struct nsIStyleRule::COMTypeInfo<css::Rule, void> {
+  static const nsIID kIID NS_HIDDEN;
+};
+const nsIID nsIStyleRule::COMTypeInfo<css::Rule, void>::kIID = NS_ISTYLE_RULE_IID;
 
 namespace mozilla {
 namespace dom {
@@ -1953,6 +1960,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(nsDocument)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mCachedEncoder)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mStateObjectCached)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mUndoManager)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mAnimationTimeline)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mTemplateContentsOwner)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mChildrenCollection)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mRegistry)
@@ -2022,6 +2030,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsDocument)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mOriginalDocument)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mCachedEncoder)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mUndoManager)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mAnimationTimeline)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mTemplateContentsOwner)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mChildrenCollection)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mRegistry)
@@ -3121,6 +3130,16 @@ nsDocument::GetUndoManager()
 
   nsRefPtr<UndoManager> undoManager = mUndoManager;
   return undoManager.forget();
+}
+
+AnimationTimeline*
+nsDocument::Timeline()
+{
+  if (!mAnimationTimeline) {
+    mAnimationTimeline = new AnimationTimeline(this);
+  }
+
+  return mAnimationTimeline;
 }
 
 /* Return true if the document is in the focused top-level window, and is an

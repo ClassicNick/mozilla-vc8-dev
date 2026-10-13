@@ -303,6 +303,9 @@ function isCaretPos(aPanel, aLine, aCol = 1) {
 function isDebugPos(aPanel, aLine) {
   let editor = aPanel.panelWin.DebuggerView.editor;
   let location = editor.getDebugLocation();
+
+  // Source editor starts counting line and column numbers from 0.
+  info("Current editor debug position: " + (location + 1));
   return location != null && editor.hasLineClass(aLine - 1, "debug-line");
 }
 

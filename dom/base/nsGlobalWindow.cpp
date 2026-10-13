@@ -218,6 +218,7 @@
 #include "nsITabChild.h"
 #include "mozilla/dom/MediaQueryList.h"
 #include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/dom/NavigatorBinding.h"
 #ifdef HAVE_SIDEBAR
 #include "mozilla/dom/ExternalBinding.h"
 #endif
@@ -1137,6 +1138,8 @@ nsGlobalWindow::nsGlobalWindow(nsGlobalWindow *aOuterWindow)
         // events. Use a strong reference.
         os->AddObserver(mObserver, "dom-storage2-changed", false);
       }
+
+      Preferences::AddStrongObserver(mObserver, "intl.accept_languages");
     }
   } else {
     // |this| is an outer window. Outer windows start out frozen and
@@ -1419,6 +1422,8 @@ nsGlobalWindow::CleanUp()
       mIdleService->RemoveIdleObserver(mObserver, MIN_IDLE_NOTIFICATION_TIME_S);
     }
 
+    Preferences::RemoveObserver(mObserver, "intl.accept_languages");
+
     // Drop its reference to this dying window, in case for some bogus reason
     // the object stays around.
     mObserver->Forget();
@@ -1698,7 +1703,13 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(nsGlobalWindow)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(nsGlobalWindow)
   if (MOZ_UNLIKELY(cb.WantDebugInfo())) {
     char name[512];
-    PR_snprintf(name, sizeof(name), "nsGlobalWindow #%ld", tmp->mWindowID);
+    nsAutoCString uri;
+    if (tmp->mDoc && tmp->mDoc->GetDocumentURI()) {
+      tmp->mDoc->GetDocumentURI()->GetSpec(uri);
+    }
+    PR_snprintf(name, sizeof(name), "nsGlobalWindow #%ld %s %s",
+                tmp->mWindowID, tmp->IsInnerWindow() ? "inner" : "outer",
+                uri.get());
     cb.DescribeRefCountedNode(tmp->mRefCnt.get(), name);
   } else {
     NS_IMPL_CYCLE_COLLECTION_DESCRIBE(nsGlobalWindow, tmp->mRefCnt.get())
@@ -7061,6 +7072,22 @@ nsGlobalWindow::ScrollTo(const CSSIntPoint& aScroll)
   }
 }
 
+void
+nsGlobalWindow::MozRequestOverfill(OverfillCallback& aCallback,
+                                   mozilla::ErrorResult& aError)
+{
+  nsIWidget* widget = nsContentUtils::WidgetForDocument(mDoc);
+  if (widget) {
+    mozilla::layers::LayerManager* manager = widget->GetLayerManager();
+    if (manager) {
+      manager->RequestOverfill(&aCallback);
+      return;
+    }
+  }
+
+  aError.Throw(NS_ERROR_NOT_AVAILABLE);
+}
+
 NS_IMETHODIMP
 nsGlobalWindow::ScrollBy(int32_t aXScrollDif, int32_t aYScrollDif)
 {
@@ -8978,6 +9005,9 @@ nsGlobalWindow::ShowModalDialog(JSContext* aCx, const nsAString& aUrl,
   aError = nsContentUtils::XPConnect()->JSToVariant(aCx,
                                                     aArgument,
                                                     getter_AddRefs(args));
+  if (aError.Failed()) {
+    return JS::UndefinedValue();
+  }
 
   nsCOMPtr<nsIVariant> retVal = ShowModalDialog(aUrl, args, aOptions, aError);
   if (aError.Failed()) {
@@ -11193,6 +11223,32 @@ nsGlobalWindow::Observe(nsISupports* aSubject, const char* aTopic,
     return DispatchEvent(event, &dummy);
   }
 #endif // MOZ_B2G
+
+  if (!nsCRT::strcmp(aTopic, NS_PREFBRANCH_PREFCHANGE_TOPIC_ID)) {
+    MOZ_ASSERT(!nsCRT::strcmp(NS_ConvertUTF16toUTF8(aData).get(), "intl.accept_languages"));
+    MOZ_ASSERT(IsInnerWindow());
+
+    // The user preferred languages have changed, we need to fire an event on
+    // Window object and invalidate the cache for navigator.languages. It is
+    // done for every change which can be a waste of cycles but those should be
+    // fairly rare.
+    // We MUST invalidate navigator.languages before sending the event in the
+    // very likely situation where an event handler will try to read its value.
+
+    if (mNavigator) {
+      NavigatorBinding::ClearCachedLanguagesValue(mNavigator);
+    }
+
+    nsCOMPtr<nsIDOMEvent> event;
+    NS_NewDOMEvent(getter_AddRefs(event), this, nullptr, nullptr);
+    nsresult rv = event->InitEvent(NS_LITERAL_STRING("languagechange"), false, false);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    event->SetTrusted(true);
+
+    bool dummy;
+    return DispatchEvent(event, &dummy);
+  }
 
   NS_WARNING("unrecognized topic in nsGlobalWindow::Observe");
   return NS_ERROR_FAILURE;

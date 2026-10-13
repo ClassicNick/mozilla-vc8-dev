@@ -9,6 +9,7 @@
 #ifndef jsgc_h
 #define jsgc_h
 
+#include "mozilla/Atomics.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/MemoryReporting.h"
 
@@ -89,8 +90,6 @@ class ChunkPool {
         return emptyCount;
     }
 
-    inline bool wantBackgroundAllocation(JSRuntime *rt) const;
-
     /* Must be called with the GC lock taken. */
     inline Chunk *get(JSRuntime *rt);
 
@@ -160,6 +159,10 @@ template <> struct MapTypeToTraceKind<JSFlatString>     { static const JSGCTrace
 template <> struct MapTypeToTraceKind<JSLinearString>   { static const JSGCTraceKind kind = JSTRACE_STRING; };
 template <> struct MapTypeToTraceKind<PropertyName>     { static const JSGCTraceKind kind = JSTRACE_STRING; };
 template <> struct MapTypeToTraceKind<jit::JitCode>     { static const JSGCTraceKind kind = JSTRACE_JITCODE; };
+
+/* Return a printable string for the given kind, for diagnostic purposes. */
+const char *
+TraceKindAsAscii(JSGCTraceKind kind);
 
 /* Map from C++ type to finalize kind. JSObject does not have a 1:1 mapping, so must use Arena::thingSize. */
 template <typename T> struct MapTypeToFinalizeKind {};
@@ -537,7 +540,7 @@ class ArenaLists
      * GC we only move the head of the of the list of spans back to the arena
      * only for the arena that was not fully allocated.
      */
-    FreeSpan       freeLists[FINALIZE_LIMIT];
+    FreeList       freeLists[FINALIZE_LIMIT];
 
     ArenaList      arenaLists[FINALIZE_LIMIT];
 
@@ -557,13 +560,16 @@ class ArenaLists
      * that case the lock effectively serves as a read barrier to ensure that
      * the allocation thread sees all the writes done during finalization.
      */
-    enum BackgroundFinalizeState {
+    enum BackgroundFinalizeStateEnum {
         BFS_DONE,
         BFS_RUN,
         BFS_JUST_FINISHED
     };
 
-    volatile uintptr_t backgroundFinalizeState[FINALIZE_LIMIT];
+    typedef mozilla::Atomic<BackgroundFinalizeStateEnum, mozilla::ReleaseAcquire>
+        BackgroundFinalizeState;
+
+    BackgroundFinalizeState backgroundFinalizeState[FINALIZE_LIMIT];
 
   public:
     /* For each arena kind, a list of arenas remaining to be swept. */
@@ -601,10 +607,10 @@ class ArenaLists
 
     static uintptr_t getFreeListOffset(AllocKind thingKind) {
         uintptr_t offset = offsetof(ArenaLists, freeLists);
-        return offset + thingKind * sizeof(FreeSpan);
+        return offset + thingKind * sizeof(FreeList);
     }
 
-    const FreeSpan *getFreeList(AllocKind thingKind) const {
+    const FreeList *getFreeList(AllocKind thingKind) const {
         return &freeLists[thingKind];
     }
 
@@ -661,11 +667,11 @@ class ArenaLists
     }
 
     void purge(AllocKind i) {
-        FreeSpan *headSpan = &freeLists[i];
-        if (!headSpan->isEmpty()) {
-            ArenaHeader *aheader = headSpan->arenaHeader();
-            aheader->setFirstFreeSpan(headSpan);
-            headSpan->initAsEmpty();
+        FreeList *freeList = &freeLists[i];
+        if (!freeList->isEmpty()) {
+            ArenaHeader *aheader = freeList->arenaHeader();
+            aheader->setFirstFreeSpan(freeList->getHead());
+            freeList->initAsEmpty();
         }
     }
 
@@ -682,11 +688,11 @@ class ArenaLists
     }
 
     void copyFreeListToArena(AllocKind thingKind) {
-        FreeSpan *headSpan = &freeLists[thingKind];
-        if (!headSpan->isEmpty()) {
-            ArenaHeader *aheader = headSpan->arenaHeader();
+        FreeList *freeList = &freeLists[thingKind];
+        if (!freeList->isEmpty()) {
+            ArenaHeader *aheader = freeList->arenaHeader();
             JS_ASSERT(!aheader->hasFreeThings());
-            aheader->setFirstFreeSpan(headSpan);
+            aheader->setFirstFreeSpan(freeList->getHead());
         }
     }
 
@@ -701,10 +707,10 @@ class ArenaLists
 
 
     void clearFreeListInArena(AllocKind kind) {
-        FreeSpan *headSpan = &freeLists[kind];
-        if (!headSpan->isEmpty()) {
-            ArenaHeader *aheader = headSpan->arenaHeader();
-            JS_ASSERT(aheader->getFirstFreeSpan().isSameNonEmptySpan(headSpan));
+        FreeList *freeList = &freeLists[kind];
+        if (!freeList->isEmpty()) {
+            ArenaHeader *aheader = freeList->arenaHeader();
+            JS_ASSERT(freeList->isSameNonEmptySpan(aheader->getFirstFreeSpan()));
             aheader->setAsFullyUsed();
         }
     }
@@ -714,16 +720,16 @@ class ArenaLists
      * arena using copyToArena().
      */
     bool isSynchronizedFreeList(AllocKind kind) {
-        FreeSpan *headSpan = &freeLists[kind];
-        if (headSpan->isEmpty())
+        FreeList *freeList = &freeLists[kind];
+        if (freeList->isEmpty())
             return true;
-        ArenaHeader *aheader = headSpan->arenaHeader();
+        ArenaHeader *aheader = freeList->arenaHeader();
         if (aheader->hasFreeThings()) {
             /*
              * If the arena has a free list, it must be the same as one in
              * lists.
              */
-            JS_ASSERT(aheader->getFirstFreeSpan().isSameNonEmptySpan(headSpan));
+            JS_ASSERT(freeList->isSameNonEmptySpan(aheader->getFirstFreeSpan()));
             return true;
         }
         return false;

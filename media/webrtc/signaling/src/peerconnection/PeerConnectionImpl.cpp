@@ -105,7 +105,8 @@ static nsresult InitNSSInContent()
   NS_ENSURE_TRUE(NS_IsMainThread(), NS_ERROR_NOT_SAME_THREAD);
 
   if (XRE_GetProcessType() != GeckoProcessType_Content) {
-    MOZ_ASSUME_UNREACHABLE("Must be called in content process");
+    MOZ_ASSERT_UNREACHABLE("Must be called in content process");
+    return NS_ERROR_FAILURE;
   }
 
   static bool nssStarted = false;
@@ -147,6 +148,12 @@ PRLogModuleInfo *signalingLogInfo() {
   return logModuleInfo;
 }
 
+// XXX Workaround for bug 998092 to maintain the existing broken semantics
+template<>
+struct nsISupportsWeakReference::COMTypeInfo<nsSupportsWeakReference, void> {
+  static const nsIID kIID NS_HIDDEN;
+};
+const nsIID nsISupportsWeakReference::COMTypeInfo<nsSupportsWeakReference, void>::kIID = NS_ISUPPORTSWEAKREFERENCE_IID;
 
 namespace sipcc {
 

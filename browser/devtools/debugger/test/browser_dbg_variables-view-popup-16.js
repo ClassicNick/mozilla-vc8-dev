@@ -20,6 +20,8 @@ function test() {
     let tooltip = bubble._tooltip.panel;
 
     function checkView(selectedFrame, caretLine, debugLine = caretLine) {
+      let deferred = promise.defer();
+
       is(win.gThreadClient.state, "paused",
         "Should only be getting stack frames while paused.");
       is(frames.itemCount, 25,
@@ -28,8 +30,15 @@ function test() {
         "The correct frame is selected in the widget.");
       ok(isCaretPos(panel, caretLine),
         "Editor caret location is correct.");
-      ok(isDebugPos(panel, debugLine),
-        "Editor caret location is correct.");
+
+      // The editor's debug location takes a tick to update.
+      executeSoon(() => {
+        ok(isCaretPos(panel, caretLine), "Editor caret location is still correct.");
+        ok(isDebugPos(panel, debugLine), "Editor debug location is correct.");
+        deferred.resolve();
+      });
+
+      return deferred.promise;
     }
 
     function expandGlobalScope() {
@@ -45,14 +54,14 @@ function test() {
     // Allow this generator function to yield first.
     executeSoon(() => debuggee.recurse());
     yield waitForSourceAndCaretAndScopes(panel, ".html", 26);
-    checkView(0, 26);
+    yield checkView(0, 26);
 
     yield expandGlobalScope();
-    checkView(0, 26);
+    yield checkView(0, 26);
 
     // Inspect variable in topmost frame.
     yield openVarPopup(panel, { line: 26, ch: 11 });
-    checkView(0, 26);
+    yield checkView(0, 26);
 
     yield resumeDebuggerThenCloseAndFinish(panel);
   });

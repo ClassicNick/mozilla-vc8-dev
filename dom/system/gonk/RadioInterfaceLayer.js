@@ -24,8 +24,11 @@ Cu.import("resource://gre/modules/systemlibs.js");
 Cu.import("resource://gre/modules/Promise.jsm");
 Cu.import("resource://gre/modules/FileUtils.jsm");
 
-var RIL = {};
-Cu.import("resource://gre/modules/ril_consts.js", RIL);
+XPCOMUtils.defineLazyGetter(this, "RIL", function () {
+  let obj = {};
+  Cu.import("resource://gre/modules/ril_consts.js", obj);
+  return obj;
+});
 
 // set to true in ril_consts.js to see debug messages
 var DEBUG = RIL.DEBUG_RIL;
@@ -96,7 +99,6 @@ const kSettingsTimezoneAutoUpdateAvailable = "time.timezone.automatic-update.ava
 const NS_PREFBRANCH_PREFCHANGE_TOPIC_ID = "nsPref:changed";
 
 const kPrefCellBroadcastDisabled = "ril.cellbroadcast.disabled";
-const kPrefClirModePreference = "ril.clirMode";
 const kPrefRilNumRadioInterfaces = "ril.numRadioInterfaces";
 
 const DOM_MOBILE_MESSAGE_DELIVERY_RECEIVED = "received";
@@ -1623,7 +1625,6 @@ WorkerMessenger.prototype = {
     let options = {
       debug: DEBUG,
       cellBroadcastDisabled: false,
-      clirMode: RIL.CLIR_DEFAULT,
       quirks: {
         callstateExtraUint32:
           libcutils.property_get("ro.moz.ril.callstate_extra_int", "false") === "true",
@@ -1649,10 +1650,6 @@ WorkerMessenger.prototype = {
     try {
       options.cellBroadcastDisabled =
         Services.prefs.getBoolPref(kPrefCellBroadcastDisabled);
-    } catch(e) {}
-
-    try {
-      options.clirMode = Services.prefs.getIntPref(kPrefClirModePreference);
     } catch(e) {}
 
     this.send(null, "setInitialOptions", options);
@@ -2187,8 +2184,7 @@ RadioInterface.prototype = {
         gMessageManager.sendVoicemailMessage("RIL:VoicemailNotification",
                                              this.clientId, message.mwi);
         break;
-      case "USSDReceived":
-        if (DEBUG) this.debug("USSDReceived " + JSON.stringify(message));
+      case "ussdreceived":
         this.handleUSSDReceived(message);
         break;
       case "stkcommand":
@@ -3272,8 +3268,10 @@ RadioInterface.prototype = {
   },
 
   handleUSSDReceived: function(ussd) {
-    if (DEBUG) this.debug("handleUSSDReceived " + JSON.stringify(ussd));
-    gSystemMessenger.broadcastMessage("ussd-received", ussd);
+    gSystemMessenger.broadcastMessage("ussd-received",
+                                      {message: ussd.message,
+                                       sessionEnded: ussd.sessionEnded,
+                                       serviceId: this.clientId});
     gMessageManager.sendMobileConnectionMessage("RIL:USSDReceived",
                                                 this.clientId, ussd);
   },
@@ -3502,16 +3500,6 @@ RadioInterface.prototype = {
                                                 this.clientId, message);
   },
 
-  _updateCallingLineIdRestrictionPref: function(mode) {
-    try {
-      Services.prefs.setIntPref(kPrefClirModePreference, mode);
-      Services.prefs.savePrefFile(null);
-      if (DEBUG) {
-        this.debug(kPrefClirModePreference + " pref is now " + mode);
-      }
-    } catch (e) {}
-  },
-
   sendMMI: function(target, message) {
     if (DEBUG) this.debug("SendMMI " + JSON.stringify(message));
     this.workerMessenger.send("sendMMI", message, (function(response) {
@@ -3519,7 +3507,6 @@ RadioInterface.prototype = {
         this._sendCfStateChanged(response);
       } else if (response.isSetCLIR && response.success) {
         this._sendClirModeChanged(response.clirMode);
-        this._updateCallingLineIdRestrictionPref(response.clirMode);
       }
 
       target.sendAsyncMessage("RIL:SendMMI", {
@@ -3550,7 +3537,6 @@ RadioInterface.prototype = {
     this.workerMessenger.send("setCLIR", message, (function(response) {
       if (response.success) {
         this._sendClirModeChanged(response.clirMode);
-        this._updateCallingLineIdRestrictionPref(response.clirMode);
       }
       target.sendAsyncMessage("RIL:SetCallingLineIdRestriction", {
         clientId: this.clientId,
