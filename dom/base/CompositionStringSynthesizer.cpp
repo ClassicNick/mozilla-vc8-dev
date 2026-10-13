@@ -16,8 +16,8 @@
 namespace mozilla {
 namespace dom {
 
-NS_IMPL_ISUPPORTS(CompositionStringSynthesizer,
-                  nsICompositionStringSynthesizer)
+NS_IMPL_ISUPPORTS1(CompositionStringSynthesizer,
+                   nsICompositionStringSynthesizer)
 
 CompositionStringSynthesizer::CompositionStringSynthesizer(
                                 nsPIDOMWindow* aWindow)

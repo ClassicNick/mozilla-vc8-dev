@@ -315,7 +315,7 @@ namespace places {
     };
   }
 
-  NS_IMPL_ISUPPORTS(
+  NS_IMPL_ISUPPORTS1(
     MatchAutoCompleteFunction,
     mozIStorageFunction
   )
@@ -431,7 +431,7 @@ namespace places {
     return NS_OK;
   }
 
-  NS_IMPL_ISUPPORTS(
+  NS_IMPL_ISUPPORTS1(
     CalculateFrecencyFunction,
     mozIStorageFunction
   )
@@ -624,7 +624,7 @@ namespace places {
     return NS_OK;
   }
 
-  NS_IMPL_ISUPPORTS(
+  NS_IMPL_ISUPPORTS1(
     GenerateGUIDFunction,
     mozIStorageFunction
   )
@@ -663,7 +663,7 @@ namespace places {
     return NS_OK;
   }
 
-  NS_IMPL_ISUPPORTS(
+  NS_IMPL_ISUPPORTS1(
     GetUnreversedHostFunction,
     mozIStorageFunction
   )
@@ -717,7 +717,7 @@ namespace places {
     return NS_OK;
   }
 
-  NS_IMPL_ISUPPORTS(
+  NS_IMPL_ISUPPORTS1(
     FixupURLFunction,
     mozIStorageFunction
   )
@@ -766,7 +766,7 @@ namespace places {
     return NS_OK;
   }
 
-  NS_IMPL_ISUPPORTS(
+  NS_IMPL_ISUPPORTS1(
     FrecencyNotificationFunction,
     mozIStorageFunction
   )

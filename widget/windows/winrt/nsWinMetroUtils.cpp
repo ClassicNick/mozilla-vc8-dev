@@ -38,7 +38,7 @@ namespace widget {
 
 bool nsWinMetroUtils::sUpdatePending = false;
 
-NS_IMPL_ISUPPORTS(nsWinMetroUtils, nsIWinMetroUtils)
+NS_IMPL_ISUPPORTS1(nsWinMetroUtils, nsIWinMetroUtils)
 
 nsWinMetroUtils::nsWinMetroUtils()
 {

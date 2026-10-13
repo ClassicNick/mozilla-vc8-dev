@@ -10,7 +10,7 @@
 
 #include "nsBidiKeyboard.h"
 
-NS_IMPL_ISUPPORTS(nsBidiKeyboard, nsIBidiKeyboard)
+NS_IMPL_ISUPPORTS1(nsBidiKeyboard, nsIBidiKeyboard)
 
 nsBidiKeyboard::nsBidiKeyboard() : nsIBidiKeyboard()
 {

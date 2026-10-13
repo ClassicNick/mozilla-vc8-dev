@@ -40,7 +40,7 @@ GenerateGUIDFunction::create(mozIStorageConnection *aDBConn)
   return NS_OK;
 }
 
-NS_IMPL_ISUPPORTS(
+NS_IMPL_ISUPPORTS1(
     GenerateGUIDFunction,
     mozIStorageFunction
 )

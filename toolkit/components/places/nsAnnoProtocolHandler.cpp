@@ -185,7 +185,7 @@ private:
   bool mReturnDefaultIcon;
 };
 
-NS_IMPL_ISUPPORTS_INHERITED(
+NS_IMPL_ISUPPORTS_INHERITED1(
   faviconAsyncLoader,
   AsyncStatementCallback,
   nsIRequestObserver
@@ -196,7 +196,7 @@ NS_IMPL_ISUPPORTS_INHERITED(
 ////////////////////////////////////////////////////////////////////////////////
 //// nsAnnoProtocolHandler
 
-NS_IMPL_ISUPPORTS(nsAnnoProtocolHandler, nsIProtocolHandler)
+NS_IMPL_ISUPPORTS1(nsAnnoProtocolHandler, nsIProtocolHandler)
 
 // nsAnnoProtocolHandler::GetScheme
 

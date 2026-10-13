@@ -179,7 +179,7 @@ private:
   bool mObserving;
 };
 
-NS_IMPL_ISUPPORTS(Observer, nsIObserver);
+NS_IMPL_ISUPPORTS1(Observer, nsIObserver);
 
 class WindowsGamepadService {
 public:

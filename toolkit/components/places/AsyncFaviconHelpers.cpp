@@ -500,7 +500,7 @@ AsyncFetchAndSetIconForPage::Run()
 ////////////////////////////////////////////////////////////////////////////////
 //// AsyncFetchAndSetIconFromNetwork
 
-NS_IMPL_ISUPPORTS_INHERITED(
+NS_IMPL_ISUPPORTS_INHERITED3(
   AsyncFetchAndSetIconFromNetwork
 , nsRunnable
 , nsIStreamListener

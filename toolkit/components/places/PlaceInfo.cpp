@@ -130,7 +130,7 @@ PlaceInfo::GetVisits(JSContext* aContext,
 ////////////////////////////////////////////////////////////////////////////////
 //// nsISupports
 
-NS_IMPL_ISUPPORTS(
+NS_IMPL_ISUPPORTS1(
   PlaceInfo
 , mozIPlaceInfo
 )

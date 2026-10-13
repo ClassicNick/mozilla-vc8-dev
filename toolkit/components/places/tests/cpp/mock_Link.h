@@ -61,7 +61,7 @@ private:
   nsRefPtr<Link> mDeathGrip;
 };
 
-NS_IMPL_ISUPPORTS(
+NS_IMPL_ISUPPORTS1(
   mock_Link,
   mozilla::dom::Link
 )

@@ -32,7 +32,7 @@ public:
   nsCOMPtr<nsIThread> mThread;
 };
 
-NS_IMPL_ISUPPORTS(LSPAnnotationGatherer, nsIRunnable)
+NS_IMPL_ISUPPORTS1(LSPAnnotationGatherer, nsIRunnable)
 
 void
 LSPAnnotationGatherer::Annotate()

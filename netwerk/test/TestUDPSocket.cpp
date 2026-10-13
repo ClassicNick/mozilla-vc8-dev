@@ -99,7 +99,7 @@ public:
   nsresult mResult;
 };
 
-NS_IMPL_ISUPPORTS(UDPClientListener, nsIUDPSocketListener)
+NS_IMPL_ISUPPORTS1(UDPClientListener, nsIUDPSocketListener)
 
 UDPClientListener::~UDPClientListener()
 {
@@ -160,7 +160,7 @@ public:
   nsresult mResult;
 };
 
-NS_IMPL_ISUPPORTS(UDPServerListener, nsIUDPSocketListener)
+NS_IMPL_ISUPPORTS1(UDPServerListener, nsIUDPSocketListener)
 
 UDPServerListener::~UDPServerListener()
 {

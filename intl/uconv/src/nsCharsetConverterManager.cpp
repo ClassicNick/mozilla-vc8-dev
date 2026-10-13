@@ -27,7 +27,7 @@ static nsIStringBundle * sTitleBundle;
 
 // Class nsCharsetConverterManager [implementation]
 
-NS_IMPL_ISUPPORTS(nsCharsetConverterManager, nsICharsetConverterManager)
+NS_IMPL_ISUPPORTS1(nsCharsetConverterManager, nsICharsetConverterManager)
 
 nsCharsetConverterManager::nsCharsetConverterManager() 
 {

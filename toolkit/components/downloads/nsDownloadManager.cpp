@@ -87,7 +87,7 @@ static const int64_t gUpdateInterval = 400 * PR_USEC_PER_MSEC;
 ////////////////////////////////////////////////////////////////////////////////
 //// nsDownloadManager
 
-NS_IMPL_ISUPPORTS(
+NS_IMPL_ISUPPORTS4(
   nsDownloadManager
 , nsIDownloadManager
 , nsINavHistoryObserver
@@ -2603,7 +2603,7 @@ nsDownloadManager::ConfirmCancelDownloads(int32_t aCount,
 //// nsDownload
 
 NS_IMPL_CLASSINFO(nsDownload, nullptr, 0, NS_DOWNLOAD_CID)
-NS_IMPL_ISUPPORTS_CI(
+NS_IMPL_ISUPPORTS4_CI(
     nsDownload
   , nsIDownload
   , nsITransfer

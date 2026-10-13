@@ -14,7 +14,7 @@
 
 
 /* nsILocale */
-NS_IMPL_ISUPPORTS(nsLocale, nsILocale)
+NS_IMPL_ISUPPORTS1(nsLocale, nsILocale)
 
 nsLocale::nsLocale(void)
 :  fHashtable(nullptr), fCategoryCount(0)

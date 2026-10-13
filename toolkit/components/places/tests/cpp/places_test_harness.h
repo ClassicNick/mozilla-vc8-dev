@@ -139,7 +139,7 @@ private:
   bool mTopicReceived;
   PRIntervalTime mStartTime;
 };
-NS_IMPL_ISUPPORTS(
+NS_IMPL_ISUPPORTS1(
   WaitForTopicSpinner,
   nsIObserver
 )
@@ -161,8 +161,8 @@ protected:
   volatile bool mCompleted;
 };
 
-NS_IMPL_ISUPPORTS(AsyncStatementSpinner,
-                  mozIStorageStatementCallback)
+NS_IMPL_ISUPPORTS1(AsyncStatementSpinner,
+                   mozIStorageStatementCallback)
 
 AsyncStatementSpinner::AsyncStatementSpinner()
 : completionReason(0)
@@ -402,4 +402,4 @@ public:
   }
 };
 
-NS_IMPL_ISUPPORTS(WaitForConnectionClosed, nsIObserver)
+NS_IMPL_ISUPPORTS1(WaitForConnectionClosed, nsIObserver)

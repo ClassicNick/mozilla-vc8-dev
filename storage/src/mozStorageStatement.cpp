@@ -39,12 +39,14 @@ namespace storage {
 ////////////////////////////////////////////////////////////////////////////////
 //// nsIClassInfo
 
-NS_IMPL_CI_INTERFACE_GETTER(Statement,
-                            mozIStorageStatement,
-                            mozIStorageBaseStatement,
-                            mozIStorageBindingParams,
-                            mozIStorageValueArray,
-                            mozilla::storage::StorageBaseStatementInternal)
+NS_IMPL_CI_INTERFACE_GETTER5(
+  Statement,
+  mozIStorageStatement,
+  mozIStorageBaseStatement,
+  mozIStorageBindingParams,
+  mozIStorageValueArray,
+  mozilla::storage::StorageBaseStatementInternal
+)
 
 class StatementClassInfo : public nsIClassInfo
 {
@@ -116,7 +118,7 @@ public:
 
 NS_IMETHODIMP_(MozExternalRefCountType) StatementClassInfo::AddRef() { return 2; }
 NS_IMETHODIMP_(MozExternalRefCountType) StatementClassInfo::Release() { return 1; }
-NS_IMPL_QUERY_INTERFACE(StatementClassInfo, nsIClassInfo)
+NS_IMPL_QUERY_INTERFACE1(StatementClassInfo, nsIClassInfo)
 
 static StatementClassInfo sStatementClassInfo;
 

@@ -116,7 +116,7 @@ GlobalNameHashInitEntry(PLDHashTable *table, PLDHashEntryHdr *entry,
   return true;
 }
 
-NS_IMPL_ISUPPORTS(
+NS_IMPL_ISUPPORTS3(
   nsScriptNameSpaceManager,
   nsIObserver,
   nsISupportsWeakReference,

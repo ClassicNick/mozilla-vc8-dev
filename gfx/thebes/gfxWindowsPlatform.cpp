@@ -111,7 +111,7 @@ public:
     }
 };
 
-NS_IMPL_ISUPPORTS(GfxD2DSurfaceReporter, nsIMemoryReporter)
+NS_IMPL_ISUPPORTS1(GfxD2DSurfaceReporter, nsIMemoryReporter)
 
 #endif
 
@@ -143,7 +143,10 @@ public:
 };
 
 NS_IMPL_ISUPPORTS1(GfxD2DVramReporter, nsIMemoryReporter)
+<<<<<<< HEAD
 #endif
+=======
+>>>>>>> parent of 5f1fde8824e6 (Bug 900908 - Part 3: Change uses of numbered macros in nsIClassInfoImpl.h/nsISupportsImpl.h to the variadic variants. r=froydnj)
 
 #define GFX_USE_CLEARTYPE_ALWAYS "gfx.font_rendering.cleartype.always_use_for_content"
 #define GFX_DOWNLOADABLE_FONTS_USE_CLEARTYPE "gfx.font_rendering.cleartype.use_for_downloadable_fonts"
@@ -329,7 +332,10 @@ public:
 };
 
 NS_IMPL_ISUPPORTS1(GPUAdapterReporter, nsIMemoryReporter)
+<<<<<<< HEAD
 #endif
+=======
+>>>>>>> parent of 5f1fde8824e6 (Bug 900908 - Part 3: Change uses of numbered macros in nsIClassInfoImpl.h/nsISupportsImpl.h to the variadic variants. r=froydnj)
 
 static __inline void
 BuildKeyNameFromFontName(nsAString &aName)

@@ -24,7 +24,7 @@ ArgValueArray::ArgValueArray(int32_t aArgc,
 {
 }
 
-NS_IMPL_ISUPPORTS(
+NS_IMPL_ISUPPORTS1(
   ArgValueArray,
   mozIStorageValueArray
 )
