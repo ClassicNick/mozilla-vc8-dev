@@ -2561,8 +2561,13 @@ dnl ===============================================================
 if test "$GNU_CC"; then
   AC_DEFINE(HAVE_VISIBILITY_HIDDEN_ATTRIBUTE)
   AC_DEFINE(HAVE_VISIBILITY_ATTRIBUTE)
-  case "${OS_TARGET}" in
-  Darwin|Android)
+  if test -n "$gonkdir"; then
+    visibility_target=Gonk
+  else
+    visibility_target=$OS_TARGET
+  fi
+  case "$visibility_target" in
+  Darwin|Gonk)
     VISIBILITY_FLAGS='-fvisibility=hidden'
     ;;
   *)
@@ -8401,6 +8406,12 @@ if test -n "$MOZ_CAPTIVEDETECT"; then
   AC_DEFINE(MOZ_CAPTIVEDETECT)
 fi
 
+dnl Build second screen and casting features for external devices if required
+AC_SUBST(MOZ_DEVICES)
+if test -n "$MOZ_DEVICES"; then
+  AC_DEFINE(MOZ_DEVICES)
+fi
+
 dnl ========================================================
 if test "$MOZ_DEBUG" -o "$NS_TRACE_MALLOC" -o "$MOZ_DMD"; then
     MOZ_COMPONENTS_VERSION_SCRIPT_LDFLAGS=
@@ -8987,6 +8998,8 @@ else
   AC_DEFINE(MOZ_STATIC_JS)
 fi
 AC_SUBST(JS_SHARED_LIBRARY)
+
+AC_SUBST(UPLOAD_EXTRA_FILES)
 
 MOZ_CREATE_CONFIG_STATUS()
 

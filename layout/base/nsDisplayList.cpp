@@ -73,7 +73,6 @@ static void AddTransformFunctions(nsCSSValueList* aList,
                                   nsStyleContext* aContext,
                                   nsPresContext* aPresContext,
                                   nsRect& aBounds,
-                                  float aAppUnitsPerPixel,
                                   InfallibleTArray<TransformFunction>& aFunctions)
 {
   if (aList->mValue.GetUnit() == eCSSUnit_None) {
@@ -158,7 +157,7 @@ static void AddTransformFunctions(nsCSSValueList* aList,
       {
         double x = nsStyleTransformMatrix::ProcessTranslatePart(
           array->Item(1), aContext, aPresContext, canStoreInRuleTree,
-          aBounds.Width(), aAppUnitsPerPixel);
+          aBounds.Width());
         aFunctions.AppendElement(Translation(x, 0, 0));
         break;
       }
@@ -166,7 +165,7 @@ static void AddTransformFunctions(nsCSSValueList* aList,
       {
         double y = nsStyleTransformMatrix::ProcessTranslatePart(
           array->Item(1), aContext, aPresContext, canStoreInRuleTree,
-          aBounds.Height(), aAppUnitsPerPixel);
+          aBounds.Height());
         aFunctions.AppendElement(Translation(0, y, 0));
         break;
       }
@@ -174,7 +173,7 @@ static void AddTransformFunctions(nsCSSValueList* aList,
       {
         double z = nsStyleTransformMatrix::ProcessTranslatePart(
           array->Item(1), aContext, aPresContext, canStoreInRuleTree,
-          0, aAppUnitsPerPixel);
+          0);
         aFunctions.AppendElement(Translation(0, 0, z));
         break;
       }
@@ -182,13 +181,13 @@ static void AddTransformFunctions(nsCSSValueList* aList,
       {
         double x = nsStyleTransformMatrix::ProcessTranslatePart(
           array->Item(1), aContext, aPresContext, canStoreInRuleTree,
-          aBounds.Width(), aAppUnitsPerPixel);
+          aBounds.Width());
         // translate(x) is shorthand for translate(x, 0)
         double y = 0;
         if (array->Count() == 3) {
            y = nsStyleTransformMatrix::ProcessTranslatePart(
             array->Item(2), aContext, aPresContext, canStoreInRuleTree,
-            aBounds.Height(), aAppUnitsPerPixel);
+            aBounds.Height());
         }
         aFunctions.AppendElement(Translation(x, y, 0));
         break;
@@ -197,13 +196,13 @@ static void AddTransformFunctions(nsCSSValueList* aList,
       {
         double x = nsStyleTransformMatrix::ProcessTranslatePart(
           array->Item(1), aContext, aPresContext, canStoreInRuleTree,
-          aBounds.Width(), aAppUnitsPerPixel);
+          aBounds.Width());
         double y = nsStyleTransformMatrix::ProcessTranslatePart(
           array->Item(2), aContext, aPresContext, canStoreInRuleTree,
-          aBounds.Height(), aAppUnitsPerPixel);
+          aBounds.Height());
         double z = nsStyleTransformMatrix::ProcessTranslatePart(
           array->Item(3), aContext, aPresContext, canStoreInRuleTree,
-          0, aAppUnitsPerPixel);
+          0);
 
         aFunctions.AppendElement(Translation(x, y, z));
         break;
@@ -282,8 +281,7 @@ static void AddTransformFunctions(nsCSSValueList* aList,
                                                          aContext,
                                                          aPresContext,
                                                          canStoreInRuleTree,
-                                                         aBounds,
-                                                         aAppUnitsPerPixel);
+                                                         aBounds);
         gfx::Matrix4x4 transform;
         gfx::ToMatrix4x4(matrix, transform);
         aFunctions.AppendElement(TransformMatrix(transform));
@@ -322,8 +320,6 @@ AddAnimationForProperty(nsIFrame* aFrame, nsCSSProperty aProperty,
   nsStyleContext* styleContext = aFrame->StyleContext();
   nsPresContext* presContext = aFrame->PresContext();
   nsRect bounds = nsDisplayTransform::GetFrameBoundsForTransform(aFrame);
-  // all data passed directly to the compositor should be in css pixels
-  float scale = nsDeviceContext::AppUnitsPerCSSPixel();
 
   mozilla::layers::Animation* animation =
     aPending ?
@@ -354,11 +350,11 @@ AddAnimationForProperty(nsIFrame* aFrame, nsCSSProperty aProperty,
         animSegment->endState() = InfallibleTArray<TransformFunction>();
 
         nsCSSValueSharedList* list = segment->mFromValue.GetCSSValueSharedListValue();
-        AddTransformFunctions(list->mHead, styleContext, presContext, bounds, scale,
+        AddTransformFunctions(list->mHead, styleContext, presContext, bounds,
                               animSegment->startState().get_ArrayOfTransformFunction());
 
         list = segment->mToValue.GetCSSValueSharedListValue();
-        AddTransformFunctions(list->mHead, styleContext, presContext, bounds, scale,
+        AddTransformFunctions(list->mHead, styleContext, presContext, bounds,
                               animSegment->endState().get_ArrayOfTransformFunction());
       } else if (aProperty == eCSSProperty_opacity) {
         animSegment->startState() = segment->mFromValue.GetFloatValue();
@@ -1942,14 +1938,8 @@ nsDisplayBackgroundImage::IsSingleFixedPositionImage(nsDisplayListBuilder* aBuil
     return false;
 
   nsBackgroundLayerState state =
-    nsCSSRendering::PrepareBackgroundLayer(presContext,
-                                           mFrame,
-                                           flags,
-                                           borderArea,
-                                           aClipRect,
-                                           *mBackgroundStyle,
-                                           layer);
-
+    nsCSSRendering::PrepareBackgroundLayer(presContext, mFrame, flags,
+                                           borderArea, aClipRect, layer);
   nsImageRenderer* imageRenderer = &state.mImageRenderer;
   // We only care about images here, not gradients.
   if (!imageRenderer->IsRasterImage())
@@ -1982,14 +1972,8 @@ nsDisplayBackgroundImage::TryOptimizeToImageLayer(LayerManager* aManager,
   }
 
   nsBackgroundLayerState state =
-    nsCSSRendering::PrepareBackgroundLayer(presContext,
-                                           mFrame,
-                                           flags,
-                                           borderArea,
-                                           borderArea,
-                                           *mBackgroundStyle,
-                                           layer);
-
+    nsCSSRendering::PrepareBackgroundLayer(presContext, mFrame, flags,
+                                           borderArea, borderArea, layer);
   nsImageRenderer* imageRenderer = &state.mImageRenderer;
   // We only care about images here, not gradients.
   if (!imageRenderer->IsRasterImage())
@@ -2208,12 +2192,13 @@ nsDisplayBackgroundImage::GetOpaqueRegion(nsDisplayListBuilder* aBuilder,
 
   *aSnap = true;
 
-  // For policies other than EACH_BOX, don't try to optimize here, since
+  // For NS_STYLE_BOX_DECORATION_BREAK_SLICE, don't try to optimize here, since
   // this could easily lead to O(N^2) behavior inside InlineBackgroundData,
   // which expects frames to be sent to it in content order, not reverse
   // content order which we'll produce here.
   // Of course, if there's only one frame in the flow, it doesn't matter.
-  if (mBackgroundStyle->mBackgroundInlinePolicy == NS_STYLE_BG_INLINE_POLICY_EACH_BOX ||
+  if (mFrame->StyleBorder()->mBoxDecorationBreak ==
+        NS_STYLE_BOX_DECORATION_BREAK_CLONE ||
       (!mFrame->GetPrevContinuation() && !mFrame->GetNextContinuation())) {
     const nsStyleBackground::Layer& layer = mBackgroundStyle->mLayers[mLayer];
     if (layer.mImage.IsOpaque() && layer.mBlendMode == NS_STYLE_BLEND_NORMAL) {
@@ -2261,7 +2246,7 @@ nsDisplayBackgroundImage::GetPositioningArea()
   return nsCSSRendering::ComputeBackgroundPositioningArea(
       mFrame->PresContext(), mFrame,
       nsRect(ToReferenceFrame(), mFrame->GetSize()),
-      *mBackgroundStyle, mBackgroundStyle->mLayers[mLayer],
+      mBackgroundStyle->mLayers[mLayer],
       &attachedToFrame) + ToReferenceFrame();
 }
 
@@ -2383,8 +2368,7 @@ nsDisplayBackgroundImage::GetBoundsInternal(nsDisplayListBuilder* aBuilder) {
   }
   const nsStyleBackground::Layer& layer = mBackgroundStyle->mLayers[mLayer];
   return nsCSSRendering::GetBackgroundLayerRect(presContext, mFrame,
-                                                borderBox, clipRect,
-                                                *mBackgroundStyle, layer,
+                                                borderBox, clipRect, layer,
                                                 aBuilder->GetBackgroundPaintFlags());
 }
 
@@ -2861,11 +2845,8 @@ nsDisplayBoxShadowOuter::Paint(nsDisplayListBuilder* aBuilder,
 
   PROFILER_LABEL("nsDisplayBoxShadowOuter", "Paint");
   for (uint32_t i = 0; i < rects.Length(); ++i) {
-    aCtx->PushState();
-    aCtx->IntersectClip(rects[i]);
     nsCSSRendering::PaintBoxShadowOuter(presContext, *aCtx, mFrame,
                                         borderRect, rects[i], mOpacity);
-    aCtx->PopState();
   }
 }
 

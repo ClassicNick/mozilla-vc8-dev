@@ -11,6 +11,7 @@ const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/systemlibs.js");
+Cu.import("resource://gre/modules/FileUtils.jsm");
 Cu.import("resource://gre/modules/WifiCommand.jsm");
 Cu.import("resource://gre/modules/WifiNetUtil.jsm");
 Cu.import("resource://gre/modules/WifiP2pManager.jsm");
@@ -160,12 +161,12 @@ var WifiManager = (function() {
 
   // Regular Wifi stuff.
   var netUtil = WifiNetUtil(controlMessage);
-  var wifiCommand = WifiCommand(controlMessage, manager.ifname);
+  var wifiCommand = WifiCommand(controlMessage, manager.ifname, sdkVersion);
 
   // Wifi P2P stuff
   var p2pManager;
   if (p2pSupported) {
-    let p2pCommand = WifiCommand(controlMessage, WifiP2pManager.INTERFACE_NAME);
+    let p2pCommand = WifiCommand(controlMessage, WifiP2pManager.INTERFACE_NAME, sdkVersion);
     p2pManager = WifiP2pManager(p2pCommand, netUtil);
   }
 
@@ -1359,6 +1360,34 @@ var WifiManager = (function() {
     return capabilities;
   }
 
+  // Cert Services
+  let wifiCertService = Cc["@mozilla.org/wifi/certservice;1"];
+  if (wifiCertService) {
+    wifiCertService = wifiCertService.getService(Ci.nsIWifiCertService);
+    wifiCertService.start(wifiListener);
+  } else {
+    debug("No wifi CA service component available");
+  }
+
+  manager.importCert = function(caInfo, callback) {
+    var id = idgen++;
+    if (callback) {
+      controlCallbacks[id] = callback;
+    }
+
+    wifiCertService.importCert(id, caInfo.certBlob, caInfo.certPassword,
+                               caInfo.certNickname);
+  }
+
+  manager.deleteCert = function(caInfo, callback) {
+    var id = idgen++;
+    if (callback) {
+      controlCallbacks[id] = callback;
+    }
+
+    wifiCertService.deleteCert(id, caInfo.certNickname);
+  }
+
   return manager;
 })();
 
@@ -1625,6 +1654,9 @@ function WifiWorker() {
                     "WifiManager:setPowerSavingMode",
                     "WifiManager:setHttpProxy",
                     "WifiManager:setStaticIpMode",
+                    "WifiManager:importCert",
+                    "WifiManager:getImportedCerts",
+                    "WifiManager:deleteCert",
                     "child-process-shutdown"];
 
   messages.forEach((function(msgName) {
@@ -2577,6 +2609,15 @@ WifiWorker.prototype = {
       case "WifiManager:setStaticIpMode":
         this.setStaticIpMode(msg);
         break;
+      case "WifiManager:importCert":
+        this.importCert(msg);
+        break;
+      case "WifiManager:getImportedCerts":
+        this.getImportedCerts(msg);
+        break;
+      case "WifiManager:deleteCert":
+        this.deleteCert(msg);
+        break;
       case "WifiManager:getState": {
         let i;
         if ((i = this._domManagers.indexOf(msg.manager)) === -1) {
@@ -2978,7 +3019,7 @@ WifiWorker.prototype = {
     let self = this;
     let detail = msg.data;
     if (detail.method === "pbc") {
-      WifiManager.wpsPbc(WifiManager.ifname, function(ok) {
+      WifiManager.wpsPbc(function(ok) {
         if (ok)
           self._sendMessage(message, true, true, msg);
         else
@@ -3064,6 +3105,77 @@ WifiWorker.prototype = {
       } else {
         self._sendMessage(message, false, "Set static ip mode failed", msg);
       }
+    });
+  },
+
+  importCert: function importCert(msg) {
+    const message = "WifiManager:importCert:Return";
+    let self = this;
+
+    WifiManager.importCert(msg.data, function(data) {
+      if (data.status === 0) {
+        let usageString = ["ServerCert"];
+        let usageArray = [];
+        for (let i = 0; i < usageString.length; i++) {
+          if (data.usageFlag & (0x01 << i)) {
+            usageArray.push(usageString[i]);
+          }
+        }
+
+        self._sendMessage(message, true, {
+          nickname: data.nickname,
+          usage: usageArray
+        }, msg);
+      } else {
+        self._sendMessage(message, false, "Import Cert failed", msg);
+      }
+    });
+  },
+
+  getImportedCerts: function getImportedCerts(msg) {
+    const message = "WifiManager:getImportedCerts:Return";
+    let self = this;
+
+    let certDB2 = Cc["@mozilla.org/security/x509certdb;1"]
+                  .getService(Ci.nsIX509CertDB2);
+    if (!certDB2) {
+      self._sendMessage(message, false, "Failed to query NSS DB service", msg);
+    }
+
+    let certList = certDB2.getCerts();
+    if (!certList) {
+      self._sendMessage(message, false, "Failed to get certificate List", msg);
+    }
+
+    let certListEnum = certList.getEnumerator();
+    if (!certListEnum) {
+      self._sendMessage(message, false, "Failed to get certificate List enumerator", msg);
+    }
+    let importedCerts = {
+      ServerCert: [],
+    };
+    let UsageMapping = {
+      SERVERCERT: "ServerCert",
+    };
+
+    while (certListEnum.hasMoreElements()) {
+      let certInfo = certListEnum.getNext().QueryInterface(Ci.nsIX509Cert3);
+      let certNicknameInfo = /WIFI\_([A-Z]*)\_(.*)/.exec(certInfo.nickname);
+      if (!certNicknameInfo) {
+        continue;
+      }
+      importedCerts[UsageMapping[certNicknameInfo[1]]].push(certNicknameInfo[2]);
+    }
+
+    self._sendMessage(message, true, importedCerts, msg);
+  },
+
+  deleteCert: function deleteCert(msg) {
+    const message = "WifiManager:deleteCert:Return";
+    let self = this;
+
+    WifiManager.deleteCert(msg.data, function(data) {
+      self._sendMessage(message, data.status === 0, "Delete Cert failed", msg);
     });
   },
 

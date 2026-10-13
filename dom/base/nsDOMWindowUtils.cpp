@@ -64,7 +64,7 @@
 #include "mozilla/layers/ShadowLayers.h"
 
 #include "mozilla/dom/Element.h"
-#include "mozilla/dom/file/FileHandle.h"
+#include "mozilla/dom/FileHandle.h"
 #include "mozilla/dom/FileHandleBinding.h"
 #include "mozilla/dom/TabChild.h"
 #include "mozilla/dom/IDBFactoryBinding.h"
@@ -572,6 +572,23 @@ nsDOMWindowUtils::GetResolution(float* aXResolution, float* aYResolution)
     *aXResolution = presShell->GetXResolution();
     *aYResolution = presShell->GetYResolution();
   }
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDOMWindowUtils::GetIsHistoryRestored(bool* aIsHistoryRestored) {
+  if (!nsContentUtils::IsCallerChrome()) {
+    return NS_ERROR_DOM_SECURITY_ERR;
+  }
+
+  nsIPresShell* presShell = GetPresShell();
+  if (!presShell) {
+    return NS_ERROR_FAILURE;
+  }
+
+  const nsIScrollableFrame* sf = presShell->GetRootScrollFrameAsScrollable();
+  *aIsHistoryRestored = sf && sf->DidHistoryRestore();
 
   return NS_OK;
 }
@@ -2708,8 +2725,8 @@ nsDOMWindowUtils::AdvanceTimeAndRefresh(int64_t aMilliseconds)
   nsRefreshDriver* driver = GetPresContext()->RefreshDriver();
   driver->AdvanceTimeAndRefresh(aMilliseconds);
 
-  LayerTransactionChild* transaction = GetLayerTransaction();
-  if (transaction) {
+  RefPtr<LayerTransactionChild> transaction = GetLayerTransaction();
+  if (transaction && transaction->IPCOpen()) {
     transaction->SendSetTestSampleTime(driver->MostRecentRefresh());
   }
 
@@ -2726,8 +2743,8 @@ nsDOMWindowUtils::RestoreNormalRefresh()
   // Kick the compositor out of test mode before the refresh driver, so that
   // the refresh driver doesn't send an update that gets ignored by the
   // compositor.
-  LayerTransactionChild* transaction = GetLayerTransaction();
-  if (transaction) {
+  RefPtr<LayerTransactionChild> transaction = GetLayerTransaction();
+  if (transaction && transaction->IPCOpen()) {
     transaction->SendLeaveTestMode();
   }
 
@@ -3226,7 +3243,7 @@ nsDOMWindowUtils::GetFileId(JS::Handle<JS::Value> aFile, JSContext* aCx,
   if (!aFile.isPrimitive()) {
     JSObject* obj = aFile.toObjectOrNull();
 
-    file::FileHandle* fileHandle;
+    FileHandle* fileHandle;
     if (NS_SUCCEEDED(UNWRAP_OBJECT(FileHandle, obj, fileHandle))) {
       *aResult = fileHandle->GetFileId();
       return NS_OK;

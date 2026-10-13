@@ -121,6 +121,7 @@ TabChildBase::TabChildBase()
 NS_IMPL_CYCLE_COLLECTING_ADDREF(TabChildBase)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(TabChildBase)
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(TabChildBase)
+  NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
 NS_IMPL_CYCLE_COLLECTION_2(TabChildBase, mTabChildGlobal, mGlobal)
@@ -196,7 +197,7 @@ TabChildBase::HandlePossibleViewportChange()
   nsViewportInfo viewportInfo = nsContentUtils::GetViewportInfo(document, mInnerSize);
   uint32_t presShellId;
   mozilla::layers::FrameMetrics::ViewID viewId;
-  bool scrollIdentifiersValid = APZCCallbackHelper::GetScrollIdentifiers(
+  bool scrollIdentifiersValid = APZCCallbackHelper::GetOrCreateScrollIdentifiers(
         document->GetDocumentElement(), &presShellId, &viewId);
   if (scrollIdentifiersValid) {
     ZoomConstraints constraints(
@@ -726,8 +727,8 @@ TabChild::Observe(nsISupports *aSubject,
       nsCOMPtr<nsIDocument> doc(GetDocument());
       uint32_t presShellId;
       ViewID viewId;
-      if (APZCCallbackHelper::GetScrollIdentifiers(doc->GetDocumentElement(),
-                                                    &presShellId, &viewId)) {
+      if (APZCCallbackHelper::GetOrCreateScrollIdentifiers(doc->GetDocumentElement(),
+                                                           &presShellId, &viewId)) {
         CSSRect rect;
         sscanf(NS_ConvertUTF16toUTF8(aData).get(),
                "{\"x\":%f,\"y\":%f,\"w\":%f,\"h\":%f}",
@@ -975,8 +976,7 @@ TabChild::NotifyTabContextUpdated()
     }
 }
 
-NS_INTERFACE_MAP_BEGIN(TabChild)
-  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIWebBrowserChrome)
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(TabChild)
   NS_INTERFACE_MAP_ENTRY(nsIWebBrowserChrome)
   NS_INTERFACE_MAP_ENTRY(nsIWebBrowserChrome2)
   NS_INTERFACE_MAP_ENTRY(nsIEmbeddingSiteWindow)
@@ -989,10 +989,10 @@ NS_INTERFACE_MAP_BEGIN(TabChild)
   NS_INTERFACE_MAP_ENTRY(nsIObserver)
   NS_INTERFACE_MAP_ENTRY(nsISupportsWeakReference)
   NS_INTERFACE_MAP_ENTRY(nsITooltipListener)
-NS_INTERFACE_MAP_END
+NS_INTERFACE_MAP_END_INHERITING(TabChildBase)
 
-NS_IMPL_ADDREF(TabChild)
-NS_IMPL_RELEASE(TabChild)
+NS_IMPL_ADDREF_INHERITED(TabChild, TabChildBase);
+NS_IMPL_RELEASE_INHERITED(TabChild, TabChildBase);
 
 NS_IMETHODIMP
 TabChild::SetStatus(uint32_t aStatusType, const char16_t* aStatus)
@@ -1980,7 +1980,7 @@ TabChild::RecvRealTouchEvent(const WidgetTouchEvent& aEvent,
   }
 
   if (aEvent.message == NS_TOUCH_START && localEvent.touches.Length() > 0) {
-    mActiveElementManager->SetTargetElement(localEvent.touches[0]->Target());
+    mActiveElementManager->SetTargetElement(localEvent.touches[0]->GetTarget());
   }
 
   nsCOMPtr<nsPIDOMWindow> outerWindow = do_GetInterface(WebNavigation());
