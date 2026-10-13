@@ -5044,7 +5044,7 @@ def getWrapTemplateForType(type, descriptorProvider, result, successCode,
                   $*{innerTemplate}
                 } while (0);
                 if (!JS_DefineElement(cx, returnArray, ${index}, tmp,
-                                      nullptr, nullptr, JSPROP_ENUMERATE)) {
+                                      JSPROP_ENUMERATE)) {
                   $*{exceptionCode}
                 }
               }
@@ -6787,8 +6787,8 @@ class CGNewResolveHook(CGAbstractBindingMethod):
             // define it.
             if (!desc.value().isUndefined() &&
                 !JS_DefinePropertyById(cx, obj, id, desc.value(),
-                                       desc.getter(), desc.setter(),
-                                       desc.attributes())) {
+                                       desc.attributes(),
+                                       desc.getter(), desc.setter())) {
               return false;
             }
             objp.set(obj);
@@ -8688,8 +8688,8 @@ class CGResolveOwnPropertyViaNewresolve(CGAbstractBindingMethod):
               if (objDesc.object() &&
                   !objDesc.value().isUndefined() &&
                   !JS_DefinePropertyById(cx, obj, id, objDesc.value(),
-                                         objDesc.getter(), objDesc.setter(),
-                                         objDesc.attributes())) {
+                                         objDesc.attributes(),
+                                         objDesc.getter(), objDesc.setter())) {
                 return false;
               }
             }
@@ -10570,7 +10570,7 @@ class CGDictionary(CGThing):
                              member.location))
 
         propDef = (
-            'JS_DefinePropertyById(cx, obj, atomsCache->%s, temp, nullptr, nullptr, JSPROP_ENUMERATE)' %
+            'JS_DefinePropertyById(cx, obj, atomsCache->%s, temp, JSPROP_ENUMERATE)' %
             self.makeIdName(member.identifier.name))
 
         innerTemplate = wrapForType(
@@ -12525,8 +12525,8 @@ class CallbackMember(CGNativeMember):
                 {
                     'result': result,
                     'successCode': "continue;\n" if arg.variadic else "break;\n",
-                    'jsvalRef': "argv.handleAt(%s)" % jsvalIndex,
-                    'jsvalHandle': "argv.handleAt(%s)" % jsvalIndex,
+                    'jsvalRef': "argv[%s]" % jsvalIndex,
+                    'jsvalHandle': "argv[%s]" % jsvalIndex,
                     # XXXbz we don't have anything better to use for 'obj',
                     # really...  It's OK to use CallbackPreserveColor because
                     # CallSetup already handled the unmark-gray bits for us.
@@ -12558,7 +12558,7 @@ class CallbackMember(CGNativeMember):
                   // This is our current trailing argument; reduce argc
                   --argc;
                 } else {
-                  argv[${i}] = JS::UndefinedValue();
+                  argv[${i}].setUndefined();
                 }
                 """,
                 argName=arg.identifier.name,
@@ -12816,7 +12816,7 @@ class CallbackSetter(CallbackAccessor):
         return fill(
             """
             MOZ_ASSERT(argv.length() == 1);
-            if (!JS_SetProperty(cx, CallbackPreserveColor(), "${attrName}", argv.handleAt(0))) {
+            if (!JS_SetProperty(cx, CallbackPreserveColor(), "${attrName}", argv[0])) {
               aRv.Throw(NS_ERROR_UNEXPECTED);
               return${errorReturn};
             }

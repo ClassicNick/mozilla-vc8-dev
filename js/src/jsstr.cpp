@@ -1063,46 +1063,53 @@ struct ManualCmp {
 
 template <class InnerMatch>
 static int
-UnrolledMatch(const jschar *text, uint32_t textlen, const jschar *pat, uint32_t patlen)
+MemChrMatch(const jschar *text, uint32_t textlen, const jschar *pat, uint32_t patlen)
 {
-    JS_ASSERT(patlen > 0 && textlen > 0);
-    const jschar *textend = text + textlen - (patlen - 1);
-    const jschar p0 = *pat;
-    const jschar *const patNext = pat + 1;
-    const typename InnerMatch::Extent extent = InnerMatch::computeExtent(pat, patlen);
-    uint8_t fixup;
+    /*
+     * Use the very efficient memchr to find the character that matches the
+     * first pattern character. The only caveat is that memchr uses 8 bit chars,
+     * while spidermonkey uses 16 bit chars.
+     */
 
-    const jschar *t = text;
-    switch ((textend - t) & 7) {
-      case 0: if (*t++ == p0) { fixup = 8; goto match; }
-      case 7: if (*t++ == p0) { fixup = 7; goto match; }
-      case 6: if (*t++ == p0) { fixup = 6; goto match; }
-      case 5: if (*t++ == p0) { fixup = 5; goto match; }
-      case 4: if (*t++ == p0) { fixup = 4; goto match; }
-      case 3: if (*t++ == p0) { fixup = 3; goto match; }
-      case 2: if (*t++ == p0) { fixup = 2; goto match; }
-      case 1: if (*t++ == p0) { fixup = 1; goto match; }
-    }
-    while (t != textend) {
-      if (t[0] == p0) { t += 1; fixup = 8; goto match; }
-      if (t[1] == p0) { t += 2; fixup = 7; goto match; }
-      if (t[2] == p0) { t += 3; fixup = 6; goto match; }
-      if (t[3] == p0) { t += 4; fixup = 5; goto match; }
-      if (t[4] == p0) { t += 5; fixup = 4; goto match; }
-      if (t[5] == p0) { t += 6; fixup = 3; goto match; }
-      if (t[6] == p0) { t += 7; fixup = 2; goto match; }
-      if (t[7] == p0) { t += 8; fixup = 1; goto match; }
-        t += 8;
-        continue;
-        do {
-            if (*t++ == p0) {
-              match:
-                if (!InnerMatch::match(patNext, t, extent))
-                    goto failed_match;
-                return t - text - 1;
-            }
-          failed_match:;
-        } while (--fixup > 0);
+    const typename InnerMatch::Extent extent = InnerMatch::computeExtent(pat, patlen);
+
+    /* Treat input as 8 bit strings */
+    const char *text8 = (const char *)text;
+    const char *pat8 = (const char *)pat;
+
+    /*
+     * Indexing on 8 bits. So the indexes get twice as big.
+     * Currently this isn't a problem since max string size is 28bit.
+     */
+    JS_ASSERT(textlen < UINT32_MAX/2);
+
+    uint32_t i = 0;
+    uint32_t n = (textlen - patlen)*2;
+    while (i <= n) {
+        /* Find the first 8 bits of the pattern in the text. */
+        const char* pos = reinterpret_cast<const char *>(memchr(text8 + i, pat8[0], n - i + 1));
+        if (pos == nullptr)
+            return -1;
+
+        i = static_cast<uint32_t>(pos - text8);
+
+        /* Ignore when it matched the upper 8 bits of the 16bits text. */
+        if (i%2 != 0) {
+            i++;
+            continue;
+        }
+
+        /*
+         * Test the upper 8 bits of the first character of the pattern.
+         * On success test the full text using normal 16bit character compares,
+         * starting at the second 16 bit character.
+         */
+        if (pat8[1] == text8[i+1]) {
+            if (InnerMatch::match(pat + 1, text + i/2 + 1, extent))
+                return i/2;
+        }
+
+        i += 2;
     }
     return -1;
 }
@@ -1158,10 +1165,10 @@ StringMatch(const jschar *text, uint32_t textlen,
      */
     return
 #if !defined(__linux__)
-           patlen > 128 ? UnrolledMatch<MemCmp>(text, textlen, pat, patlen)
+           patlen > 128 ? MemChrMatch<MemCmp>(text, textlen, pat, patlen)
                         :
 #endif
-                          UnrolledMatch<ManualCmp>(text, textlen, pat, patlen);
+                          MemChrMatch<ManualCmp>(text, textlen, pat, patlen);
 }
 
 static const size_t sRopeMatchThresholdRatioLog2 = 5;
@@ -1171,6 +1178,13 @@ js::StringHasPattern(const jschar *text, uint32_t textlen,
                      const jschar *pat, uint32_t patlen)
 {
     return StringMatch(text, textlen, pat, patlen) != -1;
+}
+
+int
+js::StringFindPattern(const jschar *text, uint32_t textlen,
+                      const jschar *pat, uint32_t patlen)
+{
+    return StringMatch(text, textlen, pat, patlen);
 }
 
 // When an algorithm does not need a string represented as a single linear
@@ -1737,6 +1751,12 @@ HasRegExpMetaChars(const jschar *chars, size_t length)
     return false;
 }
 
+bool
+js::StringHasRegExpMetaChars(const jschar *chars, size_t length)
+{
+    return HasRegExpMetaChars(chars, length);
+}
+
 namespace {
 
 /*
@@ -2115,7 +2135,10 @@ js::str_match(JSContext *cx, unsigned argc, Value *vp)
     if (!g.normalizeRegExp(cx, false, 1, args))
         return false;
 
-    RegExpStatics *res = cx->global()->getRegExpStatics();
+    RegExpStatics *res = cx->global()->getRegExpStatics(cx);
+    if (!res)
+        return false;
+
     Rooted<JSLinearString*> linearStr(cx, str->ensureLinear(cx));
     if (!linearStr)
         return false;
@@ -2156,7 +2179,9 @@ js::str_search(JSContext *cx, unsigned argc, Value *vp)
 
     const jschar *chars = linearStr->chars();
     size_t length = linearStr->length();
-    RegExpStatics *res = cx->global()->getRegExpStatics();
+    RegExpStatics *res = cx->global()->getRegExpStatics(cx);
+    if (!res)
+        return false;
 
     /* Per ECMAv5 15.5.4.12 (5) The last index property is ignored and left unchanged. */
     size_t i = 0;
@@ -2829,16 +2854,26 @@ StrReplaceRegexpRemove(JSContext *cx, HandleString str, RegExpShared &re, Mutabl
             break;
     }
 
+    RegExpStatics *res;
+
     /* If unmatched, return the input string. */
     if (!lastIndex) {
-        if (startIndex > 0)
-            cx->global()->getRegExpStatics()->updateLazily(cx, flatStr, &re, lazyIndex);
+        if (startIndex > 0) {
+            res = cx->global()->getRegExpStatics(cx);
+            if (!res)
+                return false;
+            res->updateLazily(cx, flatStr, &re, lazyIndex);
+        }
         rval.setString(str);
         return true;
     }
 
     /* The last successful match updates the RegExpStatics. */
-    cx->global()->getRegExpStatics()->updateLazily(cx, flatStr, &re, lazyIndex);
+    res = cx->global()->getRegExpStatics(cx);
+    if (!res)
+        return false;
+
+    res->updateLazily(cx, flatStr, &re, lazyIndex);
 
     /* Include any remaining part of the string. */
     if (lastIndex < charsLen) {
@@ -2866,7 +2901,10 @@ StrReplaceRegExp(JSContext *cx, ReplaceData &rdata, MutableHandleValue rval)
     rdata.leftIndex = 0;
     rdata.calledBack = false;
 
-    RegExpStatics *res = cx->global()->getRegExpStatics();
+    RegExpStatics *res = cx->global()->getRegExpStatics(cx);
+    if (!res)
+        return false;
+
     RegExpShared &re = rdata.g.regExp();
 
     // The spec doesn't describe this function very clearly, so we go ahead and
@@ -3283,7 +3321,10 @@ SplitHelper(JSContext *cx, Handle<JSLinearString*> str, uint32_t limit, const Ma
 
         /* Step 13(c)(iii)(6-7). */
         if (Matcher::returnsCaptures) {
-            RegExpStatics *res = cx->global()->getRegExpStatics();
+            RegExpStatics *res = cx->global()->getRegExpStatics(cx);
+            if (!res)
+                return nullptr;
+
             const MatchPairs &matches = res->getMatches();
             for (size_t i = 0; i < matches.parenCount(); i++) {
                 /* Steps 13(c)(iii)(7)(a-c). */
@@ -3494,7 +3535,10 @@ js::str_split(JSContext *cx, unsigned argc, Value *vp)
             aobj = SplitHelper(cx, linearStr, limit, matcher, type);
         }
     } else {
-        SplitRegExpMatcher matcher(*re, cx->global()->getRegExpStatics());
+        RegExpStatics *res = cx->global()->getRegExpStatics(cx);
+        if (!res)
+            return false;
+        SplitRegExpMatcher matcher(*re, res);
         aobj = SplitHelper(cx, linearStr, limit, matcher, type);
     }
     if (!aobj)

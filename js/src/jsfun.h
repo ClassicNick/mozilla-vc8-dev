@@ -216,8 +216,8 @@ class JSFunction : public JSObject
     }
 
     void setGuessedAtom(JSAtom *atom) {
-        JS_ASSERT(atom_ == nullptr);
-        JS_ASSERT(atom != nullptr);
+        JS_ASSERT(!atom_);
+        JS_ASSERT(atom);
         JS_ASSERT(!hasGuessedAtom());
         atom_ = atom;
         flags_ |= HAS_GUESSED_ATOM;
@@ -447,9 +447,9 @@ class JSFunction : public JSObject
         return getParent();
     }
 
-    inline const js::Value &getBoundFunctionThis() const;
-    inline const js::Value &getBoundFunctionArgument(unsigned which) const;
-    inline size_t getBoundFunctionArgumentCount() const;
+    const js::Value &getBoundFunctionThis() const;
+    const js::Value &getBoundFunctionArgument(unsigned which) const;
+    size_t getBoundFunctionArgumentCount() const;
 
   private:
     inline js::FunctionExtended *toExtended();

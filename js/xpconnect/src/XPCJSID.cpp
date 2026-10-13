@@ -407,7 +407,7 @@ nsJSIID::NewResolve(nsIXPConnectWrappedNative *wrapper,
             return NS_ERROR_OUT_OF_MEMORY;
 
         *objp = obj;
-        *_retval = JS_DefinePropertyById(cx, obj, id, val, nullptr, nullptr,
+        *_retval = JS_DefinePropertyById(cx, obj, id, val,
                                          JSPROP_ENUMERATE | JSPROP_READONLY |
                                          JSPROP_PERMANENT);
     }
@@ -644,8 +644,8 @@ GetIIDArg(uint32_t argc, const JS::Value& val, JSContext* cx)
     // If an IID was passed in then use it
     if (argc) {
         JSObject* iidobj;
-        if (JSVAL_IS_PRIMITIVE(val) ||
-            !(iidobj = JSVAL_TO_OBJECT(val)) ||
+        if (val.isPrimitive() ||
+            !(iidobj = val.toObjectOrNull()) ||
             !(iid = xpc_JSObjectToID(cx, iidobj))) {
             return nullptr;
         }
