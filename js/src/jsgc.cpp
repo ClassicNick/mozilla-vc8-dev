@@ -2770,12 +2770,12 @@ BeginMarkPhase(JSRuntime *rt)
             c->zone()->setPreservingCode(true);
     }
 
-    if (!rt->gc.shouldCleanUpEverything) {
 #ifdef JS_ION
+    if (!rt->gc.shouldCleanUpEverything) {
         if (JSCompartment *comp = jit::TopmostIonActivationCompartment(rt))
             comp->zone()->setPreservingCode(true);
-#endif
     }
+#endif
 
     /*
      * Atoms are not in the cross-compartment map. So if there are any

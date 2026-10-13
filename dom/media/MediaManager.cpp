@@ -753,7 +753,7 @@ static SourceSet *
 
   // Apply constraints to the list of sources.
 
-  auto& c = aConstraints;
+  ConstraintsType& c = aConstraints;
   if (c.mUnsupportedRequirement) {
     // Check upfront the names of required constraints that are unsupported for
     // this media-type. The spec requires these to fail, so getting them out of
@@ -803,14 +803,9 @@ static SourceSet *
 
   SourceSet tailSet;
 
-<<<<<<< HEAD
-  if (constraints.mOptional.WasPassed()) {
-    const Sequence<MediaTrackConstraintSet> &array = constraints.mOptional.Value();
-=======
   if (c.mAdvanced.WasPassed()) {
-    auto &array = c.mAdvanced.Value();
+    const Sequence<MediaTrackConstraintSet> &array = c.mAdvanced.Value();
 
->>>>>>> 876943a
     for (int i = 0; i < int(array.Length()); i++) {
       SourceSet rejects;
       for (uint32_t j = 0; j < candidateSet.Length();) {
@@ -1336,6 +1331,8 @@ MediaManager::GetUserMedia(bool aPrivileged,
 
   nsCOMPtr<nsIDOMGetUserMediaSuccessCallback> onSuccess(aOnSuccess);
   nsCOMPtr<nsIDOMGetUserMediaErrorCallback> onError(aOnError);
+  
+  MediaStreamConstraints c(aConstraints); // copy
 
   /**
    * If we were asked to get a picture, before getting a snapshot, we check if
@@ -1396,8 +1393,6 @@ MediaManager::GetUserMedia(bool aPrivileged,
 
   // No need for locking because we always do this in the main thread.
   listeners->AppendElement(listener);
-
-  MediaStreamConstraints c(aConstraints); // copy
 
   // Developer preference for turning off permission check.
   if (Preferences::GetBool("media.navigator.permission.disabled", false)) {

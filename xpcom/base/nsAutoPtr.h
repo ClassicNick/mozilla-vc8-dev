@@ -904,12 +904,6 @@ class nsRefPtr
             mRawPtr->AddRef();
         }
 
-      nsRefPtr(nsRefPtr<T>&& aRefPtr)
-            : mRawPtr(aRefPtr.mRawPtr)
-        {
-          aRefPtr.mRawPtr = nullptr;
-        }
-
       // construct from a raw pointer (of the right type)
 
       nsRefPtr(T* aRawPtr)
@@ -970,14 +964,6 @@ class nsRefPtr
           assign_assuming_AddRef(static_cast<T*>(newRawPtr));
           return *this;
         }
-
-      nsRefPtr<T>&
-      operator=(nsRefPtr<T>&& aRefPtr)
-      {
-        assign_assuming_AddRef(aRefPtr.mRawPtr);
-        aRefPtr.mRawPtr = nullptr;
-        return *this;
-      }
 
         // Other pointer operators
 

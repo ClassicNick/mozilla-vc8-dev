@@ -32,9 +32,9 @@ public:
   , mStrings(aStrings)
   {
     if (mRequire.WasPassed()) {
-      auto& array = mRequire.Value();
+      dom::Sequence<nsString>& array = mRequire.Value();
       for (uint32_t i = 0; i < array.Length(); i++) {
-        auto value = ToEnum(array[i]);
+        Kind value = ToEnum(array[i]);
         if (value != Kind::Other) {
           mRequireN.AppendElement(value);
         } else {
