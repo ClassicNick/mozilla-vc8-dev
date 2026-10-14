@@ -20,10 +20,10 @@
 #include "mozilla/layers/TextureD3D9.h"
 #endif
 
-using namespace mozilla::gfx;
-
 namespace mozilla {
 namespace layers {
+
+using namespace mozilla::gfx;
 
 /**
  * IPDL actor used by CompositableClient to match with its corresponding
