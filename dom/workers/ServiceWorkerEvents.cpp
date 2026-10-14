@@ -48,7 +48,7 @@ NS_IMPL_RELEASE_INHERITED(InstallPhaseEvent, Event)
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(InstallPhaseEvent)
 NS_INTERFACE_MAP_END_INHERITING(Event)
 
-NS_IMPL_CYCLE_COLLECTION_INHERITED(InstallPhaseEvent, Event, mPromise)
+NS_IMPL_CYCLE_COLLECTION_INHERITED_1(InstallPhaseEvent, Event, mPromise)
 
 InstallEvent::InstallEvent(EventTarget* aOwner)
   : InstallPhaseEvent(aOwner)
@@ -61,6 +61,6 @@ NS_IMPL_RELEASE_INHERITED(InstallEvent, InstallPhaseEvent)
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(InstallEvent)
 NS_INTERFACE_MAP_END_INHERITING(InstallPhaseEvent)
 
-NS_IMPL_CYCLE_COLLECTION_INHERITED(InstallEvent, InstallPhaseEvent, mActiveWorker)
+NS_IMPL_CYCLE_COLLECTION_INHERITED_1(InstallEvent, InstallPhaseEvent, mActiveWorker)
 
 END_WORKERS_NAMESPACE

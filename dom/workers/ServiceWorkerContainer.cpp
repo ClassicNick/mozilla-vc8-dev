@@ -24,7 +24,7 @@ NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
 NS_IMPL_ADDREF_INHERITED(ServiceWorkerContainer, DOMEventTargetHelper)
 NS_IMPL_RELEASE_INHERITED(ServiceWorkerContainer, DOMEventTargetHelper)
 
-NS_IMPL_CYCLE_COLLECTION_INHERITED(ServiceWorkerContainer, DOMEventTargetHelper, mWindow)
+NS_IMPL_CYCLE_COLLECTION_INHERITED_1(ServiceWorkerContainer, DOMEventTargetHelper, mWindow)
 
 JSObject*
 ServiceWorkerContainer::WrapObject(JSContext* aCx)

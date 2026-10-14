@@ -1700,7 +1700,7 @@ private:
   FileInfo mCCLog;
 };
 
-NS_IMPL_ISUPPORTS(nsCycleCollectorLogSinkToFile, nsICycleCollectorLogSink)
+NS_IMPL_ISUPPORTS1(nsCycleCollectorLogSinkToFile, nsICycleCollectorLogSink)
 
 
 class nsCycleCollectorLogger MOZ_FINAL : public nsICycleCollectorListener

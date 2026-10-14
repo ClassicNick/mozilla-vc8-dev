@@ -306,7 +306,7 @@ private:
     FILE* mCCLog;
 };
 
-NS_IMPL_ISUPPORTS(CycleCollectWithLogsChild, nsICycleCollectorLogSink);
+NS_IMPL_ISUPPORTS1(CycleCollectWithLogsChild, nsICycleCollectorLogSink);
 
 class AlertObserver
 {
