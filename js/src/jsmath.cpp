@@ -73,7 +73,7 @@ MathCache::MathCache() {
     /* See comments in lookup(). */
     JS_ASSERT(IsNegativeZero(-0.0));
     JS_ASSERT(!IsNegativeZero(+0.0));
-    JS_ASSERT(hash(-0.0) != hash(+0.0));
+    JS_ASSERT(hash(-0.0, MathCache::Sin) != hash(+0.0, MathCache::Sin));
 }
 
 size_t
@@ -123,7 +123,7 @@ double
 js::math_acos_impl(MathCache *cache, double x)
 {
     ACOS_IF_OUT_OF_RANGE(x);
-    return cache->lookup(acos, x);
+    return cache->lookup(acos, x, MathCache::Acos);
 }
 
 double
@@ -168,7 +168,7 @@ double
 js::math_asin_impl(MathCache *cache, double x)
 {
     ASIN_IF_OUT_OF_RANGE(x);
-    return cache->lookup(asin, x);
+    return cache->lookup(asin, x, MathCache::Asin);
 }
 
 double
@@ -206,7 +206,7 @@ js::math_asin(JSContext *cx, unsigned argc, Value *vp)
 double
 js::math_atan_impl(MathCache *cache, double x)
 {
-    return cache->lookup(atan, x);
+    return cache->lookup(atan, x, MathCache::Atan);
 }
 
 double
@@ -341,7 +341,7 @@ js::math_clz32(JSContext *cx, unsigned argc, Value *vp)
 double
 js::math_cos_impl(MathCache *cache, double x)
 {
-    return cache->lookup(cos, x);
+    return cache->lookup(cos, x, MathCache::Cos);
 }
 
 double
@@ -389,7 +389,7 @@ double
 js::math_exp_impl(MathCache *cache, double x)
 {
     EXP_IF_OUT_OF_RANGE(x);
-    return cache->lookup(exp, x);
+    return cache->lookup(exp, x, MathCache::Exp);
 }
 
 double
@@ -516,7 +516,7 @@ double
 js::math_log_impl(MathCache *cache, double x)
 {
     LOG_IF_OUT_OF_RANGE(x);
-    return cache->lookup(log, x);
+    return cache->lookup(log, x, MathCache::Log);
 }
 
 double
@@ -921,7 +921,7 @@ js::math_round(JSContext *cx, unsigned argc, Value *vp)
 double
 js::math_sin_impl(MathCache *cache, double x)
 {
-    return cache->lookup(sin, x);
+    return cache->lookup(sin, x, MathCache::Sin);
 }
 
 double
@@ -971,7 +971,7 @@ js_math_sqrt(JSContext *cx, unsigned argc, Value *vp)
     if (!mathCache)
         return false;
 
-    double z = mathCache->lookup(sqrt, x);
+    double z = mathCache->lookup(sqrt, x, MathCache::Sqrt);
     args.rval().setDouble(z);
     return true;
 }
@@ -979,7 +979,7 @@ js_math_sqrt(JSContext *cx, unsigned argc, Value *vp)
 double
 js::math_tan_impl(MathCache *cache, double x)
 {
-    return cache->lookup(tan, x);
+    return cache->lookup(tan, x, MathCache::Tan);
 }
 
 double
@@ -1041,7 +1041,7 @@ static bool math_function(JSContext *cx, unsigned argc, Value *vp)
 double
 js::math_log10_impl(MathCache *cache, double x)
 {
-    return cache->lookup(log10, x);
+    return cache->lookup(log10, x, MathCache::Log10);
 }
 
 double
@@ -1066,7 +1066,7 @@ double log2(double x)
 double
 js::math_log2_impl(MathCache *cache, double x)
 {
-    return cache->lookup(log2, x);
+    return cache->lookup(log2, x, MathCache::Log2);
 }
 
 double
@@ -1109,7 +1109,7 @@ double
 js::math_log1p_impl(MathCache *cache, double x)
 {
     LOG1P_IF_OUT_OF_RANGE(x);
-    return cache->lookup(log1p, x);
+    return cache->lookup(log1p, x, MathCache::Log1p);
 }
 
 double
@@ -1151,7 +1151,7 @@ double expm1(double x)
 double
 js::math_expm1_impl(MathCache *cache, double x)
 {
-    return cache->lookup(expm1, x);
+    return cache->lookup(expm1, x, MathCache::Expm1);
 }
 
 double
@@ -1181,7 +1181,7 @@ double sqrt1pm1(double x)
 double
 js::math_cosh_impl(MathCache *cache, double x)
 {
-    return cache->lookup(cosh, x);
+    return cache->lookup(cosh, x, MathCache::Cosh);
 }
 
 double
@@ -1199,7 +1199,7 @@ js::math_cosh(JSContext *cx, unsigned argc, Value *vp)
 double
 js::math_sinh_impl(MathCache *cache, double x)
 {
-    return cache->lookup(sinh, x);
+    return cache->lookup(sinh, x, MathCache::Sinh);
 }
 
 double
@@ -1217,7 +1217,7 @@ js::math_sinh(JSContext *cx, unsigned argc, Value *vp)
 double
 js::math_tanh_impl(MathCache *cache, double x)
 {
-    return cache->lookup(tanh, x);
+    return cache->lookup(tanh, x, MathCache::Tanh);
 }
 
 double
@@ -1266,7 +1266,7 @@ double acosh(double x)
 double
 js::math_acosh_impl(MathCache *cache, double x)
 {
-    return cache->lookup(acosh, x);
+    return cache->lookup(acosh, x, MathCache::Acosh);
 }
 
 double
@@ -1320,9 +1320,9 @@ double
 js::math_asinh_impl(MathCache *cache, double x)
 {
 #ifdef HAVE_ASINH
-    return cache->lookup(asinh, x);
+    return cache->lookup(asinh, x, MathCache::Asinh);
 #else
-    return cache->lookup(my_asinh, x);
+    return cache->lookup(my_asinh, x, MathCache::Asinh);
 #endif
 }
 
@@ -1373,7 +1373,7 @@ double atanh(double x)
 double
 js::math_atanh_impl(MathCache *cache, double x)
 {
-    return cache->lookup(atanh, x);
+    return cache->lookup(atanh, x, MathCache::Atanh);
 }
 
 double
@@ -1464,7 +1464,7 @@ double trunc(double x)
 double
 js::math_trunc_impl(MathCache *cache, double x)
 {
-    return cache->lookup(trunc, x);
+    return cache->lookup(trunc, x, MathCache::Trunc);
 }
 
 double
@@ -1490,7 +1490,7 @@ static double sign(double x)
 double
 js::math_sign_impl(MathCache *cache, double x)
 {
-    return cache->lookup(sign, x);
+    return cache->lookup(sign, x, MathCache::Sign);
 }
 
 double
@@ -1521,7 +1521,7 @@ double cbrt(double x)
 double
 js::math_cbrt_impl(MathCache *cache, double x)
 {
-    return cache->lookup(cbrt, x);
+    return cache->lookup(cbrt, x, MathCache::Cbrt);
 }
 
 double

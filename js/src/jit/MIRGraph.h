@@ -207,6 +207,9 @@ class MBasicBlock : public TempObject, public InlineListNode<MBasicBlock>
     // Propagates phis placed in a loop header down to this successor block.
     void inheritPhis(MBasicBlock *header);
 
+    // Propagates backedge slots into phis operands of the loop header.
+    bool inheritPhisFromBackedge(MBasicBlock *backedge, bool *hadTypeChange);
+
     // Compute the types for phis in this block according to their inputs.
     bool specializePhis();
 
@@ -626,7 +629,7 @@ class MIRGraph
         return idGen_;
     }
     MResumePoint *entryResumePoint() {
-        return blocks_.begin()->entryResumePoint();
+        return entryBlock()->entryResumePoint();
     }
 
     void copyIds(const MIRGraph &other) {

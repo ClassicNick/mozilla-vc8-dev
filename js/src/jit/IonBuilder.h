@@ -763,8 +763,8 @@ class IonBuilder : public MIRGenerator
                                     bool isGetter, JSObject *foundProto);
     void freezePropertiesForCommonPrototype(types::TemporaryTypeSet *types, PropertyName *name,
                                             JSObject *foundProto);
-    MDefinition *testCommonGetterSetter(types::TemporaryTypeSet *types, PropertyName *name,
-                                        bool isGetter, JSObject *foundProto, Shape *lastProperty);
+    bool testCommonGetterSetter(types::TemporaryTypeSet *types, PropertyName *name,
+                                bool isGetter, JSObject *foundProto, JSFunction *function);
     bool testShouldDOMCall(types::TypeSet *inTypes,
                            JSFunction *func, JSJitInfo::OpType opType);
 
@@ -818,8 +818,6 @@ class IonBuilder : public MIRGenerator
     CodeGenerator *backgroundCodegen() const { return backgroundCodegen_; }
     void setBackgroundCodegen(CodeGenerator *codegen) { backgroundCodegen_ = codegen; }
 
-    AbortReason abortReason() { return abortReason_; }
-
     TypeDescrSetHash *getOrCreateDescrSetHash(); // fallible
 
     types::CompilerConstraintList *constraints() {
@@ -837,7 +835,6 @@ class IonBuilder : public MIRGenerator
 
     JSContext *analysisContext;
     BaselineFrameInspector *baselineFrame_;
-    AbortReason abortReason_;
     TypeDescrSetHash *descrSetHash_;
 
     // Constraints for recording dependencies on type information.
