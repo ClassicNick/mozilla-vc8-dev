@@ -1009,7 +1009,7 @@ void
 GuardedAlternative::AddGuard(LifoAlloc *alloc, Guard *guard)
 {
     if (guards_ == nullptr)
-        guards_ = alloc->newInfallible<GuardVector>(*alloc);
+        guards_ = alloc->newInfallible<GuardVector>(mozilla::OldMove((GuardVector) *alloc));
     guards_->append(guard);
 }
 
@@ -1677,7 +1677,7 @@ RegExpNode *
 RegExpAtom::ToNode(RegExpCompiler* compiler, RegExpNode* on_success)
 {
     TextElementVector *elms =
-        compiler->alloc()->newInfallible<TextElementVector>(*compiler->alloc());
+        compiler->alloc()->newInfallible<TextElementVector>(mozilla::OldMove((TextElementVector) *compiler->alloc()));
     elms->append(TextElement::Atom(this));
     return compiler->alloc()->newInfallible<TextNode>(elms, on_success);
 }
@@ -1917,7 +1917,7 @@ RegExpAssertion::ToNode(RegExpCompiler* compiler,
         // The ChoiceNode to distinguish between a newline and end-of-input.
         ChoiceNode* result = alloc->newInfallible<ChoiceNode>(alloc, 2);
         // Create a newline atom.
-        CharacterRangeVector *newline_ranges = alloc->newInfallible<CharacterRangeVector>(*alloc);
+        CharacterRangeVector *newline_ranges = alloc->newInfallible<CharacterRangeVector>(mozilla::OldMove((CharacterRangeVector) *alloc));
         CharacterRange::AddClassEscape(alloc, 'n', newline_ranges);
         RegExpCharacterClass* newline_atom = alloc->newInfallible<RegExpCharacterClass>('n');
         TextNode* newline_matcher =
@@ -2599,7 +2599,7 @@ OutSet::Set(LifoAlloc *alloc, unsigned value)
         first_ |= (1 << value);
     } else {
         if (remaining_ == nullptr)
-            remaining_ = alloc->newInfallible<RemainingVector>(*alloc);
+            remaining_ = alloc->newInfallible<RemainingVector>(mozilla::OldMove((RemainingVector) *alloc));
 
         for (size_t i = 0; i < remaining().length(); i++) {
             if (remaining()[i] == value)
@@ -3322,7 +3322,7 @@ EmitCharClass(LifoAlloc *alloc,
     // was already one there we fall through for success on that entry.
     // Subsequent entries have alternating meaning (success/failure).
     RangeBoundaryVector *range_boundaries =
-        alloc->newInfallible<RangeBoundaryVector>(*alloc);
+        alloc->newInfallible<RangeBoundaryVector>(mozilla::OldMove((RangeBoundaryVector) *alloc));
 
     bool zeroth_entry_is_failure = !cc->is_negated();
 

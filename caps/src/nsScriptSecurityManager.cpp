@@ -29,7 +29,6 @@
 #include "nsError.h"
 #include "nsDOMCID.h"
 #include "nsIXPConnect.h"
-#include "nsIXPCSecurityManager.h"
 #include "nsTextFormatter.h"
 #include "nsIStringBundle.h"
 #include "nsNetUtil.h"
@@ -323,9 +322,8 @@ nsScriptSecurityManager::IsSystemPrincipal(nsIPrincipal* aPrincipal,
 ////////////////////////////////////
 // Methods implementing ISupports //
 ////////////////////////////////////
-NS_IMPL_ISUPPORTS4(nsScriptSecurityManager,
+NS_IMPL_ISUPPORTS3(nsScriptSecurityManager,
                    nsIScriptSecurityManager,
-                   nsIXPCSecurityManager,
                    nsIChannelEventSink,
                    nsIObserver)
 
@@ -1032,10 +1030,6 @@ nsScriptSecurityManager::doGetObjectPrincipal(JSObject *aObj)
     JSPrincipals *principals = JS_GetCompartmentPrincipals(compartment);
     return nsJSPrincipals::get(principals);
 }
-
-////////////////////////////////////////////////
-// Methods implementing nsIXPCSecurityManager //
-////////////////////////////////////////////////
 
 NS_IMETHODIMP
 nsScriptSecurityManager::CanCreateWrapper(JSContext *cx,

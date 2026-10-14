@@ -61,9 +61,12 @@ pref("browser.cache.memory.max_entry_size",  5120);
 pref("browser.cache.disk_cache_ssl",        true);
 // 0 = once-per-session, 1 = each-time, 2 = never, 3 = when-appropriate/automatically
 pref("browser.cache.check_doc_frequency",   3);
-
 // Limit of recent metadata we keep in memory for faster access, in Kb
 pref("browser.cache.disk.metadata_memory_limit", 250); // 0.25 MB
+// The number of chunks we preload ahead of read.  One chunk has currently 256kB.
+pref("browser.cache.disk.preload_chunk_count", 4); // 1 MB of read ahead
+// The half life used to re-compute cache entries frecency in hours.
+pref("browser.cache.frecency_half_life_hours", 6);
 
 pref("browser.cache.offline.enable",           true);
 // enable offline apps by default, disable prompt
@@ -1417,6 +1420,7 @@ pref("network.proxy.socks",                 "");
 pref("network.proxy.socks_port",            0);
 pref("network.proxy.socks_version",         5);
 pref("network.proxy.socks_remote_dns",      false);
+pref("network.proxy.proxy_over_tls",        true);
 pref("network.proxy.no_proxies_on",         "localhost, 127.0.0.1");
 pref("network.proxy.failover_timeout",      1800); // 30 minutes
 pref("network.online",                      true); //online/offline
@@ -2056,6 +2060,10 @@ pref("dom.ipc.plugins.java.enabled", false);
 
 pref("dom.ipc.plugins.flash.subprocess.crashreporter.enabled", true);
 pref("dom.ipc.plugins.reportCrashURL", true);
+
+// How long we wait before unloading an idle plugin process.
+// Defaults to 30 seconds.
+pref("dom.ipc.plugins.unloadTimeoutSecs", 30);
 
 pref("dom.ipc.processCount", 1);
 
@@ -3727,8 +3735,12 @@ pref("layers.offmainthreadcomposition.frame-rate", -1);
 #ifndef XP_WIN
 // Asynchonous video compositing using the ImageBridge IPDL protocol.
 // requires off-main-thread compositing.
-// Never works on Windows, so no point pref'ing it on.
 pref("layers.async-video.enabled",false);
+#endif
+
+#ifdef XP_WIN
+pref("layers.offmainthreadcomposition.enabled", true);
+pref("layers.async-video.enabled", true);
 #endif
 
 #ifdef MOZ_X11

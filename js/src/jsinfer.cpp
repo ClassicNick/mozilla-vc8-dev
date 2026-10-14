@@ -1627,47 +1627,6 @@ class ConstraintDataFreezeObjectForTypedArrayBuffer
     }
 };
 
-// Constraint which triggers recompilation when a getter or setter property on
-// an object is redefined.
-class ConstraintDataFreezeObjectForGetterSetter
-{
-    PropertyName *name;
-    bool isGetter;
-    JSFunction *function;
-
-  public:
-    ConstraintDataFreezeObjectForGetterSetter(PropertyName *name, bool isGetter, JSFunction *function)
-      : name(name), isGetter(isGetter), function(function)
-    {}
-
-    const char *kind() { return "freezeObjectForGetterSetter"; }
-
-    bool invalidateOnNewType(Type type) { return false; }
-    bool invalidateOnNewPropertyState(TypeSet *property) { return false; }
-    bool invalidateOnNewObjectState(TypeObject *object) {
-        Shape *shape = object->singleton()->nativeLookupPure(name);
-        if (!shape)
-            return true;
-
-        if (isGetter)
-            return !shape->hasGetterValue() || shape->getterObject() != function;
-        return !shape->hasSetterValue() || shape->setterObject() != function;
-    }
-
-    bool constraintHolds(JSContext *cx,
-                         const HeapTypeSetKey &property, TemporaryTypeSet *expected)
-    {
-        return !invalidateOnNewObjectState(property.object()->maybeType());
-    }
-
-    bool shouldSweep() {
-        // Note: |name| may be used for looking up properties on the object,
-        // but if it becomes dead then the property will have been deleted and
-        // the associated jitcode invalidated.
-        return false;
-    }
-};
-
 } /* anonymous namespace */
 
 void
@@ -1702,19 +1661,6 @@ TypeObjectKey::watchStateChangeForTypedArrayBuffer(CompilerConstraintList *const
     typedef CompilerConstraintInstance<ConstraintDataFreezeObjectForTypedArrayBuffer> T;
     constraints->add(alloc->new_<T>(alloc, objectProperty,
                                     ConstraintDataFreezeObjectForTypedArrayBuffer(viewData)));
-}
-
-void
-TypeObjectKey::watchStateChangeForRedefinedProperty(CompilerConstraintList *constraints,
-                                                    PropertyName *name, bool isGetter,
-                                                    JSFunction *function)
-{
-    HeapTypeSetKey objectProperty = property(JSID_EMPTY);
-    LifoAlloc *alloc = constraints->alloc();
-
-    typedef CompilerConstraintInstance<ConstraintDataFreezeObjectForGetterSetter> T;
-    constraints->add(alloc->new_<T>(alloc, objectProperty,
-                                    ConstraintDataFreezeObjectForGetterSetter(name, isGetter, function)));
 }
 
 static void
@@ -2174,12 +2120,9 @@ types::UseNewType(JSContext *cx, JSScript *script, jsbytecode *pc)
      * Sub2 lets us continue to distinguish the two subclasses and any extra
      * properties added to those prototype objects.
      */
-    if (JSOp(*pc) == JSOP_NEW)
-        pc += JSOP_NEW_LENGTH;
-    else if (JSOp(*pc) == JSOP_SPREADNEW)
-        pc += JSOP_SPREADNEW_LENGTH;
-    else
+    if (JSOp(*pc) != JSOP_NEW)
         return false;
+    pc += JSOP_NEW_LENGTH;
     if (JSOp(*pc) == JSOP_SETPROP) {
         jsid id = GetAtomId(cx, script, pc, 0);
         if (id == id_prototype(cx))

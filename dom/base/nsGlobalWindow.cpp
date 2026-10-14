@@ -1344,12 +1344,14 @@ nsGlobalWindow::~nsGlobalWindow()
 void
 nsGlobalWindow::AddEventTargetObject(DOMEventTargetHelper* aObject)
 {
+  MOZ_ASSERT(IsInnerWindow());
   mEventTargetObjects.PutEntry(aObject);
 }
 
 void
 nsGlobalWindow::RemoveEventTargetObject(DOMEventTargetHelper* aObject)
 {
+  MOZ_ASSERT(IsInnerWindow());
   mEventTargetObjects.RemoveEntry(aObject);
 }
 
@@ -1986,8 +1988,10 @@ nsGlobalWindow::OuterObject(JSContext* aCx, JS::Handle<JSObject*> aObj)
 }
 
 bool
-nsGlobalWindow::WouldReuseInnerWindow(nsIDocument *aNewDocument)
+nsGlobalWindow::WouldReuseInnerWindow(nsIDocument* aNewDocument)
 {
+  MOZ_ASSERT(IsOuterWindow());
+
   // We reuse the inner window when:
   // a. We are currently at our original document.
   // b. At least one of the following conditions are true:
@@ -2027,7 +2031,7 @@ nsGlobalWindow::WouldReuseInnerWindow(nsIDocument *aNewDocument)
 void
 nsGlobalWindow::SetInitialPrincipalToSubject()
 {
-  FORWARD_TO_OUTER_VOID(SetInitialPrincipalToSubject, ());
+  MOZ_ASSERT(IsOuterWindow());
 
   // First, grab the subject principal.
   nsCOMPtr<nsIPrincipal> newWindowPrincipal = nsContentUtils::SubjectPrincipal();
@@ -2686,6 +2690,8 @@ nsGlobalWindow::SetNewDocument(nsIDocument* aDocument,
 void
 nsGlobalWindow::PreloadLocalStorage()
 {
+  MOZ_ASSERT(IsOuterWindow());
+
   if (!Preferences::GetBool(kStorageEnabled)) {
     return;
   }
@@ -2713,6 +2719,8 @@ nsGlobalWindow::PreloadLocalStorage()
 void
 nsGlobalWindow::DispatchDOMWindowCreated()
 {
+  MOZ_ASSERT(IsOuterWindow());
+
   if (!mDoc) {
     return;
   }
@@ -3063,6 +3071,8 @@ nsGlobalWindow::ShouldPromptToBlockDialogs()
 bool
 nsGlobalWindow::AreDialogsEnabled()
 {
+  MOZ_ASSERT(IsOuterWindow());
+
   nsGlobalWindow *topWindow = GetScriptableTop();
   if (!topWindow) {
     NS_ERROR("AreDialogsEnabled() called without a top window?");
@@ -6264,6 +6274,12 @@ nsGlobalWindow::AlertOrConfirm(bool aAlert,
 }
 
 void
+nsGlobalWindow::Alert(mozilla::ErrorResult& aError)
+{
+  Alert(EmptyString(), aError);
+}
+
+void
 nsGlobalWindow::Alert(const nsAString& aMessage, mozilla::ErrorResult& aError)
 {
   FORWARD_TO_OUTER_OR_THROW(Alert, (aMessage, aError), aError, );
@@ -8216,8 +8232,11 @@ public:
 bool
 nsGlobalWindow::CanClose()
 {
-  if (!mDocShell)
+  MOZ_ASSERT(IsOuterWindow());
+
+  if (!mDocShell) {
     return true;
+  }
 
   // Ask the content viewer whether the toplevel window can close.
   // If the content viewer returns false, it is responsible for calling
@@ -8311,7 +8330,7 @@ nsGlobalWindow::Close(ErrorResult& aError)
     return;
   }
 
-  aError = FinalClose();
+  FinalClose();
 }
 
 NS_IMETHODIMP
@@ -8323,32 +8342,35 @@ nsGlobalWindow::Close()
   return rv.ErrorCode();
 }
 
-nsresult
+void
 nsGlobalWindow::ForceClose()
 {
+  MOZ_ASSERT(IsOuterWindow());
+
   if (IsFrame() || !mDocShell) {
     // This may be a frame in a frameset, or a window that's already closed.
     // Ignore such calls.
-
-    return NS_OK;
+    return;
   }
 
   if (mHavePendingClose) {
     // We're going to be closed anyway; do nothing since we don't want
     // to double-close
-    return NS_OK;
+    return;
   }
 
   mInClose = true;
 
   DispatchCustomEvent("DOMWindowClose");
 
-  return FinalClose();
+  FinalClose();
 }
 
-nsresult
+void
 nsGlobalWindow::FinalClose()
 {
+  MOZ_ASSERT(IsOuterWindow());
+
   // Flag that we were closed.
   mIsClosed = true;
 
@@ -8372,8 +8394,6 @@ nsGlobalWindow::FinalClose()
   } else {
     mHavePendingClose = true;
   }
-
-  return NS_OK;
 }
 
 
@@ -8430,7 +8450,7 @@ nsGlobalWindow::ReallyCloseWindow()
 void
 nsGlobalWindow::EnterModalState()
 {
-  FORWARD_TO_OUTER_VOID(EnterModalState, ());
+  MOZ_ASSERT(IsOuterWindow(), "Modal state is maintained on outer windows");
 
   // GetScriptableTop, not GetTop, so that EnterModalState works properly with
   // <iframe mozbrowser>.
@@ -8563,7 +8583,7 @@ private:
 void
 nsGlobalWindow::LeaveModalState()
 {
-  FORWARD_TO_OUTER_VOID(LeaveModalState, ());
+  MOZ_ASSERT(IsOuterWindow(), "Modal state is maintained on outer windows");
 
   nsGlobalWindow* topWin = GetScriptableTop();
 

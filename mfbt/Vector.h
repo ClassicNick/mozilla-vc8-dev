@@ -543,6 +543,12 @@ class VectorBase : private AllocPolicy
     void erase(T* t);
 
     /**
+     * Removes the elements [|b|, |e|), which must fall in the bounds [begin, end),
+     * shifting existing elements from |e + 1| onward to b's old position.
+     */
+    void erase(T* b, T *e);
+
+    /**
      * Measure the size of the vector's heap-allocated storage.
      */
     size_t sizeOfExcludingThis(MallocSizeOf mallocSizeOf) const;
@@ -970,7 +976,19 @@ VectorBase<T, N, AP, TV>::erase(T* it)
     *it = *(it + 1);
     ++it;
   }
-    popBack();
+  popBack();
+}
+
+template<typename T, size_t N, class AP, class TV>
+inline void
+VectorBase<T, N, AP, TV>::erase(T* b, T *e)
+{
+  MOZ_ASSERT(begin() <= b);
+  MOZ_ASSERT(b <= e);
+  MOZ_ASSERT(e <= end());
+  while (e < end())
+    *b++ = *e++;
+  shrinkBy(e - b);
 }
 
 template<typename T, size_t N, class AP, class TV>

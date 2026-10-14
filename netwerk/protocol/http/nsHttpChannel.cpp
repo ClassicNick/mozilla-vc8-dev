@@ -2181,6 +2181,7 @@ nsHttpChannel::ProcessPartialContent()
         if (NS_FAILED(rv)) return rv;
 
         mCachedContentIsPartial = false;
+        mConcurentCacheAccess = 0;
 
         // notify observers interested in looking at a response that has been
         // merged with any cached headers (http-on-examine-merged-response).
@@ -2202,7 +2203,7 @@ nsHttpChannel::ProcessPartialContent()
         if (NS_FAILED(rv)) return rv;
 
         // make the cached response be the current response
-        mResponseHead = mCachedResponseHead;
+        mResponseHead = Move(mCachedResponseHead);
 
         UpdateInhibitPersistentCachingFlag();
 
@@ -2333,7 +2334,7 @@ nsHttpChannel::ProcessNotModified()
     if (NS_FAILED(rv)) return rv;
 
     // make the cached response be the current response
-    mResponseHead = mCachedResponseHead;
+    mResponseHead = Move(mCachedResponseHead);
 
     UpdateInhibitPersistentCachingFlag();
 
@@ -3535,7 +3536,7 @@ nsHttpChannel::ReadFromCache(bool alreadyMarkedValid)
          "Using cached copy of: %s\n", this, mSpec.get()));
 
     if (mCachedResponseHead)
-        mResponseHead = mCachedResponseHead;
+        mResponseHead = Move(mCachedResponseHead);
 
     UpdateInhibitPersistentCachingFlag();
 
@@ -5141,8 +5142,6 @@ nsHttpChannel::OnStopRequest(nsIRequest *request, nsISupports *ctxt, nsresult st
         }
     }
 
-    mIsPending = false;
-
     // if needed, check cache entry has all data we expect
     if (mCacheEntry && mCachePump &&
         mConcurentCacheAccess && contentComplete) {
@@ -5157,7 +5156,7 @@ nsHttpChannel::OnStopRequest(nsIRequest *request, nsISupports *ctxt, nsresult st
             }
             else if (contentLength != int64_t(-1) && contentLength != size) {
                 LOG(("  concurrent cache entry write has been interrupted"));
-                mCachedResponseHead = mResponseHead;
+                mCachedResponseHead = Move(mResponseHead);
                 rv = MaybeSetupByteRangeRequest(size, contentLength);
                 if (NS_SUCCEEDED(rv) && mIsPartialRequest) {
                     // Prevent read from cache again
@@ -5182,6 +5181,7 @@ nsHttpChannel::OnStopRequest(nsIRequest *request, nsISupports *ctxt, nsresult st
         }
     }
 
+    mIsPending = false;
     mStatus = status;
 
     // perform any final cache operations before we close the cache entry.
