@@ -43,6 +43,8 @@ public:
   NS_DECL_NSISERIALIZABLE
   NS_DECL_NSICLASSINFO
 
+  friend class nsNSSCertificateFakeTransport;
+
   nsNSSCertificate(CERTCertificate* cert, SECOidTag* evOidPolicy = nullptr);
   nsNSSCertificate();
   virtual ~nsNSSCertificate();
