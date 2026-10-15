@@ -88,6 +88,9 @@ static MessageLoop* sMainLoop = nullptr;
 static PlatformThreadId sCompositorThreadID = 0;
 static MessageLoop* sCompositorLoop = nullptr;
 
+// See ImageBridgeChild.cpp
+void ReleaseImageBridgeParentSingleton();
+
 static void DeferredDeleteCompositorParent(CompositorParent* aNowReadyToDie)
 {
   aNowReadyToDie->Release();
@@ -96,6 +99,7 @@ static void DeferredDeleteCompositorParent(CompositorParent* aNowReadyToDie)
 static void DeleteCompositorThread()
 {
   if (NS_IsMainThread()){
+    ReleaseImageBridgeParentSingleton();
     delete sCompositorThread;
     sCompositorThread = nullptr;
     sCompositorLoop = nullptr;
@@ -931,7 +935,9 @@ CompositorParent::AllocPLayerTransactionParent(const nsTArray<LayersBackend>& aB
   if (!mLayerManager) {
     NS_WARNING("Failed to initialise Compositor");
     *aSuccess = false;
-    LayerTransactionParent* p = new LayerTransactionParent(nullptr, this, 0);
+    LayerTransactionParent* p = new LayerTransactionParent(nullptr, this, 0,
+                                                           // child side's process id is current process Id
+                                                           base::GetProcId(base::GetCurrentProcessHandle()));
     p->AddIPDLReference();
     return p;
   }
@@ -940,7 +946,9 @@ CompositorParent::AllocPLayerTransactionParent(const nsTArray<LayersBackend>& aB
   *aSuccess = true;
 
   *aTextureFactoryIdentifier = mCompositor->GetTextureFactoryIdentifier();
-  LayerTransactionParent* p = new LayerTransactionParent(mLayerManager, this, 0);
+  LayerTransactionParent* p = new LayerTransactionParent(mLayerManager, this, 0,
+                                                         // child side's process id is current process Id
+                                                         base::GetProcId(base::GetCurrentProcessHandle()));
   p->AddIPDLReference();
   return p;
 }
@@ -1110,8 +1118,9 @@ class CrossProcessCompositorParent MOZ_FINAL : public PCompositorParent,
 
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(CrossProcessCompositorParent)
 public:
-  CrossProcessCompositorParent(Transport* aTransport)
+  CrossProcessCompositorParent(Transport* aTransport, ProcessId aOtherProcess)
     : mTransport(aTransport)
+    , mChildProcessId(aOtherProcess)
   {}
 
   // IToplevelProtocol::CloneToplevel()
@@ -1170,6 +1179,8 @@ private:
   // ourself.  This is released (deferred) in ActorDestroy().
   nsRefPtr<CrossProcessCompositorParent> mSelfRef;
   Transport* mTransport;
+  // Child side's process Id.
+  base::ProcessId mChildProcessId;
 };
 
 static void
@@ -1185,7 +1196,7 @@ OpenCompositor(CrossProcessCompositorParent* aCompositor,
 CompositorParent::Create(Transport* aTransport, ProcessId aOtherProcess)
 {
   nsRefPtr<CrossProcessCompositorParent> cpcp =
-    new CrossProcessCompositorParent(aTransport);
+    new CrossProcessCompositorParent(aTransport, aOtherProcess);
   ProcessHandle handle;
   if (!base::OpenProcessHandle(aOtherProcess, &handle)) {
     // XXX need to kill |aOtherProcess|, it's boned
@@ -1246,6 +1257,7 @@ RemoveIndirectTree(uint64_t aId)
 void
 CrossProcessCompositorParent::ActorDestroy(ActorDestroyReason aWhy)
 {
+  fprintf(stderr, " --- CrossProcessCompositorParent ActorDestroy\n");
   MessageLoop::current()->PostTask(
     FROM_HERE,
     NewRunnableMethod(this, &CrossProcessCompositorParent::DeferredDestroy));
@@ -1270,7 +1282,7 @@ CrossProcessCompositorParent::AllocPLayerTransactionParent(const nsTArray<Layers
     LayerManagerComposite* lm = state->mLayerManager;
     *aTextureFactoryIdentifier = lm->GetCompositor()->GetTextureFactoryIdentifier();
     *aSuccess = true;
-    LayerTransactionParent* p = new LayerTransactionParent(lm, this, aId);
+    LayerTransactionParent* p = new LayerTransactionParent(lm, this, aId, mChildProcessId);
     p->AddIPDLReference();
     return p;
   }
@@ -1279,7 +1291,7 @@ CrossProcessCompositorParent::AllocPLayerTransactionParent(const nsTArray<Layers
   // XXX: should be false, but that causes us to fail some tests on Mac w/ OMTC.
   // Bug 900745. change *aSuccess to false to see test failures.
   *aSuccess = true;
-  LayerTransactionParent* p = new LayerTransactionParent(nullptr, this, aId);
+  LayerTransactionParent* p = new LayerTransactionParent(nullptr, this, aId, mChildProcessId);
   p->AddIPDLReference();
   return p;
 }
@@ -1398,6 +1410,8 @@ CrossProcessCompositorParent::GetCompositionManager(LayerTransactionParent* aLay
 void
 CrossProcessCompositorParent::DeferredDestroy()
 {
+
+  fprintf(stderr, " --- CrossProcessCompositorParent DeferredDestroy\n");
   CrossProcessCompositorParent* self;
   mSelfRef.forget(&self);
 
@@ -1408,6 +1422,8 @@ CrossProcessCompositorParent::DeferredDestroy()
 
 CrossProcessCompositorParent::~CrossProcessCompositorParent()
 {
+  fprintf(stderr, " --- CrossProcessCompositorParent destructor\n");
+
   XRE_GetIOMessageLoop()->PostTask(FROM_HERE,
                                    new DeleteTask<Transport>(mTransport));
 }

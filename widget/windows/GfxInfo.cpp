@@ -593,7 +593,7 @@ NS_IMETHODIMP
 GfxInfo::GetAdapterRAM2(nsAString & aAdapterRAM)
 {
   if (!mHasDualGPU) {
-    aAdapterRAM.AssignLiteral("");
+    aAdapterRAM.Truncate();
   } else if (NS_FAILED(GetKeyValue(mDeviceKey2.get(), L"HardwareInformation.MemorySize", aAdapterRAM, REG_DWORD))) {
     aAdapterRAM = L"Unknown";
   }
@@ -614,7 +614,7 @@ NS_IMETHODIMP
 GfxInfo::GetAdapterDriver2(nsAString & aAdapterDriver)
 {
   if (!mHasDualGPU) {
-    aAdapterDriver.AssignLiteral("");
+    aAdapterDriver.Truncate();
   } else if (NS_FAILED(GetKeyValue(mDeviceKey2.get(), L"InstalledDisplayDrivers", aAdapterDriver, REG_MULTI_SZ))) {
     aAdapterDriver = L"Unknown";
   }
