@@ -3970,16 +3970,13 @@ gfxFont::ShapeText(gfxContext      *aContext,
     }
 
     if (!ok && mHarfBuzzShaper && !aPreferPlatformShaping) {
-        if (gfxPlatform::GetPlatform()->UseHarfBuzzForScript(aScript)) {
-            ok = mHarfBuzzShaper->ShapeText(aContext, aText, aOffset, aLength,
-                                            aScript, aShapedText);
-        }
+        ok = mHarfBuzzShaper->ShapeText(aContext, aText, aOffset, aLength,
+                                        aScript, aShapedText);
     }
 
     if (!ok) {
         if (!mPlatformShaper) {
             CreatePlatformShaper();
-            NS_ASSERTION(mPlatformShaper, "no platform shaper available!");
         }
         if (mPlatformShaper) {
             ok = mPlatformShaper->ShapeText(aContext, aText, aOffset, aLength,

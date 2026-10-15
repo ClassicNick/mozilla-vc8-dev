@@ -1267,7 +1267,6 @@ RemoveIndirectTree(uint64_t aId)
 void
 CrossProcessCompositorParent::ActorDestroy(ActorDestroyReason aWhy)
 {
-  fprintf(stderr, " --- CrossProcessCompositorParent ActorDestroy\n");
   MessageLoop::current()->PostTask(
     FROM_HERE,
     NewRunnableMethod(this, &CrossProcessCompositorParent::DeferredDestroy));
@@ -1433,8 +1432,6 @@ CrossProcessCompositorParent::GetCompositionManager(LayerTransactionParent* aLay
 void
 CrossProcessCompositorParent::DeferredDestroy()
 {
-
-  fprintf(stderr, " --- CrossProcessCompositorParent DeferredDestroy\n");
   CrossProcessCompositorParent* self;
   mSelfRef.forget(&self);
 
@@ -1445,8 +1442,6 @@ CrossProcessCompositorParent::DeferredDestroy()
 
 CrossProcessCompositorParent::~CrossProcessCompositorParent()
 {
-  fprintf(stderr, " --- CrossProcessCompositorParent destructor\n");
-
   XRE_GetIOMessageLoop()->PostTask(FROM_HERE,
                                    new DeleteTask<Transport>(mTransport));
 }
