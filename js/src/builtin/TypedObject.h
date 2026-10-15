@@ -576,10 +576,7 @@ class TypedObject : public ArrayBufferViewObject
     static bool obj_setGenericAttributes(JSContext *cx, HandleObject obj,
                                          HandleId id, unsigned *attrsp);
 
-    static bool obj_deleteProperty(JSContext *cx, HandleObject obj, HandlePropertyName name,
-                                   bool *succeeded);
-    static bool obj_deleteElement(JSContext *cx, HandleObject obj, uint32_t index,
-                                  bool *succeeded);
+    static bool obj_deleteGeneric(JSContext *cx, HandleObject obj, HandleId id, bool *succeeded);
 
     static bool obj_enumerate(JSContext *cx, HandleObject obj, JSIterateOp enum_op,
                               MutableHandleValue statep, MutableHandleId idp);
@@ -648,11 +645,11 @@ class TypedObject : public ArrayBufferViewObject
     void neuter(void *newData);
 
     int32_t offset() const {
-        return getReservedSlot(JS_TYPEDOBJ_SLOT_BYTEOFFSET).toInt32();
+        return getReservedSlot(JS_BUFVIEW_SLOT_BYTEOFFSET).toInt32();
     }
 
     ArrayBufferObject &owner() const {
-        return getReservedSlot(JS_TYPEDOBJ_SLOT_OWNER).toObject().as<ArrayBufferObject>();
+        return getReservedSlot(JS_BUFVIEW_SLOT_OWNER).toObject().as<ArrayBufferObject>();
     }
 
     TypeDescr &typeDescr() const {
@@ -663,12 +660,8 @@ class TypedObject : public ArrayBufferViewObject
         return (uint8_t*) getPrivate();
     }
 
-    int32_t byteLength() const {
-        return getReservedSlot(JS_TYPEDOBJ_SLOT_BYTELENGTH).toInt32();
-    }
-
     int32_t length() const {
-        return getReservedSlot(JS_TYPEDOBJ_SLOT_LENGTH).toInt32();
+        return getReservedSlot(JS_BUFVIEW_SLOT_LENGTH).toInt32();
     }
 
     int32_t size() const {

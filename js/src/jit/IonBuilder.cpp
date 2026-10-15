@@ -831,16 +831,6 @@ IonBuilder::buildInline(IonBuilder *callerBuilder, MResumePoint *callerResumePoi
     MBasicBlock *predecessor = callerBuilder->current;
     JS_ASSERT(predecessor == callerResumePoint->block());
 
-    // All further instructions generated in from this scope should be
-    // considered as part of the function that we're inlining. We also need to
-    // keep track of the inlining depth because all scripts inlined on the same
-    // level contiguously have only one InlineExit node.
-    if (instrumentedProfiling()) {
-        predecessor->add(MProfilerStackOp::New(alloc(), script(),
-                                               MProfilerStackOp::InlineEnter,
-                                               inliningDepth_));
-    }
-
     predecessor->end(MGoto::New(alloc(), current));
     if (!current->addPredecessorWithoutPhis(predecessor))
         return false;
@@ -3701,9 +3691,8 @@ IonBuilder::processReturn(JSOp op)
         MOZ_ASSUME_UNREACHABLE("unknown return op");
     }
 
-    if (instrumentedProfiling()) {
-        current->add(MProfilerStackOp::New(alloc(), script(), MProfilerStackOp::Exit,
-                                           inliningDepth_));
+    if (instrumentedProfiling() && inliningDepth_ == 0) {
+        current->add(MProfilerStackOp::New(alloc(), script(), MProfilerStackOp::Exit));
     }
     MReturn *ret = MReturn::New(alloc(), def);
     current->end(ret);
@@ -4047,10 +4036,6 @@ IonBuilder::inlineScriptedCall(CallInfo &callInfo, JSFunction *target)
     if (!returnBlock)
         return false;
     returnBlock->setCallerResumePoint(callerResumePoint_);
-
-    // When profiling add InlineExit instruction to indicate end of inlined function.
-    if (instrumentedProfiling())
-        returnBlock->add(MProfilerStackOp::New(alloc(), nullptr, MProfilerStackOp::InlineExit));
 
     // Inherit the slots from current and pop |fun|.
     returnBlock->inheritSlots(current);
@@ -6844,7 +6829,7 @@ IonBuilder::checkTypedObjectIndexInBounds(int32_t elemSize,
         // then we still need to check if the object was neutered.
         *canBeNeutered = true;
     } else {
-        MInstruction *lengthValue = MLoadFixedSlot::New(alloc(), obj, JS_TYPEDOBJ_SLOT_LENGTH);
+        MInstruction *lengthValue = MLoadFixedSlot::New(alloc(), obj, JS_BUFVIEW_SLOT_LENGTH);
         current->add(lengthValue);
 
         MInstruction *length32 = MTruncateToInt32::New(alloc(), lengthValue);
@@ -8167,13 +8152,6 @@ IonBuilder::jsop_length_fastPath()
             current->push(length);
             return true;
         }
-
-        if (objTypes && objTypes->getTypedArrayType() != ScalarTypeDescr::TYPE_MAX) {
-            current->pop();
-            MInstruction *length = addTypedArrayLength(obj);
-            current->push(length);
-            return true;
-        }
     }
 
     return false;
@@ -8890,6 +8868,19 @@ IonBuilder::getPropTryCommonGetter(bool *emitted, MDefinition *obj, PropertyName
     CallInfo callInfo(alloc(), false);
     if (!callInfo.init(current, 0))
         return false;
+
+    if (commonGetter->isNative()) {
+        InliningStatus status = inlineNativeGetter(callInfo, commonGetter);
+        switch (status) {
+          case InliningStatus_Error:
+            return false;
+          case InliningStatus_NotInlined:
+            break;
+          case InliningStatus_Inlined:
+            *emitted = true;
+            return true;
+        }
+    }
 
     // Inline if we can, otherwise, forget it and just generate a call.
     bool inlineable = false;

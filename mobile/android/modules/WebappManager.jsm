@@ -103,7 +103,13 @@ this.WebappManager = {
     sendMessageToJava({
       type: "Webapps:InstallApk",
       filePath: filePath,
-      data: JSON.stringify(aMessage),
+      data: aMessage,
+    }, (data, error) => {
+      if (!!error) {
+        aMessage.error = error;
+        aMessageManager.sendAsyncMessage("Webapps:Install:Return:KO", aMessage);
+        debug("error downloading APK: " + error);
+      }
     });
   }).bind(this)); },
 
@@ -242,8 +248,8 @@ this.WebappManager = {
     message.app.manifest = aData.manifest;
     message.app.apkPackageName = aData.apkPackageName;
     message.profilePath = aData.profilePath;
-    message.autoInstall = true;
     message.mm = mm;
+    message.apkInstall = true;
 
     DOMApplicationRegistry.registryReady.then(() => {
       switch (aData.type) { // can be hosted or packaged.
@@ -493,7 +499,13 @@ this.WebappManager = {
         sendMessageToJava({
           type: "Webapps:InstallApk",
           filePath: apk.filePath,
-          data: JSON.stringify(msg),
+          data: msg,
+        }, (data, error) => {
+          if (!!error) {
+            // There's no page to report back to so drop the error.
+            // TODO: we should notify the user about this failure.
+            debug("APK install failed : " + returnError);
+          }
         });
       }
     } else {
