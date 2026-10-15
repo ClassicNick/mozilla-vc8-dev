@@ -251,7 +251,7 @@ class MacroAssembler : public MacroAssemblerSpecific
         }
     }
 
-    // asm.js compilation handles its own IonContet-pushing
+    // asm.js compilation handles its own IonContext-pushing
     struct AsmJSToken {};
     explicit MacroAssembler(AsmJSToken)
       : enoughMemory_(true),
@@ -381,6 +381,7 @@ class MacroAssembler : public MacroAssemblerSpecific
     }
 
     void loadStringChars(Register str, Register dest);
+    void loadStringChar(Register str, Register index, Register output);
 
     void branchIfRope(Register str, Label *label) {
         Address flags(str, JSString::offsetOfFlags());
@@ -904,6 +905,7 @@ class MacroAssembler : public MacroAssemblerSpecific
         // the JitCode onto the stack in order to GC it correctly.  exitCodePatch should
         // be unset if the code never needed to push its JitCode*.
         if (hasEnteredExitFrame()) {
+            exitCodePatch_.fixup(this);
             patchDataWithValueCheck(CodeLocationLabel(code, exitCodePatch_),
                                     ImmPtr(code),
                                     ImmPtr((void*)-1));

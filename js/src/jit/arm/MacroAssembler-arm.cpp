@@ -1937,6 +1937,13 @@ MacroAssemblerARMCompat::and32(Imm32 imm, Register dest)
 }
 
 void
+MacroAssemblerARMCompat::and32(const Address &src, Register dest)
+{
+    load32(src, ScratchRegister);
+    ma_and(ScratchRegister, dest, SetCond);
+}
+
+void
 MacroAssemblerARMCompat::addPtr(Register src, Register dest)
 {
     ma_add(src, dest);
@@ -3860,7 +3867,7 @@ void MacroAssemblerARMCompat::checkStackAlignment()
 }
 
 void
-MacroAssemblerARMCompat::callWithABIPre(uint32_t *stackAdjust)
+MacroAssemblerARMCompat::callWithABIPre(uint32_t *stackAdjust, bool callFromAsmJS)
 {
     JS_ASSERT(inCall_);
 
@@ -3869,8 +3876,11 @@ MacroAssemblerARMCompat::callWithABIPre(uint32_t *stackAdjust)
     if (useHardFpABI())
         *stackAdjust += 2*((usedFloatSlots_ > NumFloatArgRegs) ? usedFloatSlots_ - NumFloatArgRegs : 0) * sizeof(intptr_t);
 #endif
+    uint32_t alignmentAtPrologue = (callFromAsmJS) ? AlignmentAtAsmJSPrologue : 0;
+
     if (!dynamicAlignment_) {
-        *stackAdjust += ComputeByteAlignment(framePushed_ + *stackAdjust, StackAlignment);
+        *stackAdjust += ComputeByteAlignment(framePushed_ + *stackAdjust + alignmentAtPrologue,
+                                             StackAlignment);
     } else {
         // sizeof(intptr_t) account for the saved stack pointer pushed by setupUnalignedABICall
         *stackAdjust += ComputeByteAlignment(*stackAdjust + sizeof(intptr_t), StackAlignment);
@@ -4014,7 +4024,7 @@ void
 MacroAssemblerARMCompat::callWithABI(AsmJSImmPtr imm, MoveOp::Type result)
 {
     uint32_t stackAdjust;
-    callWithABIPre(&stackAdjust);
+    callWithABIPre(&stackAdjust, /* callFromAsmJS = */ true);
     call(imm);
     callWithABIPost(stackAdjust, result);
 }
