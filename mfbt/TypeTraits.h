@@ -922,7 +922,7 @@ struct RemoveExtent<T[]>
     typedef T Type;
 };
 
-template<typename T, decltype(sizeof(1)) N>
+template<typename T, int N>
 struct RemoveExtent<T[N]>
 {
     typedef T Type;

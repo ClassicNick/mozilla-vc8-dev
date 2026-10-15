@@ -61,7 +61,7 @@ StringBuffer::inflateChars()
         return false;
 
     cb.destroy();
-    cb.construct<TwoByteCharBuffer>(Move(twoByte));
+    cb.construct<TwoByteCharBuffer>(OldMove(twoByte));
     return true;
 }
 

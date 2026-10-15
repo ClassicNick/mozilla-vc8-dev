@@ -64,11 +64,11 @@ public:
   }
 
   template <class T, class U>
-  void construct(U&& aU)
+  void construct(MoveRef<U> aU)
   {
     MOZ_ASSERT(state == None);
     state = Type2State<T>::result;
-    ::new (storage.addr()) T(Move(aU));
+    ::new (storage.addr()) T(aU);
   }
 
   template <class T, class U1>

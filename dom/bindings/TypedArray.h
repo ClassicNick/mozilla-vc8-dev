@@ -34,11 +34,11 @@ protected:
   }
 
   TypedArrayObjectStorage(MoveRef<TypedArrayObjectStorage> aOther)
-    : mTypedObj(aOther.mTypedObj),
-      mWrappedObj(aOther.mWrappedObj)
+    : mTypedObj(aOther->mTypedObj),
+      mWrappedObj(aOther->mWrappedObj)
   {
-    aOther.mTypedObj = nullptr;
-    aOther.mWrappedObj = nullptr;
+    aOther->mTypedObj = nullptr;
+    aOther->mWrappedObj = nullptr;
   }
 
 public:
