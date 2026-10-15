@@ -6707,6 +6707,10 @@ class CGGetterCall(CGPerSignatureCall):
                                     getter=True)
 
 
+class FakeIdentifier():
+    def __init__(self, name):
+        self.name = name
+
 class FakeArgument():
     """
     A class that quacks like an IDLArgument.  This is used to make
@@ -6726,10 +6730,7 @@ class FakeArgument():
             self.enforceRange = False
             self.clamp = False
 
-        class FakeIdentifier():
-            def __init__(self):
-                self.name = name
-        self.identifier = FakeIdentifier()
+        self.identifier = FakeIdentifier(name)
 
     def allowTreatNonCallableAsNull(self):
         return self._allowTreatNonCallableAsNull
@@ -8189,9 +8190,16 @@ class CGUnionStruct(CGThing):
                 fill("UnionMember<${structType} > m${name}", **vars))
             enumValues.append("e" + vars["name"])
 
-            toJSValCases.append(
-                CGCase("e" + vars["name"],
-                       self.getConversionToJS(vars, t)))
+            skipToJSVal = False
+            try:
+                toJSValCases.append(
+                    CGCase("e" + vars["name"],
+                           self.getConversionToJS(vars, t)))
+            except MethodNotNewObjectError:
+                # If we can't have a ToJSVal() because one of our members can
+                # only be returned from [NewObject] methods, then just skip
+                # generating ToJSVal.
+                skipToJSVal = True
             destructorCases.append(
                 CGCase("e" + vars["name"],
                        CGGeneric("Destroy%s();\n" % vars["name"])))
@@ -8225,18 +8233,19 @@ class CGUnionStruct(CGThing):
                                    bodyInHeader=not self.ownsMembers,
                                    inline=not self.ownsMembers))
 
-        methods.append(
-            ClassMethod(
-                "ToJSVal",
-                "bool",
-                [
-                    Argument("JSContext*", "cx"),
-                    Argument("JS::Handle<JSObject*>", "scopeObj"),
-                    Argument("JS::MutableHandle<JS::Value>", "rval")
-                ],
-                body=CGSwitch("mType", toJSValCases,
-                              default=CGGeneric("return false;\n")).define(),
-                const=True))
+        if not skipToJSVal:
+            methods.append(
+                ClassMethod(
+                    "ToJSVal",
+                    "bool",
+                    [
+                        Argument("JSContext*", "cx"),
+                        Argument("JS::Handle<JSObject*>", "scopeObj"),
+                        Argument("JS::MutableHandle<JS::Value>", "rval")
+                    ],
+                    body=CGSwitch("mType", toJSValCases,
+                                  default=CGGeneric("return false;\n")).define(),
+                    const=True))
 
         constructors = [ctor]
         selfName = CGUnionStruct.unionTypeName(self.type, self.ownsMembers)
@@ -10442,7 +10451,29 @@ class CGNamespacedEnum(CGThing):
     def define(self):
         return ""
 
+def initIdsClassMethod(identifiers, atomCacheName):
+    idinit = ['!atomsCache->%s.init(cx, "%s")' %
+              (CGDictionary.makeIdName(id),
+               id)
+              for id in identifiers]
+    idinit.reverse()
+    body = fill(
+        """
+        MOZ_ASSERT(!*reinterpret_cast<jsid**>(atomsCache));
 
+        // Initialize these in reverse order so that any failure leaves the first one
+        // uninitialized.
+        if (${idinit}) {
+          return false;
+        }
+        return true;
+        """,
+        idinit=" ||\n    ".join(idinit))
+    return ClassMethod("InitIds", "bool", [
+        Argument("JSContext*", "cx"),
+        Argument("%s*" % atomCacheName, "atomsCache")
+    ], static=True, body=body, visibility="private")
+        
 class CGDictionary(CGThing):
     def __init__(self, dictionary, descriptorProvider):
         self.dictionary = dictionary
@@ -10616,29 +10647,8 @@ class CGDictionary(CGThing):
 
     def initIdsMethod(self):
         assert self.needToInitIds
-        idinit = ['!atomsCache->%s.init(cx, "%s")' %
-                  (CGDictionary.makeIdName(m.identifier.name),
-                   m.identifier.name)
-                  for m in self.dictionary.members]
-        idinit.reverse()
-        body = fill(
-            """
-            MOZ_ASSERT(!*reinterpret_cast<jsid**>(atomsCache));
-
-            // Initialize these in reverse order so that any failure leaves the first one
-            // uninitialized.
-            if (${idinit}) {
-              return false;
-            }
-            return true;
-            """,
-            idinit=" ||\n    ".join(idinit))
-
-        return ClassMethod("InitIds", "bool", [
-            Argument("JSContext*", "cx"),
-            Argument("%sAtoms*" % self.makeClassName(self.dictionary),
-                     "atomsCache"),
-        ], static=True, body=body, visibility="private")
+        return initIdsClassMethod([m.identifier.name for m in self.dictionary.members],
+                                  "%sAtoms" % self.makeClassName(self.dictionary))             
 
     def traceDictionaryMethod(self):
         body = ""
@@ -11180,6 +11190,9 @@ class CGForwardDeclarations(CGWrapper):
         # We just about always need NativePropertyHooks
         builder.addInMozillaDom("NativePropertyHooks")
         builder.addInMozillaDom("ProtoAndIfaceCache")
+        # Add the atoms cache type, even if we don't need it.
+        for d in descriptors:
+            builder.add(d.nativeType + "Atoms", isStruct=True)
 
         for callback in mainCallbacks:
             forwardDeclareForType(callback)
@@ -11193,6 +11206,7 @@ class CGForwardDeclarations(CGWrapper):
 
         for d in callbackInterfaces:
             builder.add(d.nativeType)
+            builder.add(d.nativeType + "Atoms", isStruct=True)
             for t in getTypesFromDescriptor(d):
                 forwardDeclareForType(t)
 
@@ -11246,7 +11260,7 @@ class CGBindingRoot(CGThing):
 
         dictionaries = config.getDictionaries(webIDLFile=webIDLFile)
         bindingHeaders["nsCxPusher.h"] = dictionaries
-        bindingHeaders["AtomList.h"] = any(
+        hasNonEmptyDictionaries = any(
             len(dict.members) > 0 for dict in dictionaries)
         mainCallbacks = config.getCallbacks(webIDLFile=webIDLFile,
                                             workers=False)
@@ -11257,6 +11271,7 @@ class CGBindingRoot(CGThing):
         jsImplemented = config.getDescriptors(webIDLFile=webIDLFile,
                                               isJSImplemented=True)
         bindingHeaders["nsPIDOMWindow.h"] = jsImplemented
+        bindingHeaders["AtomList.h"] = hasNonEmptyDictionaries or jsImplemented or callbackDescriptors
 
         def addHeaderBasedOnTypes(header, typeChecker):
             bindingHeaders[header] = (
@@ -12532,7 +12547,7 @@ class CGCallback(CGClass):
         # cheat and have CallbackMember compute all those things for us.
         realMethods = []
         for method in methods:
-            if not method.needThisHandling:
+            if not isinstance(method, CallbackMember) or not method.needThisHandling:
                 realMethods.append(method)
             else:
                 realMethods.extend(self.getMethodImpls(method))
@@ -12672,13 +12687,21 @@ class CGCallbackInterface(CGCallback):
             if len(sigs) != 1:
                 raise TypeError("We only handle one constructor.  See bug 869268.")
             methods.append(CGJSImplInitOperation(sigs[0], descriptor))
+        if any(m.isAttr() or m.isMethod() for m in iface.members) or (iface.isJSImplemented() and iface.ctor()):
+            methods.append(initIdsClassMethod([descriptor.binaryNameFor(m.identifier.name)
+                                               for m in iface.members
+                                               if m.isAttr() or m.isMethod()] +
+                                              (["__init"] if iface.isJSImplemented() and iface.ctor() else []),
+                                              iface.identifier.name + "Atoms"))
         CGCallback.__init__(self, iface, descriptor, "CallbackInterface",
                             methods, getters=getters, setters=setters)
 
 
 class FakeMember():
-    def __init__(self):
+    def __init__(self, name=None):
         self.treatNullAs = "Default"
+        if name is not None:
+            self.identifier = FakeIdentifier(name)
 
     def isStatic(self):
         return False
@@ -13031,12 +13054,15 @@ class CallbackOperationBase(CallbackMethod):
     def getCallableDecl(self):
         getCallableFromProp = fill(
             """
-            if (!GetCallableProperty(cx, "${methodName}", &callable)) {
+            ${atomCacheName}* atomsCache = GetAtomCache<${atomCacheName}>(cx);
+            if ((!*reinterpret_cast<jsid**>(atomsCache) && !InitIds(cx, atomsCache)) ||
+                !GetCallableProperty(cx, atomsCache->${methodAtomName}, &callable)) {
               aRv.Throw(NS_ERROR_UNEXPECTED);
               return${errorReturn};
             }
             """,
-            methodName=self.methodName,
+            methodAtomName=CGDictionary.makeIdName(self.methodName),
+            atomCacheName=self.descriptorProvider.interface.identifier.name + "Atoms",
             errorReturn=self.getDefaultRetval())
         if not self.singleOperation:
             return 'JS::Rooted<JS::Value> callable(cx);\n' + getCallableFromProp
@@ -13105,12 +13131,15 @@ class CallbackGetter(CallbackAccessor):
         return fill(
             """
             JS::Rooted<JSObject *> callback(cx, mCallback);
-            if (!JS_GetProperty(cx, callback, "${attrName}", &rval)) {
+            ${atomCacheName}* atomsCache = GetAtomCache<${atomCacheName}>(cx);
+            if ((!*reinterpret_cast<jsid**>(atomsCache) && !InitIds(cx, atomsCache)) ||
+                !JS_GetPropertyById(cx, callback, atomsCache->${attrAtomName}, &rval)) {
               aRv.Throw(NS_ERROR_UNEXPECTED);
               return${errorReturn};
             }
             """,
-            attrName=self.descriptorProvider.binaryNameFor(self.attrName),
+            atomCacheName=self.descriptorProvider.interface.identifier.name + "Atoms",
+            attrAtomName=CGDictionary.makeIdName(self.descriptorProvider.binaryNameFor(self.attrName)),
             errorReturn=self.getDefaultRetval())
 
 
@@ -13130,12 +13159,15 @@ class CallbackSetter(CallbackAccessor):
         return fill(
             """
             MOZ_ASSERT(argv.length() == 1);
-            if (!JS_SetProperty(cx, CallbackPreserveColor(), "${attrName}", argv[0])) {
+            ${atomCacheName}* atomsCache = GetAtomCache<${atomCacheName}>(cx);
+            if ((!*reinterpret_cast<jsid**>(atomsCache) && !InitIds(cx, atomsCache)) ||
+                !JS_SetPropertyById(cx, CallbackPreserveColor(), atomsCache->${attrAtomName}, argv[0])) {
               aRv.Throw(NS_ERROR_UNEXPECTED);
               return${errorReturn};
             }
             """,
-            attrName=self.descriptorProvider.binaryNameFor(self.attrName),
+            atomCacheName=self.descriptorProvider.interface.identifier.name + "Atoms",
+            attrAtomName=CGDictionary.makeIdName(self.descriptorProvider.binaryNameFor(self.attrName)),
             errorReturn=self.getDefaultRetval())
 
     def getArgcDecl(self):
@@ -13170,21 +13202,38 @@ class GlobalGenRoots():
 
         structs = []
 
+        def memberToAtomCacheMember(binaryNameFor, m):
+            binaryMemberName = binaryNameFor(m.identifier.name)
+            return ClassMember(CGDictionary.makeIdName(binaryMemberName),
+                               "InternedStringId", visibility="public")
+        def buildAtomCacheStructure(idlobj, binaryNameFor, members):
+            classMembers = [memberToAtomCacheMember(binaryNameFor, m)
+                            for m in members]
+            structName = idlobj.identifier.name + "Atoms"
+            return (structName,
+                    CGWrapper(CGClass(structName,
+                                      bases=None,
+                                      isStruct=True,
+                                      members=classMembers), post='\n'))
+
         for dict in dictionaries:
-            dictMembers = dict.members
-            if len(dictMembers) == 0:
+            if len(dict.members) == 0:
                 continue
 
-            classMembers = [ClassMember(CGDictionary.makeIdName(m.identifier.name),
-                                        "InternedStringId",
-                                        visibility="public") for m in dictMembers]
+            structs.append(buildAtomCacheStructure(dict, lambda x: x, dict.members))
 
-            structName = dict.identifier.name + "Atoms"
-            structs.append((structName,
-                            CGWrapper(CGClass(structName,
-                                              bases=None,
-                                              isStruct=True,
-                                              members=classMembers), post='\n')))
+        for d in (config.getDescriptors(isJSImplemented=True) +
+                  config.getDescriptors(isCallback=True)):
+            members = [m for m in d.interface.members if m.isAttr() or m.isMethod()]
+            if d.interface.isJSImplemented() and d.interface.ctor():
+                # We'll have an __init() method.
+                members.append(FakeMember('__init'))
+            if len(members) == 0:
+                continue
+
+            structs.append(buildAtomCacheStructure(d.interface,
+                                                   lambda x: d.binaryNameFor(x),
+                                                   members))
 
         structs.sort()
         generatedStructs = [struct for structName, struct in structs]
