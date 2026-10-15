@@ -1071,7 +1071,7 @@ nsCSPContext::PermitsAncestry(nsIDocShell* aDocShell, bool* outPermitsAncestry)
 
 /* ========== CSPViolationReportListener implementation ========== */
 
-NS_IMPL_ISUPPORTS(CSPViolationReportListener, nsIStreamListener, nsIRequestObserver, nsISupports);
+NS_IMPL_ISUPPORTS3(CSPViolationReportListener, nsIStreamListener, nsIRequestObserver, nsISupports);
 
 CSPViolationReportListener::CSPViolationReportListener()
 {
@@ -1127,7 +1127,7 @@ CSPViolationReportListener::OnStartRequest(nsIRequest* aRequest,
 
 /* ========== CSPReportRedirectSink implementation ========== */
 
-NS_IMPL_ISUPPORTS(CSPReportRedirectSink, nsIChannelEventSink, nsIInterfaceRequestor);
+NS_IMPL_ISUPPORTS2(CSPReportRedirectSink, nsIChannelEventSink, nsIInterfaceRequestor);
 
 CSPReportRedirectSink::CSPReportRedirectSink()
 {

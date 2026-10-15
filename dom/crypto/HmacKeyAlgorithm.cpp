@@ -10,7 +10,7 @@
 namespace mozilla {
 namespace dom {
 
-NS_IMPL_CYCLE_COLLECTION_INHERITED(HmacKeyAlgorithm, KeyAlgorithm, mHash)
+NS_IMPL_CYCLE_COLLECTION_INHERITED_1(HmacKeyAlgorithm, KeyAlgorithm, mHash)
 NS_IMPL_ADDREF_INHERITED(HmacKeyAlgorithm, KeyAlgorithm)
 NS_IMPL_RELEASE_INHERITED(HmacKeyAlgorithm, KeyAlgorithm)
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(HmacKeyAlgorithm)

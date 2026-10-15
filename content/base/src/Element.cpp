@@ -827,10 +827,10 @@ Element::CreateShadowRoot(ErrorResult& aError)
   return shadowRoot.forget();
 }
 
-NS_IMPL_CYCLE_COLLECTION(DestinationInsertionPointList, mParent, mDestinationPoints)
+NS_IMPL_CYCLE_COLLECTION_2(DestinationInsertionPointList, mParent, mDestinationPoints)
 
 NS_INTERFACE_TABLE_HEAD(DestinationInsertionPointList)
-  NS_INTERFACE_TABLE(DestinationInsertionPointList, nsINodeList)
+  NS_INTERFACE_TABLE1(DestinationInsertionPointList, nsINodeList)
   NS_INTERFACE_TABLE_TO_MAP_SEGUE_CYCLE_COLLECTION(DestinationInsertionPointList)
 NS_INTERFACE_MAP_END
 

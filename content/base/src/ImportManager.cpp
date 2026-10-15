@@ -55,9 +55,9 @@ NS_INTERFACE_MAP_END
 NS_IMPL_CYCLE_COLLECTING_ADDREF(ImportLoader)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(ImportLoader)
 
-NS_IMPL_CYCLE_COLLECTION(ImportLoader,
-                         mDocument,
-                         mLinks)
+NS_IMPL_CYCLE_COLLECTION_2(ImportLoader,
+                           mDocument,
+                           mLinks)
 
 ImportLoader::ImportLoader(nsIURI* aURI, nsIDocument* aImportParent)
   : mURI(aURI)
@@ -336,8 +336,8 @@ ImportLoader::OnStartRequest(nsIRequest* aRequest, nsISupports* aContext)
   return NS_OK;
 }
 
-NS_IMPL_CYCLE_COLLECTION(ImportManager,
-                         mImports)
+NS_IMPL_CYCLE_COLLECTION_1(ImportManager,
+                           mImports)
 
 NS_INTERFACE_MAP_BEGIN(ImportManager)
   NS_INTERFACE_MAP_ENTRIES_CYCLE_COLLECTION(ImportManager)

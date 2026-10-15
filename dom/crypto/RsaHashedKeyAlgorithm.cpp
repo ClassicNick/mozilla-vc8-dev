@@ -11,7 +11,7 @@
 namespace mozilla {
 namespace dom {
 
-NS_IMPL_CYCLE_COLLECTION_INHERITED(RsaHashedKeyAlgorithm, RsaKeyAlgorithm, mHash)
+NS_IMPL_CYCLE_COLLECTION_INHERITED_1(RsaHashedKeyAlgorithm, RsaKeyAlgorithm, mHash)
 NS_IMPL_ADDREF_INHERITED(RsaHashedKeyAlgorithm, RsaKeyAlgorithm)
 NS_IMPL_RELEASE_INHERITED(RsaHashedKeyAlgorithm, RsaKeyAlgorithm)
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(RsaHashedKeyAlgorithm)
