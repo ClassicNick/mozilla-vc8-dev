@@ -39,7 +39,7 @@ using namespace mozilla;
 // boundary by 61 app units (1 pixel + 1 app unit).
 static const int32_t kBoundaryAppUnits = 61;
 
-NS_IMPL_ISUPPORTS(TouchCaret, nsISelectionListener)
+NS_IMPL_ISUPPORTS1(TouchCaret, nsISelectionListener)
 
 /*static*/ int32_t TouchCaret::sTouchCaretMaxDistance = 0;
 /*static*/ int32_t TouchCaret::sTouchCaretExpirationTime = 0;

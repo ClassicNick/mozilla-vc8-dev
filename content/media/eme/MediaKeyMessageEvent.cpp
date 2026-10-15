@@ -84,7 +84,7 @@ MediaKeyMessageEvent::Constructor(const GlobalObject& aGlobal,
   bool trusted = e->Init(owner);
   e->InitEvent(aType, aEventInitDict.mBubbles, aEventInitDict.mCancelable);
   if (aEventInitDict.mMessage.WasPassed()) {
-    const auto& a = aEventInitDict.mMessage.Value();
+    const Uint8Array& a = aEventInitDict.mMessage.Value();
     a.ComputeLengthAndData();
     e->mMessage = Uint8Array::Create(aGlobal.GetContext(), owner, a.Length(), a.Data());
   } else {

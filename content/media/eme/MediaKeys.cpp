@@ -19,11 +19,11 @@ namespace mozilla {
 
 namespace dom {
 
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(MediaKeys,
-                                      mParent,
-                                      mKeySessions,
-                                      mPromises,
-                                      mPendingSessions);
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_4(MediaKeys,
+                                        mParent,
+                                        mKeySessions,
+                                        mPromises,
+                                        mPendingSessions);
 NS_IMPL_CYCLE_COLLECTING_ADDREF(MediaKeys)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(MediaKeys)
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(MediaKeys)
@@ -234,7 +234,7 @@ MediaKeys::CreateSession(const nsAString& initDataType,
                                                           this,
                                                           mKeySystem,
                                                           aSessionType);
-  auto pid = StorePromise(promise);
+  PromiseId pid = StorePromise(promise);
   // Hang onto session until the CDM has finished setting it up.
   mPendingSessions.Put(pid, session);
   mProxy->CreateSession(aSessionType,

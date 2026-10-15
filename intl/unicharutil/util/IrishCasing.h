@@ -6,7 +6,7 @@
 #ifndef IrishCasing_h_
 #define IrishCasing_h_
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 namespace mozilla {
 

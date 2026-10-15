@@ -51,7 +51,9 @@
 #include "MediaPermissionGonk.h"
 #endif
 
+#if defined(MOZ_WEBRTC)
 #include "browser_logging/WebRtcLog.h"
+#endif
 
 // GetCurrentTime is defined in winbase.h as zero argument macro forwarding to
 // GetTickCount() and conflicts with MediaStream::GetCurrentTime.
@@ -1577,7 +1579,9 @@ MediaManager::GetUserMedia(bool aPrivileged,
     obs->NotifyObservers(req, "getUserMedia:request", nullptr);
   }
 
+#if defined(MOZ_WEBRTC)
   EnableWebRtcLog();
+#endif
 
   return NS_OK;
 }

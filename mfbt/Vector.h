@@ -1202,17 +1202,10 @@ class Vector
     typedef VectorBase<T, MinInlineCapacity, AllocPolicy, Vector> Base;
 
   public:
-<<<<<<< HEAD
     Vector(AllocPolicy alloc = AllocPolicy()) : Base(alloc) {}
     Vector(mozilla::MoveRef<Vector> vec) : Base(vec) {}
     Vector& operator=(mozilla::MoveRef<Vector> vec) {
       return Base::operator=(vec);
-=======
-    explicit Vector(AllocPolicy alloc = AllocPolicy()) : Base(alloc) {}
-    Vector(Vector&& vec) : Base(Move(vec)) {}
-    Vector& operator=(Vector&& vec) {
-      return Base::operator=(Move(vec));
->>>>>>> 5d6165c
     }
 };
 

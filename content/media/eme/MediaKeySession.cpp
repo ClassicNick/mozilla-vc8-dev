@@ -16,11 +16,11 @@
 namespace mozilla {
 namespace dom {
 
-NS_IMPL_CYCLE_COLLECTION_INHERITED(MediaKeySession,
-                                   DOMEventTargetHelper,
-                                   mMediaKeyError,
-                                   mKeys,
-                                   mClosed)
+NS_IMPL_CYCLE_COLLECTION_INHERITED_3(MediaKeySession,
+                                     DOMEventTargetHelper,
+                                     mMediaKeyError,
+                                     mKeys,
+                                     mClosed)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(MediaKeySession)
 NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
