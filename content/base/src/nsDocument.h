@@ -102,7 +102,7 @@ namespace mozilla {
 class EventChainPreVisitor;
 namespace dom {
 class UndoManager;
-class LifecycleCallbacks;
+struct LifecycleCallbacks;
 class CallbackFunction;
 }
 }
@@ -808,6 +808,13 @@ public:
 
   virtual nsIChannel* GetChannel() const MOZ_OVERRIDE {
     return mChannel;
+  }
+
+  virtual nsIChannel* GetFailedChannel() const MOZ_OVERRIDE {
+    return mFailedChannel;
+  }
+  virtual void SetFailedChannel(nsIChannel* aChannel) MOZ_OVERRIDE {
+    mFailedChannel = aChannel;
   }
 
   virtual void SetScriptGlobalObject(nsIScriptGlobalObject* aGlobalObject) MOZ_OVERRIDE;

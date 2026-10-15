@@ -20,7 +20,6 @@
 #include "nsPK11TokenDB.h"
 #include "nsIX509Cert.h"
 #include "nsIX509Cert3.h"
-#include "nsISMimeCert.h"
 #include "nsNSSASN1Object.h"
 #include "nsString.h"
 #include "nsXPIDLString.h"
@@ -68,12 +67,11 @@ NSSCleanupAutoPtrClass_WithParam(PLArenaPool, PORT_FreeArena, FalseParam, false)
 // in the list to mean not yet initialized.
 #define CERT_TYPE_NOT_YET_INITIALIZED (1 << 30)
 
-NS_IMPL_ISUPPORTS7(nsNSSCertificate,
+NS_IMPL_ISUPPORTS6(nsNSSCertificate,
                    nsIX509Cert,
                    nsIX509Cert2,
                    nsIX509Cert3,
                    nsIIdentityInfo,
-                   nsISMimeCert,
                    nsISerializable,
                    nsIClassInfo)
 
@@ -1387,19 +1385,6 @@ nsNSSCertificate::Equals(nsIX509Cert* other, bool* result)
   ScopedCERTCertificate cert(other2->GetCert());
   *result = (mCert.get() == cert.get());
   return NS_OK;
-}
-
-NS_IMETHODIMP
-nsNSSCertificate::SaveSMimeProfile()
-{
-  nsNSSShutDownPreventionLock locker;
-  if (isAlreadyShutDown())
-    return NS_ERROR_NOT_AVAILABLE;
-
-  if (SECSuccess != CERT_SaveSMimeProfile(mCert.get(), nullptr, nullptr))
-    return NS_ERROR_FAILURE;
-  else
-    return NS_OK;
 }
 
 #ifndef MOZ_NO_EV_CERTS

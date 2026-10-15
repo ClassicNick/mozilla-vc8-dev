@@ -226,14 +226,14 @@ OldMove(const T& t)
   return MoveRef<T>(const_cast<T&>(t));
 }
 
-/** Swap |t| and |u| using move-construction if possible. */
+/** Swap |aX| and |aY| using move-construction if possible. */
 template<typename T>
 inline void
-Swap(T& t, T& u)
+Swap(T& aX, T& aY)
 {
-  T tmp(OldMove(t));
-  t = OldMove(u);
-  u = OldMove(tmp);
+  T tmp(OldMove(aX));
+  aX = OldMove(aY);
+  aY = OldMove(tmp);
 }
 
 } // namespace mozilla

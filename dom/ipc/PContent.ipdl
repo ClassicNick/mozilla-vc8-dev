@@ -123,6 +123,14 @@ struct DeviceStorageAddParams
   PBlob blob;
 };
 
+struct DeviceStorageAppendParams
+{
+  nsString type;
+  nsString storageName;
+  nsString relpath;
+  PBlob blob;
+};
+
 struct DeviceStorageCreateFdParams
 {
   nsString type;
@@ -156,6 +164,7 @@ struct DeviceStorageEnumerationParams
 union DeviceStorageParams
 {
   DeviceStorageAddParams;
+  DeviceStorageAppendParams;
   DeviceStorageCreateFdParams;
   DeviceStorageGetParams;
   DeviceStorageDeleteParams;
@@ -346,7 +355,8 @@ child:
      */
     async SetProcessSandbox();
 
-    PMemoryReportRequest(uint32_t generation, bool minimizeMemoryUsage, nsString DMDDumpIdent);
+    PMemoryReportRequest(uint32_t generation, bool anonymize,
+                         bool minimizeMemoryUsage, nsString DMDDumpIdent);
 
     /**
      * Notify the AudioChannelService in the child processes.

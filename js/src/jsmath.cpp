@@ -879,7 +879,7 @@ js::math_round_impl(double x)
         return x;
 
     /* Some numbers are so big that adding 0.5 would give the wrong number. */
-    if (ExponentComponent(x) >= int_fast16_t(FloatingPoint<double>::ExponentShift))
+    if (ExponentComponent(x) >= int_fast16_t(FloatingPoint<double>::kExponentShift))
         return x;
 
     return js_copysign(floor(x + 0.5), x);
@@ -893,7 +893,7 @@ js::math_roundf_impl(float x)
         return x;
 
     /* Some numbers are so big that adding 0.5 would give the wrong number. */
-    if (ExponentComponent(x) >= int_fast16_t(FloatingPoint<float>::ExponentShift))
+    if (ExponentComponent(x) >= int_fast16_t(FloatingPoint<float>::kExponentShift))
         return x;
 
     return js_copysign(floorf(x + 0.5f), x);

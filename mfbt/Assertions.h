@@ -413,8 +413,9 @@ void ValidateAssertConditionType()
 #ifdef DEBUG
 #  define MOZ_ASSERT_IF(cond, expr) \
      do { \
-       if (cond) \
+       if (cond) { \
          MOZ_ASSERT(expr); \
+       } \
      } while (0)
 #else
 #  define MOZ_ASSERT_IF(cond, expr)  do { } while (0)

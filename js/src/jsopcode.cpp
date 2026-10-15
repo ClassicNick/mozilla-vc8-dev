@@ -230,8 +230,7 @@ js::DumpIonScriptCounts(Sprinter *sp, jit::IonScriptCounts *ionCounts)
         Sprint(sp, "BB #%lu [%05u]", block.id(), block.offset());
         for (size_t j = 0; j < block.numSuccessors(); j++)
             Sprint(sp, " -> #%lu", block.successor(j));
-        Sprint(sp, " :: %llu hits %u instruction bytes %u spill bytes\n",
-               block.hitCount(), block.instructionBytes(), block.spillBytes());
+        Sprint(sp, " :: %llu hits\n", block.hitCount());
         Sprint(sp, "%s\n", block.code());
     }
 }
@@ -1198,21 +1197,24 @@ Sprinter::putString(JSString *s)
     InvariantChecker ic(this);
 
     size_t length = s->length();
-    const jschar *chars = s->getChars(context);
-    if (!chars)
-        return -1;
-
     size_t size = length;
-    if (size == (size_t) -1)
-        return -1;
 
     ptrdiff_t oldOffset = offset;
     char *buffer = reserve(size);
     if (!buffer)
         return -1;
-    DeflateStringToBuffer(nullptr, chars, length, buffer, &size);
-    buffer[size] = 0;
 
+    JSLinearString *linear = s->ensureLinear(context);
+    if (!linear)
+        return -1;
+
+    AutoCheckCannotGC nogc;
+    if (linear->hasLatin1Chars())
+        mozilla::PodCopy(reinterpret_cast<Latin1Char*>(buffer), linear->latin1Chars(nogc), length);
+    else
+        DeflateStringToBuffer(nullptr, linear->twoByteChars(nogc), length, buffer, &size);
+
+    buffer[size] = 0;
     return oldOffset;
 }
 
@@ -2314,13 +2316,6 @@ GetPCCountJSON(JSContext *cx, const ScriptAndCounts &sac, StringBuffer &buf)
                 if (!str || !(str = StringToSource(cx, str)))
                     return false;
                 buf.append(str);
-
-                AppendJSONProperty(buf, "instructionBytes");
-                NumberValueToStringBuffer(cx, Int32Value(block.instructionBytes()), buf);
-
-                AppendJSONProperty(buf, "spillBytes");
-                NumberValueToStringBuffer(cx, Int32Value(block.spillBytes()), buf);
-
                 buf.append('}');
             }
             buf.append(']');

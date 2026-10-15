@@ -3,6 +3,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+// Uncomment this to enable the TILING_PRLOG stuff in this file
+// for release builds. To get the output you need to have
+// NSPR_LOG_MODULES=tiling:5 in your environment at runtime.
+// #define FORCE_PR_LOG
+
 #include "mozilla/layers/TiledContentClient.h"
 #include <math.h>                       // for ceil, ceilf, floor
 #include "ClientTiledThebesLayer.h"     // for ClientTiledThebesLayer
@@ -25,6 +30,7 @@
 #include "gfxReusableSharedImageSurfaceWrapper.h"
 #include "nsMathUtils.h"               // for NS_roundf
 #include "gfx2DGlue.h"
+#include "LayersLogging.h"
 
 // This is the minimum area that we deem reasonable to copy from the front buffer to the
 // back buffer on tile updates. If the valid region is smaller than this, we just
@@ -120,8 +126,6 @@ TiledContentClient::UseTiledLayerBuffer(TiledBufferType aType)
 }
 
 SharedFrameMetricsHelper::SharedFrameMetricsHelper()
-  : mLastProgressiveUpdateWasLowPrecision(false)
-  , mProgressiveUpdateWasInDanger(false)
 {
   MOZ_COUNT_CTOR(SharedFrameMetricsHelper);
 }
@@ -146,7 +150,11 @@ SharedFrameMetricsHelper::UpdateFromCompositorFrameMetrics(
 {
   MOZ_ASSERT(aLayer);
 
-  CompositorChild* compositor = CompositorChild::Get();
+  CompositorChild* compositor = nullptr;
+  if(aLayer->Manager() &&
+     aLayer->Manager()->AsClientLayerManager()) {
+    compositor = aLayer->Manager()->AsClientLayerManager()->GetCompositorChild();
+  }
 
   if (!compositor) {
     FindFallbackContentFrameMetrics(aLayer, aCompositionBounds, aZoom);
@@ -164,17 +172,6 @@ SharedFrameMetricsHelper::UpdateFromCompositorFrameMetrics(
 
   aCompositionBounds = ParentLayerRect(compositorMetrics.mCompositionBounds);
   aZoom = compositorMetrics.GetZoomToParent();
-
-  // Reset the checkerboard risk flag when switching to low precision
-  // rendering.
-  if (aLowPrecision && !mLastProgressiveUpdateWasLowPrecision) {
-    // Skip low precision rendering until we're at risk of checkerboarding.
-    if (!mProgressiveUpdateWasInDanger) {
-      return true;
-    }
-    mProgressiveUpdateWasInDanger = false;
-  }
-  mLastProgressiveUpdateWasLowPrecision = aLowPrecision;
 
   // Always abort updates if the resolution has changed. There's no use
   // in drawing at the incorrect resolution.
@@ -195,13 +192,20 @@ SharedFrameMetricsHelper::UpdateFromCompositorFrameMetrics(
     return false;
   }
 
-  // When not a low precision pass and the page is in danger of checker boarding
-  // abort update.
-  if (!aLowPrecision && !mProgressiveUpdateWasInDanger) {
-    if (AboutToCheckerboard(contentMetrics, compositorMetrics)) {
-      mProgressiveUpdateWasInDanger = true;
-      return true;
-    }
+  bool scrollUpdatePending = contentMetrics.GetScrollOffsetUpdated() &&
+      contentMetrics.GetScrollGeneration() != compositorMetrics.GetScrollGeneration();
+  // If scrollUpdatePending is true, then that means the content-side
+  // metrics has a new scroll offset that is going to be forced into the
+  // compositor but it hasn't gotten there yet.
+  // Even though right now comparing the metrics might indicate we're
+  // about to checkerboard (and that's true), the checkerboarding will
+  // disappear as soon as the new scroll offset update is processed
+  // on the compositor side. To avoid leaving things in a low-precision
+  // paint, we need to detect and handle this case (bug 1026756).
+  if (!aLowPrecision && !scrollUpdatePending && AboutToCheckerboard(contentMetrics, compositorMetrics)) {
+    TILING_PRLOG_OBJ(("TILING: Checkerboard abort content %s\n", tmpstr.get()), contentMetrics);
+    TILING_PRLOG_OBJ(("TILING: Checkerboard abort compositor %s\n", tmpstr.get()), compositorMetrics);
+    return true;
   }
 
   // Abort drawing stale low-precision content if there's a more recent
@@ -629,6 +633,9 @@ ClientTiledLayerBuffer::PaintThebes(const nsIntRegion& aNewValidRegion,
                                    LayerManager::DrawThebesLayerCallback aCallback,
                                    void* aCallbackData)
 {
+  TILING_PRLOG_OBJ(("TILING 0x%p: PaintThebes painting region %s\n", mThebesLayer, tmpstr.get()), aPaintRegion);
+  TILING_PRLOG_OBJ(("TILING 0x%p: PaintThebes new valid region %s\n", mThebesLayer, tmpstr.get()), aNewValidRegion);
+
   mCallback = aCallback;
   mCallbackData = aCallbackData;
 
@@ -940,6 +947,8 @@ ClientTiledLayerBuffer::ComputeProgressiveUpdateRegion(const nsIntRegion& aInval
   nsIntRegion staleRegion;
   staleRegion.And(aInvalidRegion, aOldValidRegion);
 
+  TILING_PRLOG_OBJ(("TILING 0x%p: Progressive update stale region %s\n", mThebesLayer, tmpstr.get()), staleRegion);
+
   // Find out the current view transform to determine which tiles to draw
   // first, and see if we should just abort this paint. Aborting is usually
   // caused by there being an incoming, more relevant paint.
@@ -963,6 +972,8 @@ ClientTiledLayerBuffer::ComputeProgressiveUpdateRegion(const nsIntRegion& aInval
       zoom);
 #endif
 
+  TILING_PRLOG_OBJ(("TILING 0x%p: Progressive update compositor bounds %s zoom %f abort %d\n", mThebesLayer, tmpstr.get(), zoom.scale, abortPaint), compositionBounds);
+
   if (abortPaint) {
     // We ignore if front-end wants to abort if this is the first,
     // non-low-precision paint, as in that situation, we're about to override
@@ -980,6 +991,10 @@ ClientTiledLayerBuffer::ComputeProgressiveUpdateRegion(const nsIntRegion& aInval
     TransformCompositionBounds(compositionBounds, zoom, aPaintData->mScrollOffset,
                                aPaintData->mResolution, aPaintData->mTransformDisplayPortToLayer);
 
+  TILING_PRLOG_OBJ(("TILING 0x%p: Progressive update transformed compositor bounds %s using resolution %f and scroll (%f,%f)\n",
+    mThebesLayer, tmpstr.get(), aPaintData->mResolution.scale, aPaintData->mScrollOffset.x, aPaintData->mScrollOffset.y),
+    transformedCompositionBounds);
+
   // Paint tiles that have stale content or that intersected with the screen
   // at the time of issuing the draw command in a single transaction first.
   // This is to avoid rendering glitches on animated page content, and when
@@ -987,14 +1002,13 @@ ClientTiledLayerBuffer::ComputeProgressiveUpdateRegion(const nsIntRegion& aInval
   LayerRect typedCoherentUpdateRect =
     transformedCompositionBounds.Intersect(aPaintData->mCompositionBounds);
 
-  // Offset by the viewport origin, as the composition bounds are stored in
-  // Layer space and not LayoutDevice space.
-  // TODO(kats): does this make sense?
-  typedCoherentUpdateRect.MoveBy(aPaintData->mViewport.TopLeft());
+  TILING_PRLOG_OBJ(("TILING 0x%p: Progressive update intersected coherency rect %s\n", mThebesLayer, tmpstr.get()), typedCoherentUpdateRect);
 
   // Convert to untyped to intersect with the invalid region.
   nsIntRect untypedCoherentUpdateRect(LayerIntRect::ToUntyped(
     RoundedOut(typedCoherentUpdateRect)));
+
+  TILING_PRLOG_OBJ(("TILING 0x%p: Progressive update final coherency rect %s\n", mThebesLayer, tmpstr.get()), untypedCoherentUpdateRect);
 
   aRegionToPaint.And(aInvalidRegion, untypedCoherentUpdateRect);
   aRegionToPaint.Or(aRegionToPaint, staleRegion);
@@ -1009,6 +1023,8 @@ ClientTiledLayerBuffer::ComputeProgressiveUpdateRegion(const nsIntRegion& aInval
     aRegionToPaint.And(aRegionToPaint, untypedCoherentUpdateRect);
     paintVisible = true;
   }
+
+  TILING_PRLOG_OBJ(("TILING 0x%p: Progressive update final paint region %s\n", mThebesLayer, tmpstr.get()), aRegionToPaint);
 
   // Paint area that's visible and overlaps previously valid content to avoid
   // visible glitches in animated elements, such as gifs.
@@ -1085,6 +1101,10 @@ ClientTiledLayerBuffer::ProgressiveUpdate(nsIntRegion& aValidRegion,
                                          LayerManager::DrawThebesLayerCallback aCallback,
                                          void* aCallbackData)
 {
+  TILING_PRLOG_OBJ(("TILING 0x%p: Progressive update valid region %s\n", mThebesLayer, tmpstr.get()), aValidRegion);
+  TILING_PRLOG_OBJ(("TILING 0x%p: Progressive update invalid region %s\n", mThebesLayer, tmpstr.get()), aInvalidRegion);
+  TILING_PRLOG_OBJ(("TILING 0x%p: Progressive update old valid region %s\n", mThebesLayer, tmpstr.get()), aOldValidRegion);
+
   bool repeat = false;
   bool isBufferChanged = false;
   do {
@@ -1096,6 +1116,8 @@ ClientTiledLayerBuffer::ProgressiveUpdate(nsIntRegion& aValidRegion,
                                             regionToPaint,
                                             aPaintData,
                                             repeat);
+
+    TILING_PRLOG_OBJ(("TILING 0x%p: Progressive update computed paint region %s repeat %d\n", mThebesLayer, tmpstr.get(), repeat), regionToPaint);
 
     // There's no further work to be done.
     if (regionToPaint.IsEmpty()) {
@@ -1117,6 +1139,9 @@ ClientTiledLayerBuffer::ProgressiveUpdate(nsIntRegion& aValidRegion,
     PaintThebes(validOrStale, regionToPaint, aCallback, aCallbackData);
     aInvalidRegion.Sub(aInvalidRegion, regionToPaint);
   } while (repeat);
+
+  TILING_PRLOG_OBJ(("TILING 0x%p: Progressive update final valid region %s buffer changed %d\n", mThebesLayer, tmpstr.get(), isBufferChanged), aValidRegion);
+  TILING_PRLOG_OBJ(("TILING 0x%p: Progressive update final invalid region %s\n", mThebesLayer, tmpstr.get()), aInvalidRegion);
 
   // Return false if nothing has been drawn, or give what has been drawn
   // to the shadow layer to upload.
