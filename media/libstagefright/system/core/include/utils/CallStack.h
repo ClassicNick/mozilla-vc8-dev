@@ -17,7 +17,7 @@
 #ifndef ANDROID_CALLSTACK_H
 #define ANDROID_CALLSTACK_H
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 #include <sys/types.h>
 
 #include <utils/String8.h>

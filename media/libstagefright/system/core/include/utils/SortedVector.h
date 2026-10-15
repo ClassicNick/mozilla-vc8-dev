@@ -18,7 +18,7 @@
 #define ANDROID_SORTED_VECTOR_H
 
 #include <assert.h>
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 #include <sys/types.h>
 
 #include <cutils/log.h>

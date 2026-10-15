@@ -26,7 +26,7 @@
 #include <time.h>
 #include <stdio.h>
 #include <unistd.h>
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 #include <sys/types.h>
 #ifdef HAVE_PTHREADS
 #include <pthread.h>

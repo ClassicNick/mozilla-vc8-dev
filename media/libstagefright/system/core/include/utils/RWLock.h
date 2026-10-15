@@ -17,7 +17,7 @@
 #ifndef _LIBS_UTILS_RWLOCK_H
 #define _LIBS_UTILS_RWLOCK_H
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 #include <sys/types.h>
 
 #if defined(HAVE_PTHREADS)

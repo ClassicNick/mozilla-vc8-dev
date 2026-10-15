@@ -19,7 +19,7 @@
 #define SAMPLE_TABLE_H_
 
 #include <sys/types.h>
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 #include <media/stagefright/MediaErrors.h>
 #include <utils/RefBase.h>

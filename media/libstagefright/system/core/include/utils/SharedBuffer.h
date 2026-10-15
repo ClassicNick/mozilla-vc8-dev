@@ -17,7 +17,7 @@
 #ifndef ANDROID_SHARED_BUFFER_H
 #define ANDROID_SHARED_BUFFER_H
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 #include <sys/types.h>
 
 // ---------------------------------------------------------------------------

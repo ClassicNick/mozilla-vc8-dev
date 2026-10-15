@@ -20,7 +20,7 @@
 #ifndef _LIBS_UTILS_TIMERS_H
 #define _LIBS_UTILS_TIMERS_H
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 #include <sys/types.h>
 #include <sys/time.h>
 

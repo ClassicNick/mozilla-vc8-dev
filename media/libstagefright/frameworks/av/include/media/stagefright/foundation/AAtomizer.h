@@ -18,7 +18,7 @@
 
 #define A_ATOMIZER_H_
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 #include <media/stagefright/foundation/ABase.h>
 #include <media/stagefright/foundation/AString.h>

@@ -19,7 +19,7 @@
 
 #include <cutils/atomic.h>
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 #include <sys/types.h>
 #include <stdlib.h>
 

@@ -28,7 +28,7 @@ public:
 
   uint8_t ReadU8()
   {
-    auto ptr = Read(1);
+    const uint8_t* ptr = Read(1);
     if (!ptr) {
       MOZ_ASSERT(false);
       return 0;
@@ -40,7 +40,7 @@ public:
 
   uint16_t ReadU16()
   {
-    auto ptr = Read(2);
+    const uint8_t* ptr = Read(2);
     if (!ptr) {
       MOZ_ASSERT(false);
       return 0;

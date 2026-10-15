@@ -21,7 +21,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <stdlib.h>
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 #include <string.h>
 #include <assert.h>
 #include <arpa/inet.h>

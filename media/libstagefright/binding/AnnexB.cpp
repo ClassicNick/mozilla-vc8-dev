@@ -43,7 +43,7 @@ AnnexB::ConvertExtraDataToAnnexB(mozilla::Vector<uint8_t>& aExtraData)
     MOZ_ASSERT(!reader.Remaining());
   }
 
-  return annexB;
+  return OldMove(annexB);
 }
 
 void

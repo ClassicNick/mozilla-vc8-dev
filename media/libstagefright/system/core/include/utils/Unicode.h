@@ -18,7 +18,7 @@
 #define ANDROID_UNICODE_H
 
 #include <sys/types.h>
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 extern "C" {
 

@@ -18,7 +18,7 @@
 #define ANDROID_TYPE_HELPERS_H
 
 #include <new>
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 #include <string.h>
 #include <sys/types.h>
 

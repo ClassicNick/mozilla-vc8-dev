@@ -28,7 +28,7 @@
 #define _LIBS_UTILS_LIST_H
 
 #include <stddef.h>
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 namespace stagefright {
 
