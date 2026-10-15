@@ -418,6 +418,7 @@ public:
   AsyncDeleteAllFaviconsFromDisk(bool aIgnoreRecent = false);
   virtual ~AsyncDeleteAllFaviconsFromDisk();
 private:
+  int32_t mIcoNoDeleteSeconds;
   bool mIgnoreRecent;
 };
 

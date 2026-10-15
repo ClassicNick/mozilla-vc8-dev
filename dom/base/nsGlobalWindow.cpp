@@ -4270,6 +4270,7 @@ nsGlobalWindow::DoNewResolve(JSContext* aCx, JS::Handle<JSObject*> aObj,
 {
   MOZ_ASSERT(IsInnerWindow());
 
+  // Note: The infallibleInit call in GlobalResolve depends on this check.
   if (!JSID_IS_STRING(aId)) {
     return true;
   }
@@ -13629,6 +13630,11 @@ nsGlobalWindow::GetDialogArguments(JSContext* aCx, ErrorResult& aError)
 
   MOZ_ASSERT(IsModalContentWindow(),
              "This should only be called on modal windows!");
+
+  if (!mDialogArguments) {
+    MOZ_ASSERT(mIsClosed, "This window should be closed!");
+    return JS::UndefinedValue();
+  }
 
   // This does an internal origin check, and returns undefined if the subject
   // does not subsumes the origin of the arguments.
