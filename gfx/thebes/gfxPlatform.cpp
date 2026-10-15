@@ -273,8 +273,6 @@ gfxPlatform::gfxPlatform()
     mOpenTypeSVGEnabled = UNINITIALIZED_VALUE;
     mBidiNumeralOption = UNINITIALIZED_VALUE;
 
-    mLayersPreferMemoryOverShmem = XRE_GetProcessType() == GeckoProcessType_Default;
-
     mSkiaGlue = nullptr;
 
     uint32_t canvasMask = BackendTypeBit(BackendType::CAIRO) | BackendTypeBit(BackendType::SKIA);
@@ -535,27 +533,21 @@ gfxPlatform::~gfxPlatform()
 #endif
 }
 
-bool
-gfxPlatform::PreferMemoryOverShmem() const {
-  MOZ_ASSERT(!CompositorParent::IsInCompositorThread());
-  return mLayersPreferMemoryOverShmem;
-}
-
 cairo_user_data_key_t kDrawTarget;
 
-RefPtr<DrawTarget>
+TemporaryRef<DrawTarget>
 gfxPlatform::CreateDrawTargetForSurface(gfxASurface *aSurface, const IntSize& aSize)
 {
   SurfaceFormat format = Optimal2DFormatForContent(aSurface->GetContentType());
   RefPtr<DrawTarget> drawTarget = Factory::CreateDrawTargetForCairoSurface(aSurface->CairoSurface(), aSize, &format);
   aSurface->SetData(&kDrawTarget, drawTarget, nullptr);
-  return drawTarget;
+  return drawTarget.forget();
 }
 
 // This is a temporary function used by ContentClient to build a DrawTarget
 // around the gfxASurface. This should eventually be replaced by plumbing
 // the DrawTarget through directly
-RefPtr<DrawTarget>
+TemporaryRef<DrawTarget>
 gfxPlatform::CreateDrawTargetForUpdateSurface(gfxASurface *aSurface, const IntSize& aSize)
 {
 #ifdef XP_MACOSX
@@ -652,7 +644,7 @@ CopySurface(gfxASurface* aSurface)
   return data;
 }
 
-/* static */ RefPtr<SourceSurface>
+/* static */ TemporaryRef<SourceSurface>
 gfxPlatform::GetSourceSurfaceForSurface(DrawTarget *aTarget, gfxASurface *aSurface)
 {
   if (!aSurface->CairoSurface() || aSurface->CairoStatus()) {
@@ -718,7 +710,7 @@ gfxPlatform::GetSourceSurfaceForSurface(DrawTarget *aTarget, gfxASurface *aSurfa
     if (srcBuffer) {
       // It's cheap enough to make a new one so we won't keep it around and
       // keeping it creates a cycle.
-      return srcBuffer;
+      return srcBuffer.forget();
     }
   }
 
@@ -743,7 +735,7 @@ gfxPlatform::GetSourceSurfaceForSurface(DrawTarget *aTarget, gfxASurface *aSurfa
       // Our wrapping surface will hold a reference to its image surface. We cause
       // a reference cycle if we add it to the cache. And caching it is pretty
       // pointless since we'll just wrap it again next use.
-     return srcBuffer;
+     return srcBuffer.forget();
     }
   }
 
@@ -753,10 +745,10 @@ gfxPlatform::GetSourceSurfaceForSurface(DrawTarget *aTarget, gfxASurface *aSurfa
   srcSurfUD->mSrcSurface = srcBuffer;
   aSurface->SetData(&kSourceSurface, srcSurfUD, SourceBufferDestroy);
 
-  return srcBuffer;
+  return srcBuffer.forget();
 }
 
-RefPtr<DataSourceSurface>
+TemporaryRef<DataSourceSurface>
 gfxPlatform::GetWrappedDataSourceSurface(gfxASurface* aSurface)
 {
   nsRefPtr<gfxImageSurface> image = aSurface->GetAsImageSurface();
@@ -779,7 +771,7 @@ gfxPlatform::GetWrappedDataSourceSurface(gfxASurface* aSurface)
   srcSurfUD->mSurface = aSurface;
   result->AddUserData(&kThebesSurface, srcSurfUD, SourceSurfaceDestroyed);
 
-  return result;
+  return result.forget();
 }
 
 TemporaryRef<ScaledFont>
@@ -936,7 +928,7 @@ gfxPlatform::GetThebesSurfaceForDrawTarget(DrawTarget *aTarget)
   return surf.forget();
 }
 
-RefPtr<DrawTarget>
+TemporaryRef<DrawTarget>
 gfxPlatform::CreateDrawTargetForBackend(BackendType aBackend, const IntSize& aSize, SurfaceFormat aFormat)
 {
   // There is a bunch of knowledge in the gfxPlatform heirarchy about how to
@@ -960,27 +952,27 @@ gfxPlatform::CreateDrawTargetForBackend(BackendType aBackend, const IntSize& aSi
   }
 }
 
-RefPtr<DrawTarget>
+TemporaryRef<DrawTarget>
 gfxPlatform::CreateOffscreenCanvasDrawTarget(const IntSize& aSize, SurfaceFormat aFormat)
 {
   NS_ASSERTION(mPreferredCanvasBackend != BackendType::NONE, "No backend.");
   RefPtr<DrawTarget> target = CreateDrawTargetForBackend(mPreferredCanvasBackend, aSize, aFormat);
   if (target ||
       mFallbackCanvasBackend == BackendType::NONE) {
-    return target;
+    return target.forget();
   }
 
   return CreateDrawTargetForBackend(mFallbackCanvasBackend, aSize, aFormat);
 }
 
-RefPtr<DrawTarget>
+TemporaryRef<DrawTarget>
 gfxPlatform::CreateOffscreenContentDrawTarget(const IntSize& aSize, SurfaceFormat aFormat)
 {
   NS_ASSERTION(mPreferredCanvasBackend != BackendType::NONE, "No backend.");
   return CreateDrawTargetForBackend(mContentBackend, aSize, aFormat);
 }
 
-RefPtr<DrawTarget>
+TemporaryRef<DrawTarget>
 gfxPlatform::CreateDrawTargetForData(unsigned char* aData, const IntSize& aSize, int32_t aStride, SurfaceFormat aFormat)
 {
   NS_ASSERTION(mContentBackend != BackendType::NONE, "No backend.");

@@ -6040,7 +6040,7 @@ LoadJSContextFromActivation(MacroAssembler &masm, Register activation, Register 
 static void
 AssertStackAlignment(MacroAssembler &masm)
 {
-    JS_ASSERT((AlignmentAtAsmJSPrologue + masm.framePushed()) % StackAlignment == 0);
+    JS_ASSERT((AsmJSSizeOfRetAddr + masm.framePushed()) % StackAlignment == 0);
 #ifdef DEBUG
     Label ok;
     JS_ASSERT(IsPowerOfTwo(StackAlignment));
@@ -6065,7 +6065,7 @@ StackDecrementForCall(MacroAssembler &masm, unsigned bytesToPush)
 {
     // Include extra padding so that, after pushing the bytesToPush,
     // the stack is aligned for a call instruction.
-    unsigned alreadyPushed = AlignmentAtAsmJSPrologue + masm.framePushed();
+    unsigned alreadyPushed = AsmJSSizeOfRetAddr + masm.framePushed();
     return AlignBytes(alreadyPushed + bytesToPush, StackAlignment) - alreadyPushed;
 }
 
@@ -6110,10 +6110,8 @@ GenerateEntry(ModuleCompiler &m, const AsmJSModule::ExportedFunction &exportedFu
     // PushRegsInMask(NonVolatileRegs).
     masm.setFramePushed(0);
 
+    // See AsmJSSizeOfRetAddr comment in Assembler-*.h.
 #if defined(JS_CODEGEN_ARM)
-    // Push lr without incrementing masm.framePushed since this push is
-    // accounted for by AlignmentAtAsmJSPrologue. The masm.ret at the end will
-    // pop.
     masm.push(lr);
 #endif // JS_CODEGEN_ARM
 #if defined(JS_CODEGEN_MIPS)
@@ -6149,7 +6147,7 @@ GenerateEntry(ModuleCompiler &m, const AsmJSModule::ExportedFunction &exportedFu
     Register argv = ABIArgGenerator::NonArgReturnVolatileReg0;
     Register scratch = ABIArgGenerator::NonArgReturnVolatileReg1;
 #if defined(JS_CODEGEN_X86)
-    masm.loadPtr(Address(StackPointer, NativeFrameSize + masm.framePushed()), argv);
+    masm.loadPtr(Address(StackPointer, AsmJSSizeOfRetAddr + masm.framePushed()), argv);
 #else
     masm.movePtr(IntArgReg0, argv);
 #endif
@@ -6371,10 +6369,8 @@ GenerateFFIInterpreterExit(ModuleCompiler &m, const ModuleCompiler::ExitDescript
     m.setInterpExitOffset(exitIndex);
     masm.setFramePushed(0);
 
+    // See AsmJSSizeOfRetAddr comment in Assembler-*.h.
 #if defined(JS_CODEGEN_ARM)
-    // Push lr without incrementing masm.framePushed since this push is
-    // accounted for by AlignmentAtAsmJSPrologue. The masm.ret at the end will
-    // pop.
     masm.push(lr);
 #endif
 #if defined(JS_CODEGEN_MIPS)
@@ -6398,7 +6394,7 @@ GenerateFFIInterpreterExit(ModuleCompiler &m, const ModuleCompiler::ExitDescript
     masm.reserveStack(stackDec);
 
     // Fill the argument array.
-    unsigned offsetToCallerStackArgs = AlignmentAtAsmJSPrologue + masm.framePushed();
+    unsigned offsetToCallerStackArgs = AsmJSSizeOfRetAddr + masm.framePushed();
     Register scratch = ABIArgGenerator::NonArgReturnVolatileReg0;
     FillArgumentArray(m, exit.sig().args(), offsetToArgv, offsetToCallerStackArgs, scratch);
 
@@ -6547,12 +6543,10 @@ GenerateFFIIonExit(ModuleCompiler &m, const ModuleCompiler::ExitDescriptor &exit
     m.setIonExitOffset(exitIndex);
     masm.setFramePushed(0);
 
+    // See AsmJSSizeOfRetAddr comment in Assembler-*.h.
 #if defined(JS_CODEGEN_X64)
     masm.Push(HeapReg);
 #elif defined(JS_CODEGEN_ARM)
-    // Push lr without incrementing masm.framePushed since this push is
-    // accounted for by AlignmentAtAsmJSPrologue. The masm.ret at the end will
-    // pop.
     masm.push(lr);
 
     // The GlobalReg (r10) and HeapReg (r11) also need to be restored before
@@ -6628,10 +6622,7 @@ GenerateFFIIonExit(ModuleCompiler &m, const ModuleCompiler::ExitDescriptor &exit
     argOffset += sizeof(Value);
 
     // 5. Fill the arguments
-    unsigned offsetToCallerStackArgs = masm.framePushed();
-#if defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_X64)
-    offsetToCallerStackArgs += NativeFrameSize;
-#endif
+    unsigned offsetToCallerStackArgs = masm.framePushed() + AsmJSSizeOfRetAddr;
     FillArgumentArray(m, exit.sig().args(), argOffset, offsetToCallerStackArgs, scratch);
     argOffset += exit.sig().args().length() * sizeof(Value);
     JS_ASSERT(argOffset == offsetToArgs + argBytes);

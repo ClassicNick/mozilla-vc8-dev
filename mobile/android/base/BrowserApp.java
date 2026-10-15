@@ -416,6 +416,16 @@ abstract public class BrowserApp extends GeckoApp
         return values;
     }
 
+    void handleReaderRemoved(final String url) {
+        ThreadUtils.postToBackgroundThread(new Runnable() {
+            @Override
+            public void run() {
+                BrowserDB.removeReadingListItemWithURL(getContentResolver(), url);
+                showToast(R.string.page_removed, Toast.LENGTH_SHORT);
+            }
+        });
+    }
+
     private void handleReaderFaviconRequest(final String url) {
         (new UiAsyncTask<Void, Void, String>(ThreadUtils.getBackgroundHandler()) {
             @Override
@@ -477,7 +487,7 @@ abstract public class BrowserApp extends GeckoApp
             Telemetry.sendUIEvent(TelemetryContract.Event.LOAD_URL, TelemetryContract.Method.INTENT);
         }
 
-        ((GeckoApp.MainLayout) mMainLayout).setTouchEventInterceptor(new HideTabsTouchListener());
+        ((GeckoApp.MainLayout) mMainLayout).setTouchEventInterceptor(new HideOnTouchListener());
         ((GeckoApp.MainLayout) mMainLayout).setMotionEventInterceptor(new MotionEventInterceptor() {
             @Override
             public boolean onInterceptMotionEvent(View view, MotionEvent event) {
@@ -529,6 +539,7 @@ abstract public class BrowserApp extends GeckoApp
             "Menu:Add",
             "Menu:Remove",
             "Reader:ListStatusRequest",
+            "Reader:Removed",
             "Reader:Share",
             "Settings:Show",
             "Telemetry:Gather",
@@ -886,6 +897,7 @@ abstract public class BrowserApp extends GeckoApp
             "Menu:Add",
             "Menu:Remove",
             "Reader:ListStatusRequest",
+            "Reader:Removed",
             "Reader:Share",
             "Settings:Show",
             "Telemetry:Gather",
@@ -1215,6 +1227,10 @@ abstract public class BrowserApp extends GeckoApp
 
         } else if ("Reader:ListStatusRequest".equals(event)) {
             handleReaderListStatusRequest(message.getString("url"));
+
+        } else if ("Reader:Removed".equals(event)) {
+            final String url = message.getString("url");
+            handleReaderRemoved(url);
 
         } else if ("Reader:Share".equals(event)) {
             final String title = message.getString("title");
@@ -1974,11 +1990,17 @@ abstract public class BrowserApp extends GeckoApp
         mBrowserSearch.setUserVisibleHint(false);
     }
 
-    private class HideTabsTouchListener implements TouchEventInterceptor {
+    /**
+     * Hides certain UI elements (e.g. button toast, tabs tray) when the
+     * user touches the main layout.
+     */
+    private class HideOnTouchListener implements TouchEventInterceptor {
         private boolean mIsHidingTabs = false;
 
         @Override
         public boolean onInterceptTouchEvent(View view, MotionEvent event) {
+            getButtonToast().hide(false, ButtonToast.ReasonHidden.TOUCH_OUTSIDE);
+
             // We need to account for scroll state for the touched view otherwise
             // tapping on an "empty" part of the view will still be considered a
             // valid touch event.

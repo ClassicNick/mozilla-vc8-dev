@@ -5765,14 +5765,15 @@ nsDocument::sProcessingStack;
 bool
 nsDocument::sProcessingBaseElementQueue;
 
-JSObject*
+void
 nsDocument::RegisterElement(JSContext* aCx, const nsAString& aType,
                             const ElementRegistrationOptions& aOptions,
+                            JS::MutableHandle<JSObject*> aRetval,
                             ErrorResult& rv)
 {
   if (!mRegistry) {
     rv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
-    return nullptr;
+    return;
   }
 
   Registry::DefinitionMap& definitions = mRegistry->mCustomDefinitions;
@@ -5793,7 +5794,7 @@ nsDocument::RegisterElement(JSContext* aCx, const nsAString& aType,
   nsCOMPtr<nsIAtom> typeAtom(do_GetAtom(lcType));
   if (!nsContentUtils::IsCustomElementName(typeAtom)) {
     rv.Throw(NS_ERROR_DOM_SYNTAX_ERR);
-    return nullptr;
+    return;
   }
 
   // If there already exists a definition with the same TYPE, set ERROR to
@@ -5802,13 +5803,13 @@ nsDocument::RegisterElement(JSContext* aCx, const nsAString& aType,
   CustomElementHashKey duplicateFinder(kNameSpaceID_Unknown, typeAtom);
   if (definitions.Get(&duplicateFinder)) {
     rv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
-    return nullptr;
+    return;
   }
 
   nsIGlobalObject* sgo = GetScopeObject();
   if (!sgo) {
     rv.Throw(NS_ERROR_UNEXPECTED);
-    return nullptr;
+    return;
   }
   JS::Rooted<JSObject*> global(aCx, sgo->GetGlobalJSObject());
 
@@ -5818,7 +5819,7 @@ nsDocument::RegisterElement(JSContext* aCx, const nsAString& aType,
     HTMLElementBinding::GetProtoObject(aCx, global));
   if (!htmlProto) {
     rv.Throw(NS_ERROR_OUT_OF_MEMORY);
-    return nullptr;
+    return;
   }
 
   int32_t namespaceID = kNameSpaceID_XHTML;
@@ -5827,7 +5828,7 @@ nsDocument::RegisterElement(JSContext* aCx, const nsAString& aType,
     protoObject = JS_NewObject(aCx, nullptr, htmlProto, JS::NullPtr());
     if (!protoObject) {
       rv.Throw(NS_ERROR_UNEXPECTED);
-      return nullptr;
+      return;
     }
   } else {
     // If a prototype is provided, we must check to ensure that it is from the
@@ -5835,7 +5836,7 @@ nsDocument::RegisterElement(JSContext* aCx, const nsAString& aType,
     protoObject = aOptions.mPrototype;
     if (JS_GetGlobalForObject(aCx, protoObject) != global) {
       rv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
-      return nullptr;
+      return;
     }
 
     // If PROTOTYPE is already an interface prototype object for any interface
@@ -5844,27 +5845,27 @@ nsDocument::RegisterElement(JSContext* aCx, const nsAString& aType,
     const js::Class* clasp = js::GetObjectClass(protoObject);
     if (IsDOMIfaceAndProtoClass(clasp)) {
       rv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
-      return nullptr;
+      return;
     }
 
     JS::Rooted<JSPropertyDescriptor> descRoot(aCx);
     JS::MutableHandle<JSPropertyDescriptor> desc(&descRoot);
     if (!JS_GetPropertyDescriptor(aCx, protoObject, "constructor", desc)) {
       rv.Throw(NS_ERROR_UNEXPECTED);
-      return nullptr;
+      return;
     }
 
     // Check if non-configurable
     if (desc.isPermanent()) {
       rv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
-      return nullptr;
+      return;
     }
 
     JS::Handle<JSObject*> svgProto(
       SVGElementBinding::GetProtoObject(aCx, global));
     if (!svgProto) {
       rv.Throw(NS_ERROR_OUT_OF_MEMORY);
-      return nullptr;
+      return;
     }
 
     JS::Rooted<JSObject*> protoProto(aCx, protoObject);
@@ -5883,7 +5884,7 @@ nsDocument::RegisterElement(JSContext* aCx, const nsAString& aType,
 
       if (!JS_GetPrototype(aCx, protoProto, &protoProto)) {
         rv.Throw(NS_ERROR_UNEXPECTED);
-        return nullptr;
+        return;
       }
     }
   }
@@ -5898,7 +5899,7 @@ nsDocument::RegisterElement(JSContext* aCx, const nsAString& aType,
       nsIParserService* ps = nsContentUtils::GetParserService();
       if (!ps) {
         rv.Throw(NS_ERROR_UNEXPECTED);
-        return nullptr;
+        return;
       }
 
       known =
@@ -5912,13 +5913,13 @@ nsDocument::RegisterElement(JSContext* aCx, const nsAString& aType,
     // If BASE exists, then it cannot be an interface for a custom element.
     if (!known) {
       rv.Throw(NS_ERROR_DOM_SYNTAX_ERR);
-      return nullptr;
+      return;
     }
   } else {
     // If NAMESPACE is SVG Namespace, set ERROR to InvalidName and stop.
     if (namespaceID == kNameSpaceID_SVG) {
       rv.Throw(NS_ERROR_UNEXPECTED);
-      return nullptr;
+      return;
     }
 
     nameAtom = typeAtom;
@@ -5927,7 +5928,8 @@ nsDocument::RegisterElement(JSContext* aCx, const nsAString& aType,
   nsAutoPtr<LifecycleCallbacks> callbacksHolder(new LifecycleCallbacks());
   JS::RootedValue rootedv(aCx, JS::ObjectValue(*protoObject));
   if (!callbacksHolder->Init(aCx, rootedv)) {
-    return nullptr;
+    rv.Throw(NS_ERROR_FAILURE);
+    return;
   }
 
   // Associate the definition with the custom element.
@@ -5986,8 +5988,12 @@ nsDocument::RegisterElement(JSContext* aCx, const nsAString& aType,
   JSFunction* constructor = JS_NewFunction(aCx, nsDocument::CustomElementConstructor, 0,
                                            JSFUN_CONSTRUCTOR, JS::NullPtr(),
                                            NS_ConvertUTF16toUTF8(lcType).get());
-  JSObject* constructorObject = JS_GetFunctionObject(constructor);
-  return constructorObject;
+  if (!constructor) {
+    rv.Throw(NS_ERROR_OUT_OF_MEMORY);
+    return;
+  }
+
+  aRetval.set(JS_GetFunctionObject(constructor));
 }
 
 void
