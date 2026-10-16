@@ -2326,7 +2326,7 @@ CanvasRenderingContext2D::SetFont(const nsAString& font,
 
   nsPresContext *c = presShell->GetPresContext();
   CurrentState().fontGroup =
-      gfxPlatform::GetPlatform()->CreateFontGroup(fontStyle->mFont.name,
+      gfxPlatform::GetPlatform()->CreateFontGroup(fontStyle->mFont.fontlist,
                                                   &style,
                                                   c->GetUserFontSet());
   NS_ASSERTION(CurrentState().fontGroup, "Could not get font group");
@@ -3003,7 +3003,7 @@ gfxFontGroup *CanvasRenderingContext2D::GetCurrentFontStyle()
       gfxFontStyle style;
       style.size = kDefaultFontSize;
       CurrentState().fontGroup =
-        gfxPlatform::GetPlatform()->CreateFontGroup(NS_LITERAL_STRING("sans-serif"),
+        gfxPlatform::GetPlatform()->CreateFontGroup(FontFamilyList(eFamily_sans_serif),
                                                     &style,
                                                     nullptr);
       if (CurrentState().fontGroup) {
@@ -4051,7 +4051,7 @@ CanvasRenderingContext2D::PutImageData_explicit(int32_t x, int32_t y, uint32_t w
                                                 int32_t dirtyWidth, int32_t dirtyHeight)
 {
   if (w == 0 || h == 0) {
-    return NS_ERROR_DOM_SYNTAX_ERR;
+    return NS_ERROR_DOM_INVALID_STATE_ERR;
   }
 
   IntRect dirtyRect;
@@ -4105,7 +4105,7 @@ CanvasRenderingContext2D::PutImageData_explicit(int32_t x, int32_t y, uint32_t w
 
   uint32_t len = w * h * 4;
   if (dataLen != len) {
-    return NS_ERROR_DOM_SYNTAX_ERR;
+    return NS_ERROR_DOM_INVALID_STATE_ERR;
   }
 
   nsRefPtr<gfxImageSurface> imgsurf = new gfxImageSurface(gfxIntSize(w, h),

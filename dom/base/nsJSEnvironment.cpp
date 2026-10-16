@@ -984,15 +984,6 @@ nsJSContext::InitContext()
 }
 
 nsresult
-nsJSContext::InitializeExternalClasses()
-{
-  nsScriptNameSpaceManager *nameSpaceManager = GetNameSpaceManager();
-  NS_ENSURE_TRUE(nameSpaceManager, NS_ERROR_NOT_INITIALIZED);
-
-  return nameSpaceManager->InitForContext(this);
-}
-
-nsresult
 nsJSContext::SetProperty(JS::Handle<JSObject*> aTarget, const char* aPropName, nsISupports* aArgs)
 {
   nsCxPusher pusher;
@@ -1646,9 +1637,6 @@ static const JSFunctionSpec JProfFunctions[] = {
 nsresult
 nsJSContext::InitClasses(JS::Handle<JSObject*> aGlobalObj)
 {
-  nsresult rv = InitializeExternalClasses();
-  NS_ENSURE_SUCCESS(rv, rv);
-
   JSOptionChangedCallback(js_options_dot_str, this);
   AutoPushJSContext cx(mContext);
 
@@ -1674,7 +1662,7 @@ nsJSContext::InitClasses(JS::Handle<JSObject*> aGlobalObj)
   ::JS_DefineFunctions(cx, aGlobalObj, JProfFunctions);
 #endif
 
-  return rv;
+  return NS_OK;
 }
 
 void

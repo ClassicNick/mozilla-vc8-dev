@@ -50,8 +50,9 @@ ConcatStringsDisallowGC(ThreadSafeContext *cx,
 }
 
 // Return s advanced past any Unicode white space characters.
-static inline const jschar *
-SkipSpace(const jschar *s, const jschar *end)
+template <typename CharT>
+static inline const CharT *
+SkipSpace(const CharT *s, const CharT *end)
 {
     JS_ASSERT(s <= end);
 

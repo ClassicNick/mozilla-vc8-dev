@@ -679,7 +679,7 @@ CopySurface(gfxASurface* aSurface)
   return data;
 }
 
-RefPtr<SourceSurface>
+/* static */ RefPtr<SourceSurface>
 gfxPlatform::GetSourceSurfaceForSurface(DrawTarget *aTarget, gfxASurface *aSurface)
 {
   if (!aSurface->CairoSurface() || aSurface->CairoStatus()) {
@@ -687,8 +687,8 @@ gfxPlatform::GetSourceSurfaceForSurface(DrawTarget *aTarget, gfxASurface *aSurfa
   }
 
   if (!aTarget) {
-    if (ScreenReferenceDrawTarget()) {
-      aTarget = ScreenReferenceDrawTarget();
+    if (gfxPlatform::GetPlatform()->ScreenReferenceDrawTarget()) {
+      aTarget = gfxPlatform::GetPlatform()->ScreenReferenceDrawTarget();
     } else {
       return nullptr;
     }

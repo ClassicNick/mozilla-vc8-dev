@@ -1050,7 +1050,7 @@ BoyerMooreHorspool(const TextChar *text, uint32_t textLen, const PatChar *pat, u
 
     uint32_t patLast = patLen - 1;
     for (uint32_t i = 0; i < patLast; i++) {
-        PatChar c = pat[i];
+        jschar c = pat[i];
         if (c >= sBMHCharSetSize)
             return sBMHBadPattern;
         skip[c] = uint8_t(patLast - i);
@@ -1064,7 +1064,7 @@ BoyerMooreHorspool(const TextChar *text, uint32_t textLen, const PatChar *pat, u
                 return static_cast<int>(i);  /* safe: max string size */
         }
 
-        TextChar c = text[k];
+        jschar c = text[k];
         k += (c >= sBMHCharSetSize) ? patLen : skip[c];
     }
     return -1;
@@ -3360,7 +3360,7 @@ js::str_replace(JSContext *cx, unsigned argc, Value *vp)
         return false;
 
     /* Extract replacement string/function. */
-    if (args.length() >= ReplaceOptArg && js_IsCallable(args[1])) {
+    if (args.length() >= ReplaceOptArg && IsCallable(args[1])) {
         rdata.setReplacementFunction(&args[1].toObject());
 
         if (!LambdaIsGetElem(cx, *rdata.lambda, &rdata.elembase))
@@ -4348,7 +4348,7 @@ js::ValueToSource(JSContext *cx, HandleValue v)
     RootedObject obj(cx, &v.toObject());
     if (!JSObject::getProperty(cx, obj, obj, cx->names().toSource, &fval))
         return nullptr;
-    if (js_IsCallable(fval)) {
+    if (IsCallable(fval)) {
         RootedValue rval(cx);
         if (!Invoke(cx, ObjectValue(*obj), fval, 0, nullptr, &rval))
             return nullptr;

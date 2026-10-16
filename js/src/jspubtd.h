@@ -350,7 +350,12 @@ struct ContextFriendFields
     }
 
 #ifdef JSGC_TRACK_EXACT_ROOTS
+#if !defined (_MSC_VER) || _MSC_VER >= 1500
   private:
+#else
+  public:
+#endif
+
     /*
      * Stack allocated GC roots for stack GC heap pointers, which may be
      * overwritten if moved during a GC.
@@ -374,7 +379,9 @@ struct ContextFriendFields
     friend JSRuntime *GetRuntime(const JSContext *cx);
     friend JSCompartment *GetContextCompartment(const JSContext *cx);
     friend JS::Zone *GetContextZone(const JSContext *cx);
+#if !defined (_MSC_VER) || _MSC_VER >= 1500
     template <typename T> friend class JS::Rooted;
+#endif
 };
 
 /*
@@ -429,7 +436,12 @@ struct PerThreadDataFriendFields
     PerThreadDataFriendFields();
 
 #ifdef JSGC_TRACK_EXACT_ROOTS
+#if !defined (_MSC_VER) || _MSC_VER >= 1500
   private:
+#else
+  public:
+#endif
+
     /*
      * Stack allocated GC roots for stack GC heap pointers, which may be
      * overwritten if moved during a GC.
@@ -467,7 +479,9 @@ struct PerThreadDataFriendFields
             reinterpret_cast<const char*>(rt) + RuntimeMainThreadOffset);
     }
 
+#if !defined (_MSC_VER) || _MSC_VER >= 1500
     template <typename T> friend class JS::Rooted;
+#endif
 };
 
 } /* namespace js */

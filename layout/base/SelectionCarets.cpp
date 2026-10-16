@@ -38,10 +38,10 @@ static const int32_t kMoveStartTolerancePx = 5;
 // Time for trigger scroll end event, in miliseconds.
 static const int32_t kScrollEndTimerDelay = 300;
 
-NS_IMPL_ISUPPORTS(SelectionCarets,
-                  nsISelectionListener,
-                  nsIScrollObserver,
-                  nsISupportsWeakReference)
+NS_IMPL_ISUPPORTS3(SelectionCarets,
+                   nsISelectionListener,
+                   nsIScrollObserver,
+                   nsISupportsWeakReference)
 
 /*static*/ int32_t SelectionCarets::sSelectionCaretsInflateSize = 0;
 

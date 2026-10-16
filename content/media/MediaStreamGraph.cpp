@@ -2519,7 +2519,7 @@ MediaInputPort::GetNextInputInterval(GraphTime aTime)
   for (;;) {
     if (!mDest->mBlocked.GetAt(t, &end))
       break;
-    if (end == GRAPH_TIME_MAX)
+    if (end >= GRAPH_TIME_MAX)
       return result;
     t = end;
   }
