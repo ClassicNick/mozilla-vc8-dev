@@ -44,6 +44,8 @@ IsPSMError(PRErrorCode error)
 
 NS_IMPL_ISUPPORTS1(NSSErrorsService, nsINSSErrorsService)
 
+NSSErrorsService::~NSSErrorsService() { }
+
 nsresult
 NSSErrorsService::Init()
 {

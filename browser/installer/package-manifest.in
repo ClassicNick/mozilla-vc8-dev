@@ -112,7 +112,6 @@
 @BINPATH@/msvcr120.dll
 #endif
 #endif
-#endif
 #ifndef MOZ_NATIVE_ICU
 #ifdef MOZ_SHARED_ICU
 #ifdef XP_WIN
@@ -134,6 +133,10 @@
 #ifndef MOZ_JEMALLOC3
 @BINPATH@/@DLL_PREFIX@replace_jemalloc@DLL_SUFFIX@
 #endif
+#endif
+#ifdef MOZ_GTK3
+@BINPATH@/@DLL_PREFIX@mozgtk@DLL_SUFFIX@
+@BINPATH@/@DLL_PREFIX@mozgtk2@DLL_SUFFIX@
 #endif
 
 [browser]
@@ -870,7 +873,7 @@ bin/libfreebl_32int64_3.so
 #endif
 
 @BINPATH@/components/DataStore.manifest
-@BINPATH@/components/DataStoreService.js
+@BINPATH@/components/DataStoreImpl.js
 @BINPATH@/components/dom_datastore.xpt
 
 

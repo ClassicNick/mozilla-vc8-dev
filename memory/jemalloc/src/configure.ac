@@ -155,6 +155,10 @@ if test "x${ac_cv_big_endian}" = "x1" ; then
   AC_DEFINE_UNQUOTED([JEMALLOC_BIG_ENDIAN], [ ])
 fi
 
+if test "x${je_cv_msvc}" = "xyes" -a "x${ac_cv_header_inttypes_h}" = "xno"; then
+  CPPFLAGS="$CPPFLAGS -I${srcroot}/include/msvc_compat/C99"
+fi
+
 AC_CHECK_SIZEOF([void *])
 if test "x${ac_cv_sizeof_void_p}" = "x8" ; then
   LG_SIZEOF_PTR=3
@@ -193,7 +197,7 @@ elif test "x${ac_cv_sizeof_intmax_t}" = "x8" ; then
 elif test "x${ac_cv_sizeof_intmax_t}" = "x4" ; then
   LG_SIZEOF_INTMAX_T=2
 else
-  AC_MSG_ERROR([Unsupported intmax_t size: ${ac_cv_sizeof_intmax_t}])
+  AC_MSG_WARN([Unsupported intmax_t size: ${ac_cv_sizeof_intmax_t}])
 fi
 AC_DEFINE_UNQUOTED([LG_SIZEOF_INTMAX_T], [$LG_SIZEOF_INTMAX_T])
 
@@ -1031,7 +1035,7 @@ AC_CACHE_CHECK([STATIC_PAGE_SHIFT],
 if test "x$je_cv_static_page_shift" != "xundefined"; then
    AC_DEFINE_UNQUOTED([STATIC_PAGE_SHIFT], [$je_cv_static_page_shift])
 else
-   AC_MSG_ERROR([cannot determine value for STATIC_PAGE_SHIFT])
+   AC_MSG_WARN([cannot determine value for STATIC_PAGE_SHIFT])
 fi
 
 dnl ============================================================================

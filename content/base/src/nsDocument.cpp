@@ -7669,7 +7669,7 @@ nsDocument::GetViewportInfo(const ScreenIntSize& aDisplaySize)
     // scale were set explicitly by the user.
     if (mValidScaleFloat) {
       CSSSize displaySize = ScreenSize(aDisplaySize) / scaleFloat;
-      size.width = NS_MAXx(size.width, displaySize.width);
+      size.width = NS_MAX(size.width, displaySize.width);
       size.height = NS_MAX(size.height, displaySize.height);
     } else if (mValidMaxScale) {
       CSSSize displaySize = ScreenSize(aDisplaySize) / scaleMaxFloat;

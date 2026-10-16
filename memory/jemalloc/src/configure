@@ -4338,6 +4338,10 @@ _ACEOF
 
 fi
 
+if test "x${je_cv_msvc}" = "xyes" -a "x${ac_cv_header_inttypes_h}" = "xno"; then
+  CPPFLAGS="$CPPFLAGS -I${srcroot}/include/msvc_compat/C99"
+fi
+
 # The cast to long int works around a bug in the HP C Compiler
 # version HP92453-01 B.11.11.23709.GP, which incorrectly rejects
 # declarations like `int a3[[(sizeof (unsigned char)) >= 0]];'.
@@ -4512,8 +4516,6 @@ elif test "x${ac_cv_sizeof_intmax_t}" = "x8" ; then
   LG_SIZEOF_INTMAX_T=3
 elif test "x${ac_cv_sizeof_intmax_t}" = "x4" ; then
   LG_SIZEOF_INTMAX_T=2
-else
-  as_fn_error $? "Unsupported intmax_t size: ${ac_cv_sizeof_intmax_t}" "$LINENO" 5
 fi
 cat >>confdefs.h <<_ACEOF
 #define LG_SIZEOF_INTMAX_T $LG_SIZEOF_INTMAX_T
@@ -6585,8 +6587,6 @@ if test "x$je_cv_static_page_shift" != "xundefined"; then
 #define STATIC_PAGE_SHIFT $je_cv_static_page_shift
 _ACEOF
 
-else
-   as_fn_error $? "cannot determine value for STATIC_PAGE_SHIFT" "$LINENO" 5
 fi
 
 
