@@ -1246,12 +1246,6 @@ JS_IsBuiltinFunctionConstructor(JSFunction *fun);
  * See: http://developer.mozilla.org/en/docs/Category:JSAPI_Reference
  */
 
-typedef enum JSUseHelperThreads
-{
-    JS_NO_HELPER_THREADS,
-    JS_USE_HELPER_THREADS
-} JSUseHelperThreads;
-
 /**
  * Initialize SpiderMonkey, returning true only if initialization succeeded.
  * Once this method has succeeded, it is safe to call JS_NewRuntime and other
@@ -1289,8 +1283,7 @@ extern JS_PUBLIC_API(void)
 JS_ShutDown(void);
 
 extern JS_PUBLIC_API(JSRuntime *)
-JS_NewRuntime(uint32_t maxbytes, JSUseHelperThreads useHelperThreads,
-              JSRuntime *parentRuntime = nullptr);
+JS_NewRuntime(uint32_t maxbytes, JSRuntime *parentRuntime = nullptr);
 
 extern JS_PUBLIC_API(void)
 JS_DestroyRuntime(JSRuntime *rt);

@@ -160,7 +160,6 @@ EXPORTS.mozilla.layers += [
     'opengl/TextureClientOGL.h',
     'opengl/TextureHostOGL.h',
     'RenderTrace.h',
-    'TransactionIdAllocator.h',
     'YCbCrImageDataSerializer.h',
 ]
 

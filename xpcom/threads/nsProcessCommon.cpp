@@ -496,7 +496,7 @@ nsProcess::RunProcess(bool aBlocking, char** aMyArgv, nsIObserver* aObserver,
     if (kernelDLL) {
         GetProcessIdPtr getProcessId = (GetProcessIdPtr)GetProcAddress(kernelDLL, "GetProcessId");
         if (getProcessId)
-            mPid = GetProcessId(mProcess);
+            mPid = getProcessId(mProcess);
         FreeLibrary(kernelDLL);
     }
 #elif defined(XP_MACOSX)
