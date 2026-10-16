@@ -5892,7 +5892,7 @@ JS_NewRegExpObject(JSContext *cx, HandleObject obj, char *bytes, size_t length, 
 {
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
-    jschar *chars = InflateString(cx, bytes, &length);
+    ScopedJSFreePtr<jschar> chars(InflateString(cx, bytes, &length));
     if (!chars)
         return nullptr;
 
@@ -5902,7 +5902,6 @@ JS_NewRegExpObject(JSContext *cx, HandleObject obj, char *bytes, size_t length, 
 
     RegExpObject *reobj = RegExpObject::create(cx, res, chars, length,
                                                RegExpFlag(flags), nullptr, cx->tempLifoAlloc());
-    js_free(chars);
     return reobj;
 }
 
@@ -6102,10 +6101,15 @@ JS_ReportPendingException(JSContext *cx)
 }
 
 JS::AutoSaveExceptionState::AutoSaveExceptionState(JSContext *cx)
-    : context(cx), wasThrowing(cx->throwing), exceptionValue(cx)
+  : context(cx),
+    wasPropagatingForcedReturn(cx->propagatingForcedReturn_),
+    wasThrowing(cx->throwing),
+    exceptionValue(cx)
 {
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
+    if (wasPropagatingForcedReturn)
+        cx->clearPropagatingForcedReturn();
     if (wasThrowing) {
         exceptionValue = cx->unwrappedException_;
         cx->clearPendingException();
@@ -6115,6 +6119,7 @@ JS::AutoSaveExceptionState::AutoSaveExceptionState(JSContext *cx)
 void
 JS::AutoSaveExceptionState::restore()
 {
+    context->propagatingForcedReturn_ = wasPropagatingForcedReturn;
     context->throwing = wasThrowing;
     context->unwrappedException_ = exceptionValue;
     drop();
@@ -6122,6 +6127,8 @@ JS::AutoSaveExceptionState::restore()
 
 JS::AutoSaveExceptionState::~AutoSaveExceptionState()
 {
+    if (wasPropagatingForcedReturn && !context->isPropagatingForcedReturn())
+        context->setPropagatingForcedReturn();
     if (wasThrowing && !context->isExceptionPending()) {
         context->throwing = true;
         context->unwrappedException_ = exceptionValue;

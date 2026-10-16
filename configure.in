@@ -3980,6 +3980,7 @@ MOZ_ANDROID_HISTORY=
 MOZ_WEBSMS_BACKEND=
 MOZ_ANDROID_BEAM=
 MOZ_ANDROID_SYNTHAPKS=
+MOZ_LOCALE_SWITCHER=
 ACCESSIBILITY=1
 MOZ_TIME_MANAGER=
 MOZ_PAY=
@@ -4996,6 +4997,13 @@ MOZ_ARG_DISABLE_BOOL(websms-backend,
 
 if test -n "$MOZ_WEBSMS_BACKEND"; then
     AC_DEFINE(MOZ_WEBSMS_BACKEND)
+fi
+
+dnl ========================================================
+dnl = Enable runtime locale switching on Android
+dnl ========================================================
+if test -n "$MOZ_LOCALE_SWITCHER"; then
+    AC_DEFINE(MOZ_LOCALE_SWITCHER)
 fi
 
 dnl ========================================================
@@ -6371,17 +6379,13 @@ if test "$MOZ_WEBAPP_RUNTIME"; then
     AC_DEFINE(MOZ_WEBAPP_RUNTIME)
 fi
 
-AC_MSG_CHECKING([for tar archiver])
 AC_CHECK_PROGS(TAR, gnutar gtar tar, "")
 if test -z "$TAR"; then
     AC_MSG_ERROR([no tar archiver found in \$PATH])
 fi
-AC_MSG_RESULT([$TAR])
 AC_SUBST(TAR)
 
-AC_MSG_CHECKING([for wget])
 AC_CHECK_PROGS(WGET, wget, "")
-AC_MSG_RESULT([$WGET])
 AC_SUBST(WGET)
 
 dnl ========================================================
@@ -8644,6 +8648,7 @@ AC_SUBST(MOZ_ANDROID_HISTORY)
 AC_SUBST(MOZ_WEBSMS_BACKEND)
 AC_SUBST(MOZ_ANDROID_BEAM)
 AC_SUBST(MOZ_ANDROID_SYNTHAPKS)
+AC_SUBST(MOZ_LOCALE_SWITCHER)
 AC_SUBST(MOZ_DISABLE_GECKOVIEW)
 AC_SUBST(ENABLE_STRIP)
 AC_SUBST(PKG_SKIP_STRIP)

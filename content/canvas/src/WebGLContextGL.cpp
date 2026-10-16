@@ -41,6 +41,7 @@
 #include "nsCocoaFeatures.h"
 #endif
 
+#include "mozilla/DebugOnly.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/ImageData.h"
 #include "mozilla/dom/ToJSValue.h"
@@ -3712,7 +3713,9 @@ WebGLContext::TexImage2D(GLenum target, GLint level,
         return ErrorInvalidValue("texImage2D: null ImageData");
     }
 
-    Uint8ClampedArray arr(pixels->GetDataObject());
+    Uint8ClampedArray arr;
+    DebugOnly<bool> inited = arr.Init(pixels->GetDataObject());
+    MOZ_ASSERT(inited);
     arr.ComputeLengthAndData();
 
     return TexImage2D_base(target, level, internalformat, pixels->Width(),
@@ -3845,7 +3848,9 @@ WebGLContext::TexSubImage2D(GLenum target, GLint level,
     if (!pixels)
         return ErrorInvalidValue("texSubImage2D: pixels must not be null!");
 
-    Uint8ClampedArray arr(pixels->GetDataObject());
+    Uint8ClampedArray arr;
+    DebugOnly<bool> inited = arr.Init(pixels->GetDataObject());
+    MOZ_ASSERT(inited);
     arr.ComputeLengthAndData();
 
     return TexSubImage2D_base(target, level, xoffset, yoffset,

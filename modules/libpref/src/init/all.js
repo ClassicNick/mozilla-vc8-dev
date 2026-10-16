@@ -1831,9 +1831,6 @@ pref("layout.css.masking.enabled", true);
 // Is support for mix-blend-mode enabled?
 pref("layout.css.mix-blend-mode.enabled", true);
 
-// Is support for the the @supports rule enabled?
-pref("layout.css.supports-rule.enabled", true);
-
 // Is support for CSS Filters enabled?
 pref("layout.css.filters.enabled", false);
 
@@ -4171,6 +4168,13 @@ pref("touchcaret.distance.threshold", 1500);
 // When time exceed this expiration time, we'll hide touch caret.
 // In milliseconds. (0 means disable this feature)
 pref("touchcaret.expiration.time", 3000);
+
+// Turn off selection caret by default
+pref("selectioncaret.enabled", false);
+
+// This will inflate size of selection caret frame when we checking if
+// user click on selection caret or not. In app units.
+pref("selectioncaret.inflatesize.threshold", 40);
 
 // Wakelock is disabled by default.
 pref("dom.wakelock.enabled", false);

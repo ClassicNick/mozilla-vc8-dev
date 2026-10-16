@@ -6642,8 +6642,7 @@ class MLoadTypedArrayElement
     bool canProduceFloat32() const { return arrayType_ == ScalarTypeDescr::TYPE_FLOAT32; }
 };
 
-// Load a value from a typed array. Out-of-bounds accesses are handled using
-// a VM call.
+// Load a value from a typed array. Out-of-bounds accesses are handled in-line.
 class MLoadTypedArrayElementHole
   : public MBinaryInstruction,
     public SingleObjectPolicy
@@ -8817,7 +8816,7 @@ class MCeil
   : public MUnaryInstruction,
     public FloatingPointPolicy<0>
 {
-    MCeil(MDefinition *num)
+    explicit MCeil(MDefinition *num)
       : MUnaryInstruction(num)
     {
         setResultType(MIRType_Int32);

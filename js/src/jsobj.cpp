@@ -263,21 +263,22 @@ js::NewPropertyDescriptorObject(JSContext *cx, Handle<PropertyDescriptor> desc,
         return true;
     }
 
-    /* We have our own property, so start creating the descriptor. */
-    AutoPropDescRooter d(cx);
+    Rooted<PropDesc> d(cx);
 
     d.initFromPropertyDescriptor(desc);
     if (!d.makeObject(cx))
         return false;
-    vp.set(d.pd());
+    vp.set(d.descriptorValue());
     return true;
 }
 
 void
 PropDesc::initFromPropertyDescriptor(Handle<PropertyDescriptor> desc)
 {
+    MOZ_ASSERT(isUndefined());
+
     isUndefined_ = false;
-    pd_.setUndefined();
+    descObj_ = nullptr;
     attrs = uint8_t(desc.attributes());
     JS_ASSERT_IF(attrs & JSPROP_READONLY, !(attrs & (JSPROP_GETTER | JSPROP_SETTER)));
     if (desc.hasGetterOrSetterObject()) {
@@ -334,7 +335,7 @@ PropDesc::makeObject(JSContext *cx)
         return false;
     }
 
-    pd_.setObject(*obj);
+    descObj_ = obj;
     return true;
 }
 
@@ -434,6 +435,8 @@ HasProperty(JSContext *cx, HandleObject obj, HandleId id, MutableHandleValue vp,
 bool
 PropDesc::initialize(JSContext *cx, const Value &origval, bool checkAccessors)
 {
+    MOZ_ASSERT(isUndefined());
+
     RootedValue v(cx, origval);
 
     /* 8.10.5 step 1 */
@@ -444,7 +447,7 @@ PropDesc::initialize(JSContext *cx, const Value &origval, bool checkAccessors)
     RootedObject desc(cx, &v.toObject());
 
     /* Make a copy of the descriptor. We might need it later. */
-    pd_ = v;
+    descObj_ = desc;
 
     isUndefined_ = false;
 
@@ -536,6 +539,8 @@ PropDesc::initialize(JSContext *cx, const Value &origval, bool checkAccessors)
 void
 PropDesc::complete()
 {
+    MOZ_ASSERT(!isUndefined());
+
     if (isGenericDescriptor() || isDataDescriptor()) {
         if (!hasValue_) {
             hasValue_ = true;
@@ -1049,7 +1054,7 @@ js::DefineProperty(JSContext *cx, HandleObject obj, HandleId id, const PropDesc 
          * TrapDefineOwnProperty directly
          */
         if (obj->is<ProxyObject>()) {
-            RootedValue pd(cx, desc.pd());
+            RootedValue pd(cx, desc.descriptorValue());
             return Proxy::defineProperty(cx, obj, id, pd);
         }
         return Reject(cx, (JSObject*) obj, JSMSG_OBJECT_NOT_EXTENSIBLE, throwError, rval);
@@ -1062,13 +1067,12 @@ bool
 js::DefineOwnProperty(JSContext *cx, HandleObject obj, HandleId id, HandleValue descriptor,
                       bool *bp)
 {
-    AutoPropDescArrayRooter descs(cx);
-    PropDesc *desc = descs.append();
-    if (!desc || !desc->initialize(cx, descriptor))
+    Rooted<PropDesc> desc(cx);
+    if (!desc.initialize(cx, descriptor))
         return false;
 
     bool rval;
-    if (!DefineProperty(cx, obj, id, *desc, true, &rval))
+    if (!DefineProperty(cx, obj, id, desc, true, &rval))
         return false;
     *bp = !!rval;
     return true;
@@ -1078,15 +1082,12 @@ bool
 js::DefineOwnProperty(JSContext *cx, HandleObject obj, HandleId id,
                       Handle<PropertyDescriptor> descriptor, bool *bp)
 {
-    AutoPropDescArrayRooter descs(cx);
-    PropDesc *desc = descs.append();
-    if (!desc)
-        return false;
+    Rooted<PropDesc> desc(cx);
 
-    desc->initFromPropertyDescriptor(descriptor);
+    desc.initFromPropertyDescriptor(descriptor);
 
     bool rval;
-    if (!DefineProperty(cx, obj, id, *desc, true, &rval))
+    if (!DefineProperty(cx, obj, id, desc, true, &rval))
         return false;
     *bp = !!rval;
     return true;
@@ -1095,7 +1096,7 @@ js::DefineOwnProperty(JSContext *cx, HandleObject obj, HandleId id,
 
 bool
 js::ReadPropertyDescriptors(JSContext *cx, HandleObject props, bool checkAccessors,
-                            AutoIdVector *ids, AutoPropDescArrayRooter *descs)
+                            AutoIdVector *ids, AutoPropDescVector *descs)
 {
     if (!GetPropertyNames(cx, props, JSITER_OWNONLY, ids))
         return false;
@@ -1103,11 +1104,11 @@ js::ReadPropertyDescriptors(JSContext *cx, HandleObject props, bool checkAccesso
     RootedId id(cx);
     for (size_t i = 0, len = ids->length(); i < len; i++) {
         id = (*ids)[i];
-        PropDesc* desc = descs->append();
+        Rooted<PropDesc> desc(cx);
         RootedValue v(cx);
-        if (!desc ||
-            !JSObject::getGeneric(cx, props, props, id, &v) ||
-            !desc->initialize(cx, v, checkAccessors))
+        if (!JSObject::getGeneric(cx, props, props, id, &v) ||
+            !desc.initialize(cx, v, checkAccessors) ||
+            !descs->append(desc))
         {
             return false;
         }
@@ -1119,7 +1120,7 @@ bool
 js::DefineProperties(JSContext *cx, HandleObject obj, HandleObject props)
 {
     AutoIdVector ids(cx);
-    AutoPropDescArrayRooter descs(cx);
+    AutoPropDescVector descs(cx);
     if (!ReadPropertyDescriptors(cx, props, true, &ids, &descs))
         return false;
 
@@ -1140,7 +1141,7 @@ js::DefineProperties(JSContext *cx, HandleObject obj, HandleObject props)
          */
         if (obj->is<ProxyObject>()) {
             for (size_t i = 0, len = ids.length(); i < len; i++) {
-                RootedValue pd(cx, descs[i].pd());
+                RootedValue pd(cx, descs[i].descriptorValue());
                 if (!Proxy::defineProperty(cx, obj, ids[i], pd))
                     return false;
             }

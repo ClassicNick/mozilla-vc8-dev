@@ -32,7 +32,7 @@ struct ObjectsExtraSizes;
 
 namespace js {
 
-class AutoPropDescArrayRooter;
+class AutoPropDescVector;
 struct GCMarker;
 struct NativeIterator;
 class Nursery;
@@ -1431,7 +1431,7 @@ DefineProperties(JSContext *cx, HandleObject obj, HandleObject props);
  */
 extern bool
 ReadPropertyDescriptors(JSContext *cx, HandleObject props, bool checkAccessors,
-                        AutoIdVector *ids, AutoPropDescArrayRooter *descs);
+                        AutoIdVector *ids, AutoPropDescVector *descs);
 
 /* Read the name using a dynamic lookup on the scopeChain. */
 extern bool

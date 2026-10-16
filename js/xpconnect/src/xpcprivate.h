@@ -481,6 +481,7 @@ public:
         IDX_EXPOSEDPROPS            ,
         IDX_EVAL                    ,
         IDX_CONTROLLERS             ,
+        IDX_REALFRAMEELEMENT        ,
         IDX_TOTAL_COUNT // just a count of the above
     };
 
