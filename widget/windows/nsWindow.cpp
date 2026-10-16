@@ -1958,7 +1958,7 @@ NS_METHOD nsWindow::GetRestoredBounds(nsIntRect &aRect)
     return NS_ERROR_FAILURE;
   }
 
-  WINDOWPLACEMENT pl = { sizeof WINDOWPLACEMENT, };
+  WINDOWPLACEMENT pl = { sizeof(WINDOWPLACEMENT) };
   VERIFY(::GetWindowPlacement(mWnd, &pl));
   const RECT& r = pl.rcNormalPosition;
 
@@ -1966,7 +1966,7 @@ NS_METHOD nsWindow::GetRestoredBounds(nsIntRect &aRect)
   if (!monitor) {
     return NS_ERROR_FAILURE;
   }
-  MONITORINFO mi = { sizeof MONITORINFO, };
+  MONITORINFO mi = { sizeof(MONITORINFO) };
   VERIFY(::GetMonitorInfo(monitor, &mi));
 
   aRect.SetRect(r.left, r.top, r.right - r.left, r.bottom - r.top);

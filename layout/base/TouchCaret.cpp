@@ -31,7 +31,7 @@
 
 using namespace mozilla;
 
-#define TOUCHCARET_LOG(...)
+#define TOUCHCARET_LOG(a)
 // #define TOUCHCARET_LOG(...) printf_stderr("TouchCaret: " __VA_ARGS__)
 
 // Click on the boundary of input/textarea will place the caret at the
@@ -41,7 +41,7 @@ static const int32_t kBoundaryAppUnits = 61;
 // The auto scroll timer's interval in milliseconds.
 static const int32_t kAutoScrollTimerDelay = 30;
 
-NS_IMPL_ISUPPORTS(TouchCaret, nsISelectionListener)
+NS_IMPL_ISUPPORTS1(TouchCaret, nsISelectionListener)
 
 /*static*/ int32_t TouchCaret::sTouchCaretMaxDistance = 0;
 /*static*/ int32_t TouchCaret::sTouchCaretExpirationTime = 0;

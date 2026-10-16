@@ -397,7 +397,7 @@ public:
   }
 
   NS_IMETHOD Run() MOZ_OVERRIDE MOZ_FINAL {
-    auto owner = mDecoder->GetOwner();
+    MediaDecoderOwner* owner = mDecoder->GetOwner();
     if (owner) {
       owner->UpdateReadyStateForData(MediaDecoderOwner::NEXT_FRAME_WAIT_FOR_MSE_DATA);
     }

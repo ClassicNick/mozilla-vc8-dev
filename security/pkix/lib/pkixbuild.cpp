@@ -251,7 +251,7 @@ BuildForward(TrustDomain& trustDomain,
     return rv;
   }
 
-  if (endEntityOrCA == EndEntityOrCA::MustBeCA) {
+  if (endEntityOrCA == MustBeCA) {
     // Avoid stack overflows and poor performance by limiting cert chain
     // length.
     static const unsigned int MAX_SUBCA_COUNT = 6;

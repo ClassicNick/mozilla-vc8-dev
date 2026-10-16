@@ -4088,13 +4088,13 @@ cross_compiling=$ac_cv_prog_cc_cross
         fi
         if test "$_CC_MAJOR_VERSION" = "13"; then
             _CC_SUITE=7
-            CFLAGS="$CFLAGS -wd4002 -wd4003 -wd4146 -wd4161 -wd4275 -wd4288 -wd4355 -wd4396 -wd4530 -wd4661 -wd4667"
-            CXXFLAGS="$CXXFLAGS -wd4002 -wd4003 -wd4146 -wd4161 -wd4275 -wd4288 -wd4355 -wd4396 -wd4530 -wd4661 -wd4667"
+            CFLAGS="$CFLAGS -wd4002 -wd4003 -wd4146 -wd4161 -wd4275 -wd4288 -wd4355 -wd4396 -wd4521 -wd4522 -wd4530 -wd4661 -wd4667"
+            CXXFLAGS="$CXXFLAGS -wd4002 -wd4003 -wd4146 -wd4161 -wd4275 -wd4288 -wd4355 -wd4396 -wd4521 -wd4522 -wd4530 -wd4661 -wd4667"
         elif test "$_CC_MAJOR_VERSION" = "14"; then
             _CC_SUITE=8
             _MSVS_VERSION=2005
-            CFLAGS="$CFLAGS -wd4002 -wd4003 -wd4146 -wd4161 -wd4275 -wd4355 -wd4396 -wd4530 -wd4661"
-            CXXFLAGS="$CXXFLAGS -wd4002 -wd4003 -wd4146 -wd4161 -wd4275 -wd4355 -wd4396 -wd4530 -wd4661"
+            CFLAGS="$CFLAGS -wd4002 -wd4003 -wd4146 -wd4161 -wd4275 -wd4355 -wd4396 -wd4521 -wd4522 -wd4530 -wd4661"
+            CXXFLAGS="$CXXFLAGS -wd4002 -wd4003 -wd4146 -wd4161 -wd4275 -wd4355 -wd4396 -wd4521 -wd4522 -wd4530 -wd4661"
             cat >> confdefs.pytmp <<\EOF
     (''' _CRT_SECURE_NO_DEPRECATE ''', ' 1 ')
 EOF
@@ -4112,8 +4112,8 @@ EOF
         elif test "$_CC_MAJOR_VERSION" = "15"; then
             _CC_SUITE=9
             _MSVS_VERSION=2008
-            CFLAGS="$CFLAGS -wd4002 -wd4003 -wd4146 -wd4161 -wd4275 -wd4355 -wd4396 -wd4530 -wd4661"
-            CXXFLAGS="$CXXFLAGS -wd4002 -wd4003 -wd4146 -wd4161 -wd4275 -wd4355 -wd4396 -wd4530 -wd4661"
+            CFLAGS="$CFLAGS -wd4002 -wd4003 -wd4146 -wd4161 -wd4275 -wd4355 -wd4396 -wd4521 -wd4522 -wd4530 -wd4661"
+            CXXFLAGS="$CXXFLAGS -wd4002 -wd4003 -wd4146 -wd4161 -wd4275 -wd4355 -wd4396 -wd4521 -wd4522 -wd4530 -wd4661"
             cat >> confdefs.pytmp <<\EOF
     (''' _CRT_SECURE_NO_WARNINGS ''', ' 1 ')
 EOF
@@ -28336,15 +28336,17 @@ HAVE_SYS_MOUNT_H
 
 
 
-if test "$MOZ_BUILD_APP" = "browser"; then
-    _INTL_API=yes
-else
-    # Internationalization isn't built or exposed by default in non-desktop
-    # builds.  Bugs to enable:
-    #
-    #   Android:  bug 864843
-    #   B2G:      bug 866301
+# Internationalization isn't built or exposed by default in non-desktop
+# builds.  Bugs to enable:
+#
+#   Android:  bug 864843
+#   B2G:      bug 866301
+
+if test "$MOZ_WIDGET_TOOLKIT" = "android" ||
+   test "$MOZ_BUILD_APP" = "b2g"; then
     _INTL_API=no
+else
+    _INTL_API=yes
 fi
 
 
@@ -28371,7 +28373,7 @@ if test -n "$MOZ_NATIVE_ICU"; then
     # Extract the first word of "pkg-config", so it can be a program name with args.
 set dummy pkg-config; ac_word=$2
 echo $ac_n "checking for $ac_word""... $ac_c" 1>&6
-echo "configure:28375: checking for $ac_word" >&5
+echo "configure:28377: checking for $ac_word" >&5
 if eval "test \"`echo '$''{'ac_cv_path_PKG_CONFIG'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
@@ -28415,19 +28417,19 @@ fi
      PKG_CONFIG_MIN_VERSION=0.9.0
      if $PKG_CONFIG --atleast-pkgconfig-version $PKG_CONFIG_MIN_VERSION; then
         echo $ac_n "checking for icu-i18n >= 50.1""... $ac_c" 1>&6
-echo "configure:28419: checking for icu-i18n >= 50.1" >&5
+echo "configure:28421: checking for icu-i18n >= 50.1" >&5
 
         if $PKG_CONFIG --exists "icu-i18n >= 50.1" ; then
             echo "$ac_t""yes" 1>&6
             succeeded=yes
 
             echo $ac_n "checking MOZ_ICU_CFLAGS""... $ac_c" 1>&6
-echo "configure:28426: checking MOZ_ICU_CFLAGS" >&5
+echo "configure:28428: checking MOZ_ICU_CFLAGS" >&5
             MOZ_ICU_CFLAGS=`$PKG_CONFIG --cflags "icu-i18n >= 50.1"`
             echo "$ac_t""$MOZ_ICU_CFLAGS" 1>&6
 
             echo $ac_n "checking MOZ_ICU_LIBS""... $ac_c" 1>&6
-echo "configure:28431: checking MOZ_ICU_LIBS" >&5
+echo "configure:28433: checking MOZ_ICU_LIBS" >&5
             ## Remove evil flags like -Wl,--export-dynamic
             MOZ_ICU_LIBS="`$PKG_CONFIG --libs \"icu-i18n >= 50.1\" |sed s/-Wl,--export-dynamic//g`"
             echo "$ac_t""$MOZ_ICU_LIBS" 1>&6
@@ -30270,6 +30272,7 @@ if test -z "$direct_nspr_config"; then
     LDFLAGS="$_SUBDIR_LDFLAGS"
     HOST_CC="$_SUBDIR_HOST_CC"
     HOST_CFLAGS="$_SUBDIR_HOST_CFLAGS"
+    HOST_CXXFLAGS="$_SUBDIR_HOST_CXXFLAGS"
     HOST_LDFLAGS="$_SUBDIR_HOST_LDFLAGS"
     RC=
 fi
@@ -30618,6 +30621,7 @@ CXXFLAGS="$_SUBDIR_CXXFLAGS"
 LDFLAGS="$_SUBDIR_LDFLAGS"
 HOST_CC="$_SUBDIR_HOST_CC"
 HOST_CFLAGS="$_SUBDIR_HOST_CFLAGS"
+HOST_CXXFLAGS="$_SUBDIR_HOST_CXXFLAGS"
 HOST_LDFLAGS="$_SUBDIR_HOST_LDFLAGS"
 RC=
 
