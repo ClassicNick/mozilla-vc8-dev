@@ -2785,11 +2785,14 @@ GLPresenter::GLPresenter(GLContext* aContext)
   mGLContext->fGenBuffers(1, &mQuadVBO);
   mGLContext->fBindBuffer(LOCAL_GL_ARRAY_BUFFER, mQuadVBO);
 
+  // 1 quad, with the number of the quad (vertexID) encoded in w.
   GLfloat vertices[] = {
-    /* First quad vertices */
-    0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f,
-    /* Then quad texcoords */
-    0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f,
+    0.0f, 0.0f, 0.0f, 0.0f,
+    1.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 1.0f, 0.0f, 0.0f,
+    1.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 1.0f, 0.0f, 0.0f,
+    1.0f, 1.0f, 0.0f, 0.0f,
   };
   HeapCopyOfStackArray<GLfloat> verticesOnHeap(vertices);
   mGLContext->fBufferData(LOCAL_GL_ARRAY_BUFFER,
@@ -2831,7 +2834,7 @@ GLPresenter::BindAndDrawQuad(ShaderProgramOGL *aProgram,
                                    LOCAL_GL_FLOAT, LOCAL_GL_FALSE, 0,
                                    (GLvoid*)0);
   mGLContext->fEnableVertexAttribArray(coordAttribIndex);
-  mGLContext->fDrawArrays(LOCAL_GL_TRIANGLE_STRIP, 0, 4);
+  mGLContext->fDrawArrays(LOCAL_GL_TRIANGLES, 0, 6);
   mGLContext->fDisableVertexAttribArray(coordAttribIndex);
 }
 
@@ -3549,7 +3552,8 @@ NSEvent* gLastDragMouseDownEvent = nil;
     return;
   }
 
-  PROFILER_LABEL("widget", "ChildView::drawRect");
+  PROFILER_LABEL("ChildView", "drawRect",
+    js::ProfileEntry::Category::GRAPHICS);
 
   // The CGContext that drawRect supplies us with comes with a transform that
   // scales one user space unit to one Cocoa point, which can consist of
@@ -3670,7 +3674,8 @@ NSEvent* gLastDragMouseDownEvent = nil;
 
 - (void)drawUsingOpenGL
 {
-  PROFILER_LABEL("widget", "ChildView::drawUsingOpenGL");
+  PROFILER_LABEL("ChildView", "drawUsingOpenGL",
+    js::ProfileEntry::Category::GRAPHICS);
 
   if (![self isUsingOpenGL] || !mGeckoChild->IsVisible())
     return;

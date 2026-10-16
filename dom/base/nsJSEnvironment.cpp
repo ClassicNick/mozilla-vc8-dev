@@ -1723,7 +1723,8 @@ nsJSContext::GarbageCollectNow(JS::gcreason::Reason aReason,
                                IsShrinking aShrinking,
                                int64_t aSliceMillis)
 {
-  PROFILER_LABEL("GC", "GarbageCollectNow");
+  PROFILER_LABEL("nsJSContext", "GarbageCollectNow",
+    js::ProfileEntry::Category::GC);
 
   MOZ_ASSERT_IF(aSliceMillis, aIncremental == IncrementalGC);
 
@@ -1765,7 +1766,8 @@ nsJSContext::GarbageCollectNow(JS::gcreason::Reason aReason,
 void
 nsJSContext::ShrinkGCBuffersNow()
 {
-  PROFILER_LABEL("GC", "ShrinkGCBuffersNow");
+  PROFILER_LABEL("nsJSContext", "ShrinkGCBuffersNow",
+    js::ProfileEntry::Category::GC);
 
   KillShrinkGCBuffersTimer();
 
@@ -1946,7 +1948,9 @@ nsJSContext::CycleCollectNow(nsICycleCollectorListener *aListener,
     return;
   }
 
-  PROFILER_LABEL("CC", "CycleCollectNow");
+  PROFILER_LABEL("nsJSContext", "CycleCollectNow",
+    js::ProfileEntry::Category::CC);
+
   gCCStats.PrepareForCycleCollectionSlice(aExtraForgetSkippableCalls);
   nsCycleCollector_collect(aListener);
   gCCStats.FinishCycleCollectionSlice();
@@ -1960,7 +1964,8 @@ nsJSContext::RunCycleCollectorSlice()
     return;
   }
 
-  PROFILER_LABEL("CC", "RunCycleCollectorSlice");
+  PROFILER_LABEL("nsJSContext", "RunCycleCollectorSlice",
+    js::ProfileEntry::Category::CC);
 
   gCCStats.PrepareForCycleCollectionSlice();
 
@@ -1996,7 +2001,8 @@ nsJSContext::RunCycleCollectorWorkSlice(int64_t aWorkBudget)
     return;
   }
 
-  PROFILER_LABEL("CC", "RunCycleCollectorWorkSlice");
+  PROFILER_LABEL("nsJSContext", "RunCycleCollectorWorkSlice",
+    js::ProfileEntry::Category::CC);
 
   gCCStats.PrepareForCycleCollectionSlice();
   nsCycleCollector_collectSliceWork(aWorkBudget);

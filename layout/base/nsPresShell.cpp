@@ -75,6 +75,7 @@
 #include "nsReadableUtils.h"
 #include "nsIPageSequenceFrame.h"
 #include "nsCaret.h"
+#include "TouchCaret.h"
 #include "nsIDOMHTMLDocument.h"
 #include "nsFrameManager.h"
 #include "nsXPCOM.h"
@@ -701,6 +702,18 @@ nsIPresShell::FrameSelection()
 static bool sSynthMouseMove = true;
 static uint32_t sNextPresShellId;
 static bool sPointerEventEnabled = true;
+static bool sTouchCaretEnabled = false;
+
+/* static */ bool
+PresShell::TouchCaretPrefEnabled()
+{
+  static bool initialized = false;
+  if (!initialized) {
+    Preferences::AddBoolVarCache(&sTouchCaretEnabled, "touchcaret.enabled");
+    initialized = true;
+  }
+  return sTouchCaretEnabled;
+}
 
 PresShell::PresShell()
   : mMouseLocation(NS_UNCONSTRAINEDSIZE, NS_UNCONSTRAINEDSIZE)
@@ -850,6 +863,11 @@ PresShell::Init(nsIDocument* aDocument,
   // setup the preference style rules (no forced reflow), and do it
   // before creating any frames.
   SetPreferenceStyleRules(false);
+
+  if (TouchCaretPrefEnabled()) {
+    // Create touch caret handle
+    mTouchCaret = new TouchCaret(this);
+  }
 
   NS_ADDREF(mSelection = new nsFrameSelection());
 
@@ -1105,6 +1123,11 @@ PresShell::Destroy()
 
   if (mSelection) {
     mSelection->DisconnectFromPresShell();
+  }
+
+  if (mTouchCaret) {
+    mTouchCaret->Terminate();
+    mTouchCaret = nullptr;
   }
 
   // release our pref style sheet, if we have one still
@@ -2134,6 +2157,13 @@ already_AddRefed<nsCaret> PresShell::GetCaret() const
   return caret.forget();
 }
 
+// TouchCaret
+already_AddRefed<TouchCaret> PresShell::GetTouchCaret() const
+{
+  nsRefPtr<TouchCaret> touchCaret = mTouchCaret;
+  return touchCaret.forget();
+}
+
 void PresShell::MaybeInvalidateCaretPosition()
 {
   if (mCaret) {
@@ -2157,14 +2187,21 @@ NS_IMETHODIMP PresShell::SetCaretEnabled(bool aInEnable)
 
   mCaretEnabled = aInEnable;
 
-  if (mCaret && (mCaretEnabled != oldEnabled))
+  if (mCaretEnabled != oldEnabled)
   {
 /*  Don't change the caret's selection here! This was an evil side-effect of SetCaretEnabled()
     nsCOMPtr<nsIDOMSelection> domSel;
     if (NS_SUCCEEDED(GetSelection(nsISelectionController::SELECTION_NORMAL, getter_AddRefs(domSel))) && domSel)
       mCaret->SetCaretDOMSelection(domSel);
 */
-    mCaret->SetCaretVisible(mCaretEnabled);
+
+    MOZ_ASSERT(mCaret || mTouchCaret);
+    if (mCaret) {
+      mCaret->SetCaretVisible(mCaretEnabled);
+    }
+    if (mTouchCaret) {
+      mTouchCaret->UpdateTouchCaret(mCaretEnabled);
+    }
   }
 
   return NS_OK;
@@ -2470,6 +2507,65 @@ PresShell::GetPageSequenceFrame() const
 {
   nsIFrame* frame = mFrameConstructor->GetPageSequenceFrame();
   return do_QueryFrame(frame);
+}
+
+nsCanvasFrame*
+PresShell::GetCanvasFrame() const
+{
+  nsIFrame* frame = mFrameConstructor->GetDocElementContainingBlock();
+  return do_QueryFrame(frame);
+}
+
+Element*
+PresShell::GetTouchCaretElement() const
+{
+  return GetCanvasFrame() ? GetCanvasFrame()->GetTouchCaretElement() : nullptr;
+}
+
+void
+PresShell::SetMayHaveTouchCaret(bool aSet)
+{
+  if (!mPresContext) {
+    return;
+  }
+
+  if (!mPresContext->IsRoot()) {
+    nsIPresShell* rootPresShell = GetRootPresShell();
+    if (rootPresShell) {
+      rootPresShell->SetMayHaveTouchCaret(aSet);
+    }
+    return;
+  }
+
+  nsIDocument* document = GetDocument();
+  if (document) {
+    nsPIDOMWindow* innerWin = document->GetInnerWindow();
+    if (innerWin) {
+      innerWin->SetMayHaveTouchCaret(aSet);
+    }
+  }
+}
+
+bool
+PresShell::MayHaveTouchCaret()
+{
+  if (!mPresContext) {
+    return false;
+  }
+
+  if (!mPresContext->IsRoot()) {
+    nsIPresShell* rootPresShell = GetRootPresShell();
+    return rootPresShell ? rootPresShell->MayHaveTouchCaret() : false;
+  }
+
+  nsIDocument* document = GetDocument();
+  if (document) {
+    nsPIDOMWindow* innerWin = document->GetInnerWindow();
+    if (innerWin) {
+      return innerWin->MayHaveTouchCaret();
+    }
+  }
+  return false;
 }
 
 void
@@ -3966,8 +4062,8 @@ PresShell::FlushPendingNotifications(mozilla::ChangesToFlush aFlush)
   // Make sure that we don't miss things added to mozFlushType!
   MOZ_ASSERT(static_cast<uint32_t>(flushType) <= ArrayLength(flushTypeNames));
 
-  PROFILER_LABEL_PRINTF("layout", "Flush", "(Flush_%s)",
-                      flushTypeNames[flushType - 1]);
+  PROFILER_LABEL_PRINTF("PresShell", "Flush",
+    js::ProfileEntry::Category::GRAPHICS, "(Flush_%s)", flushTypeNames[flushType - 1]);
 #endif
 
 #ifdef ACCESSIBILITY
@@ -5813,7 +5909,9 @@ PresShell::Paint(nsView*        aViewToPaint,
                  const nsRegion& aDirtyRegion,
                  uint32_t        aFlags)
 {
-  PROFILER_LABEL("Paint", "PresShell::Paint");
+  PROFILER_LABEL("PresShell", "Paint",
+    js::ProfileEntry::Category::GRAPHICS);
+
   NS_ASSERTION(!mIsDestroying, "painting a destroyed PresShell");
   NS_ASSERTION(aViewToPaint, "null view");
 
@@ -6534,6 +6632,29 @@ PresShell::HandleEvent(nsIFrame* aFrame,
   }
 
   RecordMouseLocation(aEvent);
+
+  // Determine whether event need to be consumed by touch caret or not.
+  if (TouchCaretPrefEnabled()) {
+    // We have to target the focus window because regardless of where the
+    // touch goes, we want to access the touch caret when user is typing on an
+    // editable element.
+    nsCOMPtr<nsPIDOMWindow> window = GetFocusedDOMWindowInOurWindow();
+    nsCOMPtr<nsIDocument> retargetEventDoc = window ? window->GetExtantDoc() : nullptr;
+    nsCOMPtr<nsIPresShell> presShell = retargetEventDoc ?
+                                       retargetEventDoc->GetShell() :
+                                       nullptr;
+    nsRefPtr<TouchCaret> touchCaret = presShell ? presShell->GetTouchCaret() : nullptr;
+    if (touchCaret) {
+      *aEventStatus = touchCaret->HandleEvent(aEvent);
+      if (*aEventStatus == nsEventStatus_eConsumeNoDefault) {
+        // If the event is consumed by the touch caret, cancel APZC panning by
+        // setting mMultipleActionsPrevented.
+        aEvent->mFlags.mMultipleActionsPrevented = true;
+        return NS_OK;
+      }
+    }
+  }
+
   if (sPointerEventEnabled) {
     UpdateActivePointerState(aEvent);
   }
@@ -8108,7 +8229,7 @@ PresShell::Freeze()
   mDocument->EnumerateFreezableElements(FreezeElement, nullptr);
 
   if (mCaret) {
-    mCaret->SetCaretVisible(false);
+    SetCaretEnabled(false);
   }
 
   mPaintingSuppressed = true;
@@ -8370,7 +8491,9 @@ PresShell::DoReflow(nsIFrame* target, bool aInterruptible)
   nsIURI *uri = mDocument->GetDocumentURI();
   if (uri)
     uri->GetSpec(docURL);
-  PROFILER_LABEL_PRINTF("layout", "DoReflow", "(%s)", docURL.get());
+
+  PROFILER_LABEL_PRINTF("PresShell", "DoReflow",
+    js::ProfileEntry::Category::GRAPHICS, "(%s)", docURL.get());
 
   if (mReflowContinueTimer) {
     mReflowContinueTimer->Cancel();

@@ -2230,6 +2230,66 @@ nsLayoutUtils::TransformPoints(nsIFrame* aFromFrame, nsIFrame* aToFrame,
   return TRANSFORM_SUCCEEDED;
 }
 
+nsLayoutUtils::TransformResult
+nsLayoutUtils::TransformPoint(nsIFrame* aFromFrame, nsIFrame* aToFrame,
+                              nsPoint& aPoint)
+{
+  nsIFrame* nearestCommonAncestor = FindNearestCommonAncestorFrame(aFromFrame, aToFrame);
+  if (!nearestCommonAncestor) {
+    return NO_COMMON_ANCESTOR;
+  }
+  gfx3DMatrix downToDest = GetTransformToAncestor(aToFrame, nearestCommonAncestor);
+  if (downToDest.IsSingular()) {
+    return NONINVERTIBLE_TRANSFORM;
+  }
+  downToDest.Invert();
+  gfx3DMatrix upToAncestor = GetTransformToAncestor(aFromFrame, nearestCommonAncestor);
+
+  float devPixelsPerAppUnitFromFrame =
+    1.0f / aFromFrame->PresContext()->AppUnitsPerDevPixel();
+  float devPixelsPerAppUnitToFrame =
+    1.0f / aToFrame->PresContext()->AppUnitsPerDevPixel();
+  gfxPoint toDevPixels = downToDest.ProjectPoint(
+      upToAncestor.ProjectPoint(
+        gfxPoint(aPoint.x * devPixelsPerAppUnitFromFrame,
+                 aPoint.y * devPixelsPerAppUnitFromFrame)));
+  aPoint.x = toDevPixels.x / devPixelsPerAppUnitToFrame;
+  aPoint.y = toDevPixels.y / devPixelsPerAppUnitToFrame;
+  return TRANSFORM_SUCCEEDED;
+}
+
+nsLayoutUtils::TransformResult
+nsLayoutUtils::TransformRect(nsIFrame* aFromFrame, nsIFrame* aToFrame,
+                             nsRect& aRect)
+{
+  nsIFrame* nearestCommonAncestor = FindNearestCommonAncestorFrame(aFromFrame, aToFrame);
+  if (!nearestCommonAncestor) {
+    return NO_COMMON_ANCESTOR;
+  }
+  gfx3DMatrix downToDest = GetTransformToAncestor(aToFrame, nearestCommonAncestor);
+  if (downToDest.IsSingular()) {
+    return NONINVERTIBLE_TRANSFORM;
+  }
+  downToDest.Invert();
+  gfx3DMatrix upToAncestor = GetTransformToAncestor(aFromFrame, nearestCommonAncestor);
+
+  float devPixelsPerAppUnitFromFrame =
+    1.0f / aFromFrame->PresContext()->AppUnitsPerDevPixel();
+  float devPixelsPerAppUnitToFrame =
+    1.0f / aToFrame->PresContext()->AppUnitsPerDevPixel();
+  gfxRect toDevPixels = downToDest.ProjectRectBounds(
+    upToAncestor.ProjectRectBounds(
+      gfxRect(aRect.x * devPixelsPerAppUnitFromFrame,
+              aRect.y * devPixelsPerAppUnitFromFrame,
+              aRect.width * devPixelsPerAppUnitFromFrame,
+              aRect.height * devPixelsPerAppUnitFromFrame)));
+  aRect.x = toDevPixels.x / devPixelsPerAppUnitToFrame;
+  aRect.y = toDevPixels.y / devPixelsPerAppUnitToFrame;
+  aRect.width = toDevPixels.width / devPixelsPerAppUnitToFrame;
+  aRect.height = toDevPixels.height / devPixelsPerAppUnitToFrame;
+  return TRANSFORM_SUCCEEDED;
+}
+
 bool
 nsLayoutUtils::GetLayerTransformForFrame(nsIFrame* aFrame,
                                          gfx3DMatrix* aTransform)
@@ -2484,7 +2544,9 @@ nsLayoutUtils::GetRemoteContentIds(nsIFrame* aFrame,
 nsIFrame*
 nsLayoutUtils::GetFrameForPoint(nsIFrame* aFrame, nsPoint aPt, uint32_t aFlags)
 {
-  PROFILER_LABEL("nsLayoutUtils", "GetFrameForPoint");
+  PROFILER_LABEL("nsLayoutUtils", "GetFrameForPoint",
+    js::ProfileEntry::Category::GRAPHICS);
+
   nsresult rv;
   nsAutoTArray<nsIFrame*,8> outFrames;
   rv = GetFramesForArea(aFrame, nsRect(aPt, nsSize(1, 1)), outFrames, aFlags);
@@ -2497,7 +2559,9 @@ nsLayoutUtils::GetFramesForArea(nsIFrame* aFrame, const nsRect& aRect,
                                 nsTArray<nsIFrame*> &aOutFrames,
                                 uint32_t aFlags)
 {
-  PROFILER_LABEL("nsLayoutUtils","GetFramesForArea");
+  PROFILER_LABEL("nsLayoutUtils", "GetFramesForArea",
+    js::ProfileEntry::Category::GRAPHICS);
+
   nsDisplayListBuilder builder(aFrame, nsDisplayListBuilder::EVENT_DELIVERY,
                                false);
   nsDisplayList list;
@@ -2639,7 +2703,9 @@ nsLayoutUtils::PaintFrame(nsRenderingContext* aRenderingContext, nsIFrame* aFram
                           const nsRegion& aDirtyRegion, nscolor aBackstop,
                           uint32_t aFlags)
 {
-  PROFILER_LABEL("nsLayoutUtils","PaintFrame");
+  PROFILER_LABEL("nsLayoutUtils", "PaintFrame",
+    js::ProfileEntry::Category::GRAPHICS);
+
   if (aFlags & PAINT_WIDGET_LAYERS) {
     nsView* view = aFrame->GetView();
     if (!(view && view->GetWidget() && GetDisplayRootFrame(aFrame) == aFrame)) {
@@ -2757,7 +2823,9 @@ nsLayoutUtils::PaintFrame(nsRenderingContext* aRenderingContext, nsIFrame* aFram
     }
     nsDisplayListBuilder::AutoCurrentScrollParentIdSetter idSetter(&builder, id);
 
-    PROFILER_LABEL("nsLayoutUtils","PaintFrame::BuildDisplayList");
+    PROFILER_LABEL("nsLayoutUtils", "PaintFrame::BuildDisplayList",
+      js::ProfileEntry::Category::GRAPHICS);
+
     aFrame->BuildDisplayListForStackingContext(&builder, dirtyRect, &list);
   }
   const bool paintAllContinuations = aFlags & PAINT_ALL_CONTINUATIONS;
@@ -2770,7 +2838,9 @@ nsLayoutUtils::PaintFrame(nsRenderingContext* aRenderingContext, nsIFrame* aFram
   if (paintAllContinuations) {
     nsIFrame* currentFrame = aFrame;
     while ((currentFrame = currentFrame->GetNextContinuation()) != nullptr) {
-      PROFILER_LABEL("nsLayoutUtils","PaintFrame::ContinuationsBuildDisplayList");
+      PROFILER_LABEL("nsLayoutUtils", "PaintFrame::ContinuationsBuildDisplayList",
+        js::ProfileEntry::Category::GRAPHICS);
+
       nsRect frameDirty = dirtyRect - builder.ToReferenceFrame(currentFrame);
       currentFrame->BuildDisplayListForStackingContext(&builder,
                                                        frameDirty, &list);
@@ -5069,7 +5139,8 @@ nsLayoutUtils::DrawBackgroundImage(nsRenderingContext* aRenderingContext,
                                    const nsRect&       aDirty,
                                    uint32_t            aImageFlags)
 {
-  PROFILER_LABEL("layout", "nsLayoutUtils::DrawBackgroundImage");
+  PROFILER_LABEL("nsLayoutUtils", "DrawBackgroundImage",
+    js::ProfileEntry::Category::GRAPHICS);
 
   if (UseBackgroundNearestFiltering()) {
     aGraphicsFilter = GraphicsFilter::FILTER_NEAREST;

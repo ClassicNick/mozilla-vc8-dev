@@ -308,7 +308,9 @@ GetProcAddress(GetModuleHandle(L"kernel32.dll"),"AttachConsole");
 
   char aLocal;
   profiler_init(&aLocal);
-  PROFILER_LABEL("Startup", "XRE_InitChildProcess");
+
+  PROFILER_LABEL("Startup", "XRE_InitChildProcess",
+    js::ProfileEntry::Category::OTHER);
 
   sChildProcessType = aProcess;
 

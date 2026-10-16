@@ -538,8 +538,6 @@ nsWindow::IsEnabled() const
 NS_IMETHODIMP
 nsWindow::Invalidate(const nsIntRect &aRect)
 {
-    AndroidGeckoEvent *event = AndroidGeckoEvent::MakeDrawEvent(aRect);
-    nsAppShell::gAppShell->PostEvent(event);
     return NS_OK;
 }
 
@@ -881,12 +879,6 @@ nsWindow::OnGlobalAndroidEvent(AndroidGeckoEvent *ae)
                 win->mFocus->OnKeyEvent(ae);
             break;
 
-        case AndroidGeckoEvent::DRAW:
-            layers::renderTraceEventStart("Global draw start", "414141");
-            win->OnDraw(ae);
-            layers::renderTraceEventEnd("414141");
-            break;
-
         case AndroidGeckoEvent::IME_EVENT:
             win->UserActivity();
             if (win->mFocus) {
@@ -932,20 +924,6 @@ nsWindow::OnGlobalAndroidEvent(AndroidGeckoEvent *ae)
             if (!sCompositorPaused) {
                 win->RedrawAll();
             }
-            break;
-    }
-}
-
-void
-nsWindow::OnAndroidEvent(AndroidGeckoEvent *ae)
-{
-    switch (ae->Type()) {
-        case AndroidGeckoEvent::DRAW:
-            OnDraw(ae);
-            break;
-
-        default:
-            ALOG("Window got targetted android event type %d, but didn't handle!", ae->Type());
             break;
     }
 }
@@ -1041,52 +1019,6 @@ nsWindow::DrawTo(gfxASurface *targetSurface, const nsIntRect &invalidRect)
         targetSurface->SetDeviceOffset(offset);
 
     return true;
-}
-
-void
-nsWindow::OnDraw(AndroidGeckoEvent *ae)
-{
-    if (!IsTopLevel()) {
-        ALOG("##### redraw for window %p, which is not a toplevel window -- sending to toplevel!", (void*) this);
-        DumpWindows();
-        return;
-    }
-
-    if (!mIsVisible) {
-        ALOG("##### redraw for window %p, which is not visible -- ignoring!", (void*) this);
-        DumpWindows();
-        return;
-    }
-
-    nsRefPtr<nsWindow> kungFuDeathGrip(this);
-
-    AutoLocalJNIFrame jniFrame;
-
-    // We're paused, or we haven't been given a window-size yet, so do nothing
-    if (sCompositorPaused || gAndroidBounds.width <= 0 || gAndroidBounds.height <= 0) {
-        return;
-    }
-
-    int bytesPerPixel = 2;
-    gfxImageFormat format = gfxImageFormat::RGB16_565;
-    if (AndroidBridge::Bridge()->GetScreenDepth() == 24) {
-        bytesPerPixel = 4;
-        format = gfxImageFormat::RGB24;
-    }
-
-    layers::renderTraceEventStart("Get surface", "424545");
-    static unsigned char bits2[32 * 32 * 4];
-    nsRefPtr<gfxImageSurface> targetSurface =
-        new gfxImageSurface(bits2, gfxIntSize(32, 32), 32 * bytesPerPixel, format);
-    layers::renderTraceEventEnd("Get surface", "424545");
-
-    layers::renderTraceEventStart("Widget draw to", "434646");
-    if (targetSurface->CairoStatus()) {
-        ALOG("### Failed to create a valid surface from the bitmap");
-    } else {
-        DrawTo(targetSurface, ae->Rect());
-    }
-    layers::renderTraceEventEnd("Widget draw to", "434646");
 }
 
 void
@@ -2436,7 +2368,9 @@ nsWindow::DrawWindowUnderlay(LayerManagerComposite* aManager, nsIntRect aRect)
 void
 nsWindow::DrawWindowOverlay(LayerManagerComposite* aManager, nsIntRect aRect)
 {
-    PROFILER_LABEL("nsWindow", "DrawWindowOverlay");
+    PROFILER_LABEL("nsWindow", "DrawWindowOverlay",
+        js::ProfileEntry::Category::GRAPHICS);
+
     JNIEnv *env = GetJNIForThread();
 
     AutoLocalJNIFrame jniFrame(env);
