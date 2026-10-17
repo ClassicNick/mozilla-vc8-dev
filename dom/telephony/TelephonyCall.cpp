@@ -187,13 +187,13 @@ TelephonyCall::ChangeGroup(TelephonyCallGroup* aGroup)
   }
 }
 
-NS_IMPL_CYCLE_COLLECTION_INHERITED5(TelephonyCall,
-                                    DOMEventTargetHelper,
-                                    mTelephony,
-                                    mError,
-                                    mGroup,
-                                    mId,
-                                    mSecondId);
+NS_IMPL_CYCLE_COLLECTION_INHERITED_5(TelephonyCall,
+                                     DOMEventTargetHelper,
+                                     mTelephony,
+                                     mError,
+                                     mGroup,
+                                     mId,
+                                     mSecondId);
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(TelephonyCall)
 NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)

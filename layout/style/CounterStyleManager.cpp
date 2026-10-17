@@ -1861,7 +1861,7 @@ struct InvalidateOldStyleData
   }
 
   nsPresContext* mPresContext;
-  nsTArray<nsRefPtr<CounterStyle>> mToBeRemoved;
+  nsTArray<nsRefPtr<CounterStyle> > mToBeRemoved;
   bool mChanged;
 };
 

@@ -164,7 +164,6 @@ class MOZ_STACK_CLASS JSONParserBase : private JS::AutoGCRooter
 
 public:
     enum StringType { PropertyName, LiteralValue };
-private:
 
     bool errorReturn();
 
@@ -217,7 +216,6 @@ class MOZ_STACK_CLASS JSONParser : public JSONParserBase
     bool parse(MutableHandleValue vp);
 
   private:
->>>>>>> d0d221e
     template<StringType ST> Token readString();
 
     Token readNumber();

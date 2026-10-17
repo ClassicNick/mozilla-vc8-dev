@@ -49,7 +49,7 @@ TelephonyCallId::GetPresentationStr(uint16_t aPresentation) const
   }
 }
 
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(TelephonyCallId, mWindow)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_1(TelephonyCallId, mWindow)
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(TelephonyCallId)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(TelephonyCallId)
