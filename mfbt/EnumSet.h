@@ -10,6 +10,8 @@
 #define mozilla_EnumSet_h
 
 #include "mozilla/Assertions.h"
+#include "mozilla/Attributes.h"
+
 #include "mozilla/StandardInteger.h"
 
 namespace mozilla {
@@ -27,7 +29,7 @@ class EnumSet
       : mBitField(0)
     { }
 
-    EnumSet(T aEnum)
+    MOZ_IMPLICIT EnumSet(T aEnum)
       : mBitField(bitFor(aEnum))
     { }
 
