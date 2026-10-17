@@ -2168,8 +2168,8 @@ protected:
   nsCOMPtr<Element> mElement;
 };
 
-NS_IMPL_ISUPPORTS(FakeChannel, nsIChannel, nsIAuthPromptCallback,
-                  nsIRequest, nsIInterfaceRequestor, nsILoadContext);
+NS_IMPL_ISUPPORTS5(FakeChannel, nsIChannel, nsIAuthPromptCallback,
+                   nsIRequest, nsIInterfaceRequestor, nsILoadContext);
 
 bool
 TabParent::RecvAsyncAuthPrompt(const nsCString& aUri,

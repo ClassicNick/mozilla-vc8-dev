@@ -728,7 +728,7 @@ CallbackMap()
 }
 } // anonymous namespace
 
-NS_IMPL_ISUPPORTS(NeckoParent::NestedFrameAuthPrompt, nsIAuthPrompt2)
+NS_IMPL_ISUPPORTS1(NeckoParent::NestedFrameAuthPrompt, nsIAuthPrompt2)
 
 NeckoParent::NestedFrameAuthPrompt::NestedFrameAuthPrompt(PNeckoParent* aParent,
                                                           uint64_t aNestedFrameId)

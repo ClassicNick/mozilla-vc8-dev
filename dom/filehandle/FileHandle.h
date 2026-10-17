@@ -285,14 +285,16 @@ private:
   GetInputStream(const nsAString& aValue, uint64_t* aInputLength,
                  ErrorResult& aRv);
 
-  nsRefPtr<MutableFile> mMutableFile;
   ReadyState mReadyState;
+public:
   FileMode mMode;
+  nsRefPtr<MutableFile> mMutableFile;
   RequestMode mRequestMode;
+private:
   uint64_t mLocation;
   uint32_t mPendingRequests;
 
-  nsTArray<nsCOMPtr<nsISupports>> mParallelStreams;
+  nsTArray<nsCOMPtr<nsISupports> > mParallelStreams;
   nsCOMPtr<nsISupports> mStream;
 
   bool mAborted;
@@ -315,7 +317,7 @@ private:
   nsCOMPtr<nsIFile> mFile;
   nsCString mStorageId;
   nsRefPtr<FileHandle> mFileHandle;
-  nsTArray<nsCOMPtr<nsISupports>> mParallelStreams;
+  nsTArray<nsCOMPtr<nsISupports> > mParallelStreams;
   nsCOMPtr<nsISupports> mStream;
 
   bool mAborted;

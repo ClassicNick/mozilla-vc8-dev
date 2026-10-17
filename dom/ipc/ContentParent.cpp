@@ -797,7 +797,7 @@ ContentParent::RecvCreateChildProcess(const IPCTabContext& aContext,
     *aIsForApp = cp->IsForApp();
     *aIsForBrowser = cp->IsForBrowser();
     sContentParentMap[*aId] = cp;
-    auto iter = sGrandchildProcessMap.find(this);
+	std::map<ContentParent*, std::set<ContentParent*> >::iterator iter = sGrandchildProcessMap.find(this);
     if (iter == sGrandchildProcessMap.end()) {
         std::set<ContentParent*> children;
         children.insert(cp);
@@ -812,7 +812,7 @@ bool
 ContentParent::AnswerBridgeToChildProcess(const uint64_t& id)
 {
     ContentParent* cp = sContentParentMap[id];
-    auto iter = sGrandchildProcessMap.find(this);
+	std::map<ContentParent*, std::set<ContentParent*> >::iterator iter = sGrandchildProcessMap.find(this);
     if (iter != sGrandchildProcessMap.end() &&
         iter->second.find(cp) != iter->second.end()) {
         return PContentBridge::Bridge(this, cp);
@@ -1328,7 +1328,7 @@ ContentParent::MarkAsDead()
     mIsAlive = false;
 
     sGrandchildProcessMap.erase(this);
-    for (auto iter = sGrandchildProcessMap.begin();
+	for (std::map<ContentParent*, std::set<ContentParent*> >::iterator iter = sGrandchildProcessMap.begin();
          iter != sGrandchildProcessMap.end();
          iter++) {
         iter->second.erase(this);
@@ -1403,7 +1403,7 @@ ContentParent::RecvAllocateLayerTreeId(uint64_t* aId)
 {
     *aId = CompositorParent::AllocateLayerTreeId();
 
-    auto iter = sNestedBrowserIds.find(this);
+	std::map<ContentParent*, std::set<uint64_t> >::iterator iter = sNestedBrowserIds.find(this);
     if (iter == sNestedBrowserIds.end()) {
         std::set<uint64_t> ids;
         ids.insert(*aId);
@@ -1417,7 +1417,7 @@ ContentParent::RecvAllocateLayerTreeId(uint64_t* aId)
 bool
 ContentParent::RecvDeallocateLayerTreeId(const uint64_t& aId)
 {
-    auto iter = sNestedBrowserIds.find(this);
+	std::map<ContentParent*, std::set<uint64_t> >::iterator iter = sNestedBrowserIds.find(this);
     if (iter != sNestedBrowserIds.end() &&
         iter->second.find(aId) != iter->second.end()) {
         CompositorParent::DeallocateLayerTreeId(aId);
@@ -1561,9 +1561,9 @@ ContentParent::ActorDestroy(ActorDestroyReason why)
     NS_DispatchToCurrentThread(new DelayedDeleteContentParentTask(this));
 
     // Destroy any processes created by this ContentParent
-    auto iter = sGrandchildProcessMap.find(this);
+	std::map<ContentParent*, std::set<ContentParent*> >::iterator iter = sGrandchildProcessMap.find(this);
     if (iter != sGrandchildProcessMap.end()) {
-        for(auto child = iter->second.begin();
+		for(std::set<ContentParent*, std::less<ContentParent*> >::iterator child = iter->second.begin();
             child != iter->second.end();
             child++) {
             MessageLoop::current()->PostTask(

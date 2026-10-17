@@ -184,18 +184,17 @@ NotableClassInfo::NotableClassInfo(const char *className, const ClassInfo &info)
     PodCopy(className_, className, bytes);
 }
 
-NotableClassInfo::NotableClassInfo(NotableClassInfo &&info)
-  : ClassInfo(Move(info))
+NotableClassInfo::NotableClassInfo(mozilla::MoveRef<NotableClassInfo> info)
+  : ClassInfo(info)
 {
-    className_ = info.className_;
-    info.className_ = nullptr;
+    className_ = info->className_;
+    info->className_ = nullptr;
 }
 
-NotableClassInfo &NotableClassInfo::operator=(NotableClassInfo &&info)
+NotableClassInfo &NotableClassInfo::operator=(mozilla::MoveRef<NotableClassInfo> info)
 {
-    MOZ_ASSERT(this != &info, "self-move assignment is prohibited");
     this->~NotableClassInfo();
-    new (this) NotableClassInfo(Move(info));
+    new (this) NotableClassInfo(info);
     return *this;
 }
 

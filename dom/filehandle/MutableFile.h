@@ -149,6 +149,7 @@ protected:
   nsCOMPtr<nsIFile> mFile;
 
   nsCString mStorageId;
+public:
   nsString mFileName;
 };
 

@@ -79,7 +79,7 @@ public:
     return surf;
   }
 private:
-  vector<RefPtr<SourceSurface>> mSnapshots;
+  vector<RefPtr<SourceSurface> > mSnapshots;
   vector<IntPoint> mOrigins;
   IntRect mRect;
 };

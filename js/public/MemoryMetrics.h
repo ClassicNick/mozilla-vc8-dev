@@ -181,8 +181,8 @@ struct NotableClassInfo : public ClassInfo
 {
     NotableClassInfo();
     NotableClassInfo(const char *className, const ClassInfo &info);
-    NotableClassInfo(NotableClassInfo &&info);
-    NotableClassInfo &operator=(NotableClassInfo &&info);
+	NotableClassInfo(mozilla::MoveRef<NotableClassInfo> info);
+	NotableClassInfo &operator=(mozilla::MoveRef<NotableClassInfo> info);
 
     ~NotableClassInfo() {
         js_free(className_);
@@ -551,16 +551,16 @@ struct CompartmentStats
         isTotals(true)
     {}
 
-    CompartmentStats(CompartmentStats &&other)
-      : FOR_EACH_SIZE(COPY_OTHER_SIZE)
-        classInfo(mozilla::Move(other.classInfo)),
-        extra(other.extra),
-        allClasses(other.allClasses),
-        notableClasses(mozilla::Move(other.notableClasses)),
-        isTotals(other.isTotals)
+	CompartmentStats(mozilla::MoveRef<CompartmentStats> other)
+      : FOR_EACH_SIZE(MOVE_OTHER_SIZE)
+        classInfo(mozilla::OldMove(other->classInfo)),
+        extra(other->extra),
+        allClasses(other->allClasses),
+        notableClasses(mozilla::OldMove(other->notableClasses)),
+        isTotals(other->isTotals)
     {
-        other.allClasses = nullptr;
-        MOZ_ASSERT(!other.isTotals);
+        other->allClasses = nullptr;
+        MOZ_ASSERT(!other->isTotals);
     }
 
     ~CompartmentStats() {

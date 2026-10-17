@@ -264,8 +264,8 @@ FileHandle::~FileHandle()
   MOZ_ASSERT(NS_IsMainThread(), "Wrong thread!");
 }
 
-NS_IMPL_CYCLE_COLLECTION_INHERITED(FileHandle, DOMEventTargetHelper,
-                                   mMutableFile)
+NS_IMPL_CYCLE_COLLECTION_INHERITED_1(FileHandle, DOMEventTargetHelper,
+                                     mMutableFile)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(FileHandle)
   NS_INTERFACE_MAP_ENTRY(nsIRunnable)
@@ -817,7 +817,7 @@ FinishHelper::FinishHelper(FileHandle* aFileHandle)
   mStream.swap(aFileHandle->mStream);
 }
 
-NS_IMPL_ISUPPORTS(FinishHelper, nsIRunnable)
+NS_IMPL_ISUPPORTS1(FinishHelper, nsIRunnable)
 
 NS_IMETHODIMP
 FinishHelper::Run()

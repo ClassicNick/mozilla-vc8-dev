@@ -16,7 +16,7 @@ using namespace mozilla::jsipc;
 namespace mozilla {
 namespace dom {
 
-NS_IMPL_ISUPPORTS(ContentBridgeParent, nsIContentParent)
+NS_IMPL_ISUPPORTS1(ContentBridgeParent, nsIContentParent)
 
 ContentBridgeParent::ContentBridgeParent(Transport* aTransport)
   : mTransport(aTransport)

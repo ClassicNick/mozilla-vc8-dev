@@ -99,9 +99,10 @@ private:
 
     ThreadSafeAutoRefCnt mRefCnt;
     NS_DECL_OWNINGTHREAD
-    nsRefPtr<FileHandle> mFileHandle;
     nsTArray<nsRefPtr<FileHelper> > mQueue;
     nsRefPtr<FileHelper> mCurrentHelper;
+  public:
+	nsRefPtr<FileHandle> mFileHandle;
   };
 
   struct DelayedEnqueueInfo
@@ -142,7 +143,7 @@ private:
     inline void
     CollectRunningAndDelayedFileHandles(
                                  nsIOfflineStorage* aStorage,
-                                 nsTArray<nsRefPtr<FileHandle>>& aFileHandles);
+                                 nsTArray<nsRefPtr<FileHandle> >& aFileHandles);
 
     void
     LockFileForReading(const nsAString& aFileName)
@@ -173,7 +174,7 @@ private:
     {
     }
 
-    nsTArray<nsRefPtr<FileHandleQueue>> mFileHandleQueues;
+    nsTArray<nsRefPtr<FileHandleQueue> > mFileHandleQueues;
     nsTArray<DelayedEnqueueInfo> mDelayedEnqueueInfos;
     nsTHashtable<nsStringHashKey> mFilesReading;
     nsTHashtable<nsStringHashKey> mFilesWriting;

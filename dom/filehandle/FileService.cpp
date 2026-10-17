@@ -514,7 +514,7 @@ FileService::StorageInfo::CreateDelayedEnqueueInfo(FileHandle* aFileHandle,
 void
 FileService::StorageInfo::CollectRunningAndDelayedFileHandles(
                                  nsIOfflineStorage* aStorage,
-                                 nsTArray<nsRefPtr<FileHandle>>& aFileHandles)
+                                 nsTArray<nsRefPtr<FileHandle> >& aFileHandles)
 {
   for (uint32_t index = 0; index < mFileHandleQueues.Length(); index++) {
     FileHandle* fileHandle = mFileHandleQueues[index]->mFileHandle;
