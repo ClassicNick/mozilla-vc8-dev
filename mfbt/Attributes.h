@@ -59,8 +59,10 @@
 #    if defined(__clang__)
 #      error Please do not try to use clang-cl with MSVC10 or below emulation!
 #    endif
+#if _MSC_VER >= 1400
      /* MSVC <= 10 used to spell "final" as "sealed". */
 #    define MOZ_HAVE_CXX11_FINAL         sealed
+#endif
 #  endif
 #if _MSC_VER >= 1400
 #  define MOZ_HAVE_CXX11_OVERRIDE
