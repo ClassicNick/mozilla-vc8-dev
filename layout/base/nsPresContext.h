@@ -68,6 +68,7 @@ class nsDeviceContext;
 namespace mozilla {
 class EventStateManager;
 class RestyleManager;
+class CounterStyleManager;
 namespace dom {
 class MediaQueryList;
 }
@@ -241,13 +242,17 @@ public:
   nsRefreshDriver* RefreshDriver() { return mRefreshDriver; }
 
   mozilla::RestyleManager* RestyleManager() { return mRestyleManager; }
+
+  mozilla::CounterStyleManager* CounterStyleManager() {
+    return mCounterStyleManager;
+  }
 #endif
 
   /**
    * Rebuilds all style data by throwing out the old rule tree and
    * building a new one, and additionally applying aExtraHint (which
    * must not contain nsChangeHint_ReconstructFrame) to the root frame.
-   * Also rebuild the user font set.
+   * Also rebuild the user font set and counter style manager.
    */
   void RebuildAllStyleData(nsChangeHint aExtraHint);
   /**
@@ -868,6 +873,9 @@ public:
   // user font set is changed and fonts become unavailable).
   void UserFontSetUpdated();
 
+  void FlushCounterStyles();
+  void RebuildCounterStyles(); // asynchronously
+
   // Ensure that it is safe to hand out CSS rules outside the layout
   // engine by ensuring that all CSS style sheets have unique inners
   // and, if necessary, synchronously rebuilding all style data.
@@ -1157,6 +1165,11 @@ protected:
     FlushUserFontSet();
   }
 
+  void HandleRebuildCounterStyles() {
+    mPostedFlushCounterStyles = false;
+    FlushCounterStyles();
+  }
+
   bool HavePendingInputEvent();
 
   // Can't be inline because we can't include nsStyleSet.h.
@@ -1181,6 +1194,7 @@ protected:
   nsRefPtr<nsTransitionManager> mTransitionManager;
   nsRefPtr<nsAnimationManager> mAnimationManager;
   nsRefPtr<mozilla::RestyleManager> mRestyleManager;
+  nsRefPtr<mozilla::CounterStyleManager> mCounterStyleManager;
   nsIAtom*              mMedium;        // initialized by subclass ctors;
                                         // weak pointer to static atom
   nsCOMPtr<nsIAtom> mMediaEmulated;
@@ -1320,6 +1334,11 @@ protected:
   unsigned              mGetUserFontSetCalled : 1;
   // Do we currently have an event posted to call FlushUserFontSet?
   unsigned              mPostedFlushUserFontSet : 1;
+
+  // Is the current mCounterStyleManager valid?
+  unsigned              mCounterStylesDirty : 1;
+  // Do we currently have an event posted to call FlushCounterStyles?
+  unsigned              mPostedFlushCounterStyles: 1;
 
   // resize reflow is suppressed when the only change has been to zoom
   // the document rather than to change the document's dimensions
