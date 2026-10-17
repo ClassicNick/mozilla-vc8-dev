@@ -1905,7 +1905,6 @@ JS_AddFinalizeCallback(JSRuntime *rt, JSFinalizeCallback cb, void *data)
 JS_PUBLIC_API(void)
 JS_RemoveFinalizeCallback(JSRuntime *rt, JSFinalizeCallback cb)
 {
-    AssertHeapIsIdle(rt);
     rt->gc.removeFinalizeCallback(cb);
 }
 

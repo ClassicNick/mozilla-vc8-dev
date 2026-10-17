@@ -76,7 +76,7 @@ MediaKeyNeededEvent::Constructor(const GlobalObject& aGlobal,
   e->mInitDataType = aEventInitDict.mInitDataType;
   if (aEventInitDict.mInitData.WasPassed() &&
       !aEventInitDict.mInitData.Value().IsNull()) {
-    const auto& a = aEventInitDict.mInitData.Value().Value();
+    const Uint8Array& a = aEventInitDict.mInitData.Value().Value();
     a.ComputeLengthAndData();
     e->mInitData = Uint8Array::Create(aGlobal.GetContext(), owner, a.Length(), a.Data());
     if (!e->mInitData) {

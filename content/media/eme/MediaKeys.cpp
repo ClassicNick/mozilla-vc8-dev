@@ -19,11 +19,11 @@ namespace mozilla {
 
 namespace dom {
 
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(MediaKeys,
-                                      mParent,
-                                      mKeySessions,
-                                      mPromises,
-                                      mPendingSessions);
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_4(MediaKeys,
+                                        mParent,
+                                        mKeySessions,
+                                        mPromises,
+                                        mPendingSessions);
 NS_IMPL_CYCLE_COLLECTING_ADDREF(MediaKeys)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(MediaKeys)
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(MediaKeys)
