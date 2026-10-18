@@ -166,14 +166,13 @@ class Base {
     // virtual, and a subclass overrides it, the subclass's destructor will be
     // ignored. Is there a way to make the compiler catch that error?
 
-  protected:
+  public:
     // Space for the actual pointer. Concrete subclasses should define a
     // properly typed 'get' member function to access this.
     void *ptr;
 
     Base(void *ptr) : ptr(ptr) { }
 
-  public:
     bool operator==(const Base &rhs) const {
         // Some compilers will indeed place objects of different types at
         // the same address, so technically, we should include the vtable
