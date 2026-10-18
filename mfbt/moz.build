@@ -60,11 +60,8 @@ EXPORTS.mozilla = [
     'Scoped.h',
     'SHA1.h',
     'SplayTree.h',
-<<<<<<< HEAD
     'StandardInteger.h',
-=======
     'TaggedAnonymousMemory.h',
->>>>>>> 6af1b89
     'TemplateLib.h',
     'ThreadLocal.h',
     'ToString.h',

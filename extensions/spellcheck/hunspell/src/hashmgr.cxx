@@ -11,6 +11,10 @@
 #include "csutil.hxx"
 #include "atypes.hxx"
 
+#ifdef max
+#undef max
+#endif
+
 // build a hash table from a munched word list
 
 HashMgr::HashMgr(const char * tpath, const char * apath, const char * key)

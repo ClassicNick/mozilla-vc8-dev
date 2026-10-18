@@ -198,9 +198,9 @@ ContentClientRemoteBuffer::CreateAndAllocateTextureClient(RefPtr<TextureClient>&
     return false;
   }
 
-  TextureAllocationFlags flags = TextureAllocationFlags::ALLOC_CLEAR_BUFFER;
+  TextureAllocationFlags flags = ALLOC_CLEAR_BUFFER;
   if (aFlags & TextureFlags::ON_WHITE) {
-    flags = TextureAllocationFlags::ALLOC_CLEAR_BUFFER_WHITE;
+    flags = ALLOC_CLEAR_BUFFER_WHITE;
   }
 
   if (!aClient->AllocateForSurface(mSize, flags)) {

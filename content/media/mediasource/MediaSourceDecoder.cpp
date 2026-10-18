@@ -421,7 +421,7 @@ MediaSourceReader::CreateSubDecoder(const nsACString& aType,
   // Set a callback on the subreader that forwards calls to this reader.
   // This reader will then forward them onto the state machine via this
   // reader's callback.
-  RefPtr<MediaDataDecodedListener<MediaSourceReader>> callback =
+  RefPtr<MediaDataDecodedListener<MediaSourceReader> > callback =
     new MediaDataDecodedListener<MediaSourceReader>(this, aTaskQueue);
   reader->SetCallback(callback);
   reader->SetTaskQueue(aTaskQueue);

@@ -106,7 +106,7 @@ have_cpuid (void)
 #endif
 }
 
-#ifdef _MSC_VER
+#if defined (_MSC_VER) && _MSC_VER >= 1500
 #include <intrin.h> /* for __cpuid */
 #endif
 

@@ -419,7 +419,7 @@ protected:
 
   nsresult FinishDecodeMetadata();
 
-  RefPtr<MediaDataDecodedListener<MediaDecoderStateMachine>> mMediaDecodedListener;
+  RefPtr<MediaDataDecodedListener<MediaDecoderStateMachine> > mMediaDecodedListener;
 
   nsAutoPtr<MetadataTags> mMetadataTags;
 
