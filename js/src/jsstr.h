@@ -234,8 +234,7 @@ extern bool
 StringHasPattern(JSLinearString *text, const jschar *pat, uint32_t patlen);
 
 extern int
-StringFindPattern(const jschar *text, uint32_t textlen,
-                  const jschar *pat, uint32_t patlen);
+StringFindPattern(JSLinearString *text, JSLinearString *pat, size_t start);
 
 extern bool
 StringHasRegExpMetaChars(const jschar *chars, size_t length);
@@ -248,8 +247,9 @@ js_strlen(const jschar *s);
 extern int32_t
 js_strcmp(const jschar *lhs, const jschar *rhs);
 
-extern jschar *
-js_strchr_limit(const jschar *s, jschar c, const jschar *limit);
+template <typename CharT>
+extern const CharT *
+js_strchr_limit(const CharT *s, jschar c, const CharT *limit);
 
 static MOZ_ALWAYS_INLINE void
 js_strncpy(jschar *dst, const jschar *src, size_t nelem)

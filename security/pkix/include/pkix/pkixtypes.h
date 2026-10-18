@@ -49,7 +49,33 @@ typedef ScopedPtr<CERTCertList, CERT_DestroyCertList> ScopedCERTCertList;
 
 MOZILLA_PKIX_ENUM_CLASS EndEntityOrCA { MustBeEndEntity = 0, MustBeCA = 1 };
 
-typedef unsigned int KeyUsages;
+#if !defined (_MSC_VER) || _MSC_VER >= 1400
+MOZILLA_PKIX_ENUM_CLASS KeyUsage : uint8_t {
+  digitalSignature = 0,
+  nonRepudiation   = 1,
+  keyEncipherment  = 2,
+  dataEncipherment = 3,
+  keyAgreement     = 4,
+  keyCertSign      = 5,
+  // cRLSign       = 6,
+  // encipherOnly  = 7,
+  // decipherOnly  = 8,
+  noParticularKeyUsageRequired = 0xff,
+};
+#else
+MOZILLA_PKIX_ENUM_CLASS KeyUsage {
+  digitalSignature = 0,
+  nonRepudiation   = 1,
+  keyEncipherment  = 2,
+  dataEncipherment = 3,
+  keyAgreement     = 4,
+  keyCertSign      = 5,
+  // cRLSign       = 6,
+  // encipherOnly  = 7,
+  // decipherOnly  = 8,
+  noParticularKeyUsageRequired = 0xff,
+};
+#endif
 
 MOZILLA_PKIX_ENUM_CLASS KeyPurposeId {
   anyExtendedKeyUsage = 0,

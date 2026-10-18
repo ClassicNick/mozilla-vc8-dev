@@ -2037,7 +2037,7 @@ HTMLMediaElement::HTMLMediaElement(already_AddRefed<nsINodeInfo> aNodeInfo)
 
   mPaused.SetOuter(this);
 
-  RegisterFreezableElement();
+  RegisterActivityObserver();
   NotifyOwnerDocumentActivityChanged();
 }
 
@@ -2049,7 +2049,7 @@ HTMLMediaElement::~HTMLMediaElement()
   if (mVideoFrameContainer) {
     mVideoFrameContainer->ForgetElement();
   }
-  UnregisterFreezableElement();
+  UnregisterActivityObserver();
   if (mDecoder) {
     ShutdownDecoder();
   }

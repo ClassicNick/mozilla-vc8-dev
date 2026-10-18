@@ -47,8 +47,7 @@ nsNSSDialogs::~nsNSSDialogs()
 {
 }
 
-NS_IMPL_ISUPPORTS7(nsNSSDialogs, nsITokenPasswordDialogs,
-                  nsICertificateDialogs,
+NS_IMPL_ISUPPORTS6(nsNSSDialogs, nsITokenPasswordDialogs,
                   nsIClientAuthDialogs,
                   nsICertPickDialogs,
                   nsITokenDialogs,

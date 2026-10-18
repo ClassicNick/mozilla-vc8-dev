@@ -342,7 +342,6 @@ public:
     T* ret = sentinel.getNext();
     if (ret) {
       static_cast<LinkedListElement<T>*>(ret)->remove();
->>>>>>> b38a3a0
     }
     return ret;
   }

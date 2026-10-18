@@ -302,27 +302,22 @@ destroyCertListThatShouldNotExist(CERTCertList** certChain)
 
 static SECStatus
 BuildCertChainForOneKeyUsage(TrustDomain& trustDomain, CERTCertificate* cert,
-                             PRTime time, KeyUsages ku1, KeyUsages ku2,
-                             KeyUsages ku3, KeyPurposeId eku,
+                             PRTime time, KeyUsage ku1, KeyUsage ku2,
+                             KeyUsage ku3, KeyPurposeId eku,
                              const CertPolicyId& requiredPolicy,
                              const SECItem* stapledOCSPResponse,
                              ScopedCERTCertList& builtChain)
 {
-  PR_ASSERT(ku1);
-  PR_ASSERT(ku2);
-
   SECStatus rv = BuildCertChain(trustDomain, cert, time,
                                 MustBeEndEntity, ku1,
                                 eku, requiredPolicy,
                                 stapledOCSPResponse, builtChain);
-  if (rv != SECSuccess && ku2 &&
-      PR_GetError() == SEC_ERROR_INADEQUATE_KEY_USAGE) {
+  if (rv != SECSuccess && PR_GetError() == SEC_ERROR_INADEQUATE_KEY_USAGE) {
     rv = BuildCertChain(trustDomain, cert, time,
                         MustBeEndEntity, ku2,
                         eku, requiredPolicy,
                         stapledOCSPResponse, builtChain);
-    if (rv != SECSuccess && ku3 &&
-        PR_GetError() == SEC_ERROR_INADEQUATE_KEY_USAGE) {
+    if (rv != SECSuccess && PR_GetError() == SEC_ERROR_INADEQUATE_KEY_USAGE) {
       rv = BuildCertChain(trustDomain, cert, time,
                           MustBeEndEntity, ku3,
                           eku, requiredPolicy,
@@ -379,13 +374,6 @@ CertVerifier::MozillaPKIXVerifyCert(
                                                   : ocsp_get_disabled;
 
   SECStatus rv;
-  // TODO(bug 970750): anyExtendedKeyUsage
-  // TODO: encipherOnly/decipherOnly
-  // S/MIME Key Usage: http://tools.ietf.org/html/rfc3850#section-4.4.2
-  // S/MIME EKU:       http://tools.ietf.org/html/rfc3850#section-4.4.4
-
-  // TODO(bug 915931): Pass in stapled OCSP response in all calls to
-  //                   BuildCertChain.
 
   mozilla::pkix::ScopedCERTCertList builtChain;
   switch (usage) {
@@ -395,7 +383,8 @@ CertVerifier::MozillaPKIXVerifyCert(
       NSSCertDBTrustDomain trustDomain(trustEmail, ocspFetching, mOCSPCache,
                                        pinArg, ocspGETConfig);
       rv = BuildCertChain(trustDomain, cert, time,
-                          MustBeEndEntity, KU_DIGITAL_SIGNATURE,
+                          MustBeEndEntity,
+                          digitalSignature,
                           id_kp_clientAuth,
                           CertPolicyId::anyPolicy, stapledOCSPResponse,
                           builtChain);
@@ -420,9 +409,9 @@ CertVerifier::MozillaPKIXVerifyCert(
                         : NSSCertDBTrustDomain::FetchOCSPForEV,
                       mOCSPCache, pinArg, ocspGETConfig, &callbackContainer);
         rv = BuildCertChainForOneKeyUsage(trustDomain, cert, time,
-                                          KU_DIGITAL_SIGNATURE, // ECDHE/DHE
-                                          KU_KEY_ENCIPHERMENT, // RSA
-                                          KU_KEY_AGREEMENT, // ECDH/DH
+                                          digitalSignature,// (EC)DHE
+                                          keyEncipherment, // RSA
+                                          keyAgreement,    // (EC)DH
                                           id_kp_serverAuth,
                                           evPolicy, stapledOCSPResponse,
                                           builtChain);
@@ -447,9 +436,9 @@ CertVerifier::MozillaPKIXVerifyCert(
                                        pinArg, ocspGETConfig,
                                        &callbackContainer);
       rv = BuildCertChainForOneKeyUsage(trustDomain, cert, time,
-                                        KU_DIGITAL_SIGNATURE, // ECDHE/DHE
-                                        KU_KEY_ENCIPHERMENT, // RSA
-                                        KU_KEY_AGREEMENT, // ECDH/DH
+                                        digitalSignature, // (EC)DHE
+                                        keyEncipherment, // RSA
+                                        keyAgreement, // (EC)DH
                                         id_kp_serverAuth,
                                         CertPolicyId::anyPolicy,
                                         stapledOCSPResponse, builtChain);
@@ -460,7 +449,8 @@ CertVerifier::MozillaPKIXVerifyCert(
       NSSCertDBTrustDomain trustDomain(trustSSL, ocspFetching, mOCSPCache,
                                        pinArg, ocspGETConfig);
       rv = BuildCertChain(trustDomain, cert, time, MustBeCA,
-                          KU_KEY_CERT_SIGN, id_kp_serverAuth,
+                          keyCertSign,
+                          id_kp_serverAuth,
                           CertPolicyId::anyPolicy,
                           stapledOCSPResponse, builtChain);
       break;
@@ -470,7 +460,8 @@ CertVerifier::MozillaPKIXVerifyCert(
       NSSCertDBTrustDomain trustDomain(trustEmail, ocspFetching, mOCSPCache,
                                        pinArg, ocspGETConfig);
       rv = BuildCertChain(trustDomain, cert, time,
-                          MustBeEndEntity, KU_DIGITAL_SIGNATURE,
+                          MustBeEndEntity,
+                          digitalSignature,
                           id_kp_emailProtection,
                           CertPolicyId::anyPolicy,
                           stapledOCSPResponse, builtChain);
@@ -483,13 +474,20 @@ CertVerifier::MozillaPKIXVerifyCert(
       // based on the result of the verification(s).
       NSSCertDBTrustDomain trustDomain(trustEmail, ocspFetching, mOCSPCache,
                                        pinArg, ocspGETConfig);
-      rv = BuildCertChainForOneKeyUsage(trustDomain, cert, time,
-                                        KU_KEY_ENCIPHERMENT, // RSA
-                                        KU_KEY_AGREEMENT, // ECDH/DH
-                                        0,
-                                        id_kp_emailProtection,
-                                        CertPolicyId::anyPolicy,
-                                        stapledOCSPResponse, builtChain);
+      rv = BuildCertChain(trustDomain, cert, time,
+                          MustBeEndEntity,
+                          keyEncipherment, // RSA
+                          id_kp_emailProtection,
+                          CertPolicyId::anyPolicy,
+                          stapledOCSPResponse, builtChain);
+      if (rv != SECSuccess && PR_GetError() == SEC_ERROR_INADEQUATE_KEY_USAGE) {
+        rv = BuildCertChain(trustDomain, cert, time,
+                            MustBeEndEntity,
+                            keyAgreement, // ECDH/DH
+                            id_kp_emailProtection,
+                            CertPolicyId::anyPolicy,
+                            stapledOCSPResponse, builtChain);
+      }
       break;
     }
 
@@ -497,7 +495,8 @@ CertVerifier::MozillaPKIXVerifyCert(
       NSSCertDBTrustDomain trustDomain(trustObjectSigning, ocspFetching,
                                        mOCSPCache, pinArg, ocspGETConfig);
       rv = BuildCertChain(trustDomain, cert, time,
-                          MustBeEndEntity, KU_DIGITAL_SIGNATURE,
+                          MustBeEndEntity,
+                          digitalSignature,
                           id_kp_codeSigning,
                           CertPolicyId::anyPolicy,
                           stapledOCSPResponse, builtChain);
@@ -511,15 +510,15 @@ CertVerifier::MozillaPKIXVerifyCert(
       // certificate viewer UI. Because we don't know what trust bit is
       // interesting, we just try them all.
       mozilla::pkix::EndEntityOrCA endEntityOrCA;
-      mozilla::pkix::KeyUsages keyUsage;
+      mozilla::pkix::KeyUsage keyUsage;
       KeyPurposeId eku;
       if (usage == certificateUsageVerifyCA) {
         endEntityOrCA = MustBeCA;
-        keyUsage = KU_KEY_CERT_SIGN;
+        keyUsage = keyCertSign;
         eku = anyExtendedKeyUsage;
       } else {
         endEntityOrCA = MustBeEndEntity;
-        keyUsage = KU_DIGITAL_SIGNATURE;
+        keyUsage = digitalSignature;
         eku = id_kp_OCSPSigning;
       }
 

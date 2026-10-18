@@ -47,25 +47,25 @@ ContentHelper::UpdateAllowedBehavior(uint32_t aTouchActionValue, bool aConsiderP
 {
   if (aTouchActionValue != NS_STYLE_TOUCH_ACTION_AUTO) {
     // Double-tap-zooming need property value AUTO
-    aOutBehavior &= ~AllowedTouchBehavior::DOUBLE_TAP_ZOOM;
+    aOutBehavior &= ~mozilla::layers::DOUBLE_TAP_ZOOM;
     if (aTouchActionValue != NS_STYLE_TOUCH_ACTION_MANIPULATION) {
       // Pinch-zooming need value AUTO or MANIPULATION
-      aOutBehavior &= ~AllowedTouchBehavior::PINCH_ZOOM;
+      aOutBehavior &= ~mozilla::layers::PINCH_ZOOM;
     }
   }
 
   if (aConsiderPanning) {
     if (aTouchActionValue == NS_STYLE_TOUCH_ACTION_NONE) {
-      aOutBehavior &= ~AllowedTouchBehavior::VERTICAL_PAN;
-      aOutBehavior &= ~AllowedTouchBehavior::HORIZONTAL_PAN;
+      aOutBehavior &= ~mozilla::layers::VERTICAL_PAN;
+      aOutBehavior &= ~mozilla::layers::HORIZONTAL_PAN;
     }
 
     // Values pan-x and pan-y set at the same time to the same element do not affect panning constraints.
     // Therefore we need to check whether pan-x is set without pan-y and the same for pan-y.
     if ((aTouchActionValue & NS_STYLE_TOUCH_ACTION_PAN_X) && !(aTouchActionValue & NS_STYLE_TOUCH_ACTION_PAN_Y)) {
-      aOutBehavior &= ~AllowedTouchBehavior::VERTICAL_PAN;
+      aOutBehavior &= ~mozilla::layers::VERTICAL_PAN;
     } else if ((aTouchActionValue & NS_STYLE_TOUCH_ACTION_PAN_Y) && !(aTouchActionValue & NS_STYLE_TOUCH_ACTION_PAN_X)) {
-      aOutBehavior &= ~AllowedTouchBehavior::HORIZONTAL_PAN;
+      aOutBehavior &= ~mozilla::layers::HORIZONTAL_PAN;
     }
   }
 }
@@ -99,8 +99,8 @@ ContentHelper::GetAllowedTouchBehavior(nsIWidget* aWidget, const nsIntPoint& aPo
   // root frame but not the subframes.
 
   bool considerPanning = true;
-  TouchBehaviorFlags behavior = AllowedTouchBehavior::VERTICAL_PAN | AllowedTouchBehavior::HORIZONTAL_PAN |
-                                AllowedTouchBehavior::PINCH_ZOOM | AllowedTouchBehavior::DOUBLE_TAP_ZOOM;
+  TouchBehaviorFlags behavior = mozilla::layers::VERTICAL_PAN | mozilla::layers::HORIZONTAL_PAN |
+                                mozilla::layers::PINCH_ZOOM | mozilla::layers::DOUBLE_TAP_ZOOM;
 
   for (nsIFrame *frame = target; frame && frame->GetContent() && behavior; frame = frame->GetParent()) {
     UpdateAllowedBehavior(GetTouchActionFromFrame(frame), considerPanning, behavior);

@@ -855,26 +855,8 @@ nsContentUtils::IsAutocompleteEnabled(nsIDOMHTMLInputElement* aInput)
 
 nsContentUtils::AutocompleteAttrState
 nsContentUtils::SerializeAutocompleteAttribute(const nsAttrValue* aAttr,
-                                               nsAString& aResult,
-                                               AutocompleteAttrState aCachedState)
+                                           nsAString& aResult)
 {
-  if (!aAttr ||
-      aCachedState == nsContentUtils::eAutocompleteAttrState_Invalid) {
-    return aCachedState;
-  }
-
-  if (aCachedState == nsContentUtils::eAutocompleteAttrState_Valid) {
-    uint32_t atomCount = aAttr->GetAtomCount();
-    for (uint32_t i = 0; i < atomCount; i++) {
-      if (i != 0) {
-        aResult.Append(' ');
-      }
-      aResult.Append(nsDependentAtomString(aAttr->AtomAt(i)));
-    }
-    nsContentUtils::ASCIIToLower(aResult);
-    return aCachedState;
-  }
-
   AutocompleteAttrState state = InternalSerializeAutocompleteAttribute(aAttr, aResult);
   if (state == eAutocompleteAttrState_Valid) {
     ASCIIToLower(aResult);
@@ -891,7 +873,7 @@ nsContentUtils::SerializeAutocompleteAttribute(const nsAttrValue* aAttr,
  */
 nsContentUtils::AutocompleteAttrState
 nsContentUtils::InternalSerializeAutocompleteAttribute(const nsAttrValue* aAttrVal,
-                                                       nsAString& aResult)
+                                                   nsAString& aResult)
 {
   // No sandbox attribute so we are done
   if (!aAttrVal) {
@@ -6585,12 +6567,13 @@ nsContentUtils::HaveEqualPrincipals(nsIDocument* aDoc1, nsIDocument* aDoc2)
 }
 
 static void
-CheckForWindowedPlugins(nsIContent* aContent, void* aResult)
+CheckForWindowedPlugins(nsISupports* aSupports, void* aResult)
 {
-  if (!aContent->IsInDoc()) {
+  nsCOMPtr<nsIContent> content(do_QueryInterface(aSupports));
+  if (!content || !content->IsInDoc()) {
     return;
   }
-  nsCOMPtr<nsIObjectLoadingContent> olc(do_QueryInterface(aContent));
+  nsCOMPtr<nsIObjectLoadingContent> olc(do_QueryInterface(content));
   if (!olc) {
     return;
   }
@@ -6610,7 +6593,7 @@ static bool
 DocTreeContainsWindowedPlugins(nsIDocument* aDoc, void* aResult)
 {
   if (!nsContentUtils::IsChromeDoc(aDoc)) {
-    aDoc->EnumerateFreezableElements(CheckForWindowedPlugins, aResult);
+    aDoc->EnumerateActivityObservers(CheckForWindowedPlugins, aResult);
   }
   if (*static_cast<bool*>(aResult)) {
     // Return false to stop iteration, we found a windowed plugin.

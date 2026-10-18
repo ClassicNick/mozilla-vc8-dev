@@ -11,7 +11,7 @@
 #include "nsCoord.h"
 #include "nsStyleConsts.h"
 
-enum nsStyleUnit : uint8_t {
+enum nsStyleUnit {
   eStyleUnit_Null         = 0,      // (no value) value is not specified
   eStyleUnit_Normal       = 1,      // (no value)
   eStyleUnit_Auto         = 2,      // (no value)
