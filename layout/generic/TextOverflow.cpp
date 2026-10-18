@@ -713,6 +713,7 @@ TextOverflow::CreateMarkers(const nsLineBox* aLine,
   if (aCreateLeft) {
     DisplayListClipState::AutoSaveRestore clipState(mBuilder);
 
+    //XXX Needs vertical text love
     nsRect markerRect = nsRect(aInsideMarkersArea.x - mLeft.mIntrinsicWidth,
                                aLine->BStart(),
                                mLeft.mIntrinsicWidth, aLine->BSize());
@@ -721,7 +722,7 @@ TextOverflow::CreateMarkers(const nsLineBox* aLine,
                markerRect, clipState);
     nsDisplayItem* marker = new (mBuilder)
       nsDisplayTextOverflowMarker(mBuilder, mBlock, markerRect,
-                                  aLine->GetAscent(), mLeft.mStyle, 0);
+                                  aLine->GetLogicalAscent(), mLeft.mStyle, 0);
     mMarkerList.AppendNewToTop(marker);
   }
 
@@ -736,7 +737,7 @@ TextOverflow::CreateMarkers(const nsLineBox* aLine,
                markerRect, clipState);
     nsDisplayItem* marker = new (mBuilder)
       nsDisplayTextOverflowMarker(mBuilder, mBlock, markerRect,
-                                  aLine->GetAscent(), mRight.mStyle, 1);
+                                  aLine->GetLogicalAscent(), mRight.mStyle, 1);
     mMarkerList.AppendNewToTop(marker);
   }
 }

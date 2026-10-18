@@ -44,7 +44,7 @@ SVGMatrix::SetA(float aA, ErrorResult& rv)
   }
 
   gfxMatrix mx = GetMatrix();
-  mx.xx = aA;
+  mx._11 = aA;
   SetMatrix(mx);
 }
 
@@ -57,7 +57,7 @@ SVGMatrix::SetB(float aB, ErrorResult& rv)
   }
 
   gfxMatrix mx = GetMatrix();
-  mx.yx = aB;
+  mx._12 = aB;
   SetMatrix(mx);
 }
 
@@ -70,7 +70,7 @@ SVGMatrix::SetC(float aC, ErrorResult& rv)
   }
 
   gfxMatrix mx = GetMatrix();
-  mx.xy = aC;
+  mx._21 = aC;
   SetMatrix(mx);
 }
 
@@ -83,7 +83,7 @@ SVGMatrix::SetD(float aD, ErrorResult& rv)
   }
 
   gfxMatrix mx = GetMatrix();
-  mx.yy = aD;
+  mx._22 = aD;
   SetMatrix(mx);
 }
 
@@ -96,7 +96,7 @@ SVGMatrix::SetE(float aE, ErrorResult& rv)
   }
 
   gfxMatrix mx = GetMatrix();
-  mx.x0 = aE;
+  mx._31 = aE;
   SetMatrix(mx);
 }
 
@@ -109,7 +109,7 @@ SVGMatrix::SetF(float aF, ErrorResult& rv)
   }
 
   gfxMatrix mx = GetMatrix();
-  mx.y0 = aF;
+  mx._32 = aF;
   SetMatrix(mx);
 }
 
@@ -180,7 +180,7 @@ SVGMatrix::FlipX()
 {
   const gfxMatrix& mx = GetMatrix();
   nsRefPtr<SVGMatrix> matrix =
-    new SVGMatrix(gfxMatrix(-mx.xx, -mx.yx, mx.xy, mx.yy, mx.x0, mx.y0));
+    new SVGMatrix(gfxMatrix(-mx._11, -mx._12, mx._21, mx._22, mx._31, mx._32));
   return matrix.forget();
 }
 
@@ -189,7 +189,7 @@ SVGMatrix::FlipY()
 {
   const gfxMatrix& mx = GetMatrix();
   nsRefPtr<SVGMatrix> matrix =
-    new SVGMatrix(gfxMatrix(mx.xx, mx.yx, -mx.xy, -mx.yy, mx.x0, mx.y0));
+    new SVGMatrix(gfxMatrix(mx._11, mx._12, -mx._21, -mx._22, mx._31, mx._32));
   return matrix.forget();
 }
 
@@ -203,9 +203,9 @@ SVGMatrix::SkewX(float angle, ErrorResult& rv)
   }
 
   const gfxMatrix& mx = GetMatrix();
-  gfxMatrix skewMx(mx.xx, mx.yx,
-                   (float) (mx.xy + mx.xx*ta), (float) (mx.yy + mx.yx*ta),
-                   mx.x0, mx.y0);
+  gfxMatrix skewMx(mx._11, mx._12,
+                   (float) (mx._21 + mx._11*ta), (float) (mx._22 + mx._12*ta),
+                   mx._31, mx._32);
   nsRefPtr<SVGMatrix> matrix = new SVGMatrix(skewMx);
   return matrix.forget();
 }
@@ -220,9 +220,9 @@ SVGMatrix::SkewY(float angle, ErrorResult& rv)
   }
 
   const gfxMatrix& mx = GetMatrix();
-  gfxMatrix skewMx((float) (mx.xx + mx.xy*ta), (float) (mx.yx + mx.yy*ta),
-                   mx.xy, mx.yy,
-                   mx.x0, mx.y0);
+  gfxMatrix skewMx((float) (mx._11 + mx._21*ta), (float) (mx._12 + mx._22*ta),
+                   mx._21, mx._22,
+                   mx._31, mx._32);
 
   nsRefPtr<SVGMatrix> matrix = new SVGMatrix(skewMx);
   return matrix.forget();

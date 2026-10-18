@@ -5537,7 +5537,10 @@ JS_EncodeStringToUTF8(JSContext *cx, HandleString str)
     if (!linear)
         return nullptr;
 
-    return TwoByteCharsToNewUTF8CharsZ(cx, linear->range()).c_str();
+    JS::AutoCheckCannotGC nogc;
+    return linear->hasLatin1Chars()
+           ? JS::CharsToNewUTF8CharsZ(cx, linear->latin1Range(nogc)).c_str()
+           : JS::CharsToNewUTF8CharsZ(cx, linear->twoByteRange(nogc)).c_str();
 }
 
 JS_PUBLIC_API(size_t)
@@ -5857,8 +5860,11 @@ JS_ExecuteRegExp(JSContext *cx, HandleObject obj, HandleObject reobj, jschar *ch
     if (!res)
         return false;
 
-    return ExecuteRegExpLegacy(cx, res, reobj->as<RegExpObject>(), NullPtr(), chars, length, indexp,
-                               test, rval);
+    RootedLinearString input(cx, js_NewStringCopyN<CanGC>(cx, chars, length));
+    if (!input)
+        return false;
+
+    return ExecuteRegExpLegacy(cx, res, reobj->as<RegExpObject>(), input, indexp, test, rval);
 }
 
 JS_PUBLIC_API(JSObject *)
@@ -5891,8 +5897,12 @@ JS_ExecuteRegExpNoStatics(JSContext *cx, HandleObject obj, jschar *chars, size_t
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
 
-    return ExecuteRegExpLegacy(cx, nullptr, obj->as<RegExpObject>(), NullPtr(), chars, length,
-                               indexp, test, rval);
+    RootedLinearString input(cx, js_NewStringCopyN<CanGC>(cx, chars, length));
+    if (!input)
+        return false;
+
+    return ExecuteRegExpLegacy(cx, nullptr, obj->as<RegExpObject>(), input, indexp, test,
+                               rval);
 }
 
 JS_PUBLIC_API(bool)
