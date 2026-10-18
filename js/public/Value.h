@@ -20,6 +20,7 @@
 #include "jstypes.h"
 
 #include "js/Anchor.h"
+#include "js/GCAPI.h"
 #include "js/RootingAPI.h"
 #include "js/Utility.h"
 
@@ -1290,6 +1291,13 @@ IsOptimizedPlaceholderMagicValue(const Value &v)
         return true;
     }
     return false;
+}
+
+static MOZ_ALWAYS_INLINE void
+ExposeValueToActiveJS(const Value &v)
+{
+    if (v.isMarkable())
+        ExposeGCThingToActiveJS(v.toGCThing(), v.gcKind());
 }
 
 /************************************************************************/

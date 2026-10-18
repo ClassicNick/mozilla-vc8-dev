@@ -50,11 +50,12 @@ FixedTableLayoutStrategy::GetMinWidth(nsRenderingContext* aRenderingContext)
 
     nsTableCellMap *cellMap = mTableFrame->GetCellMap();
     int32_t colCount = cellMap->GetColCount();
+    nscoord spacing = mTableFrame->GetCellSpacingX();
 
     nscoord result = 0;
 
     if (colCount > 0) {
-        result += mTableFrame->GetCellSpacingX(-1, colCount);
+        result += spacing * (colCount + 1);
     }
 
     for (int32_t col = 0; col < colCount; ++col) {
@@ -63,7 +64,6 @@ FixedTableLayoutStrategy::GetMinWidth(nsRenderingContext* aRenderingContext)
             NS_ERROR("column frames out of sync with cell map");
             continue;
         }
-        nscoord spacing = mTableFrame->GetCellSpacingX(col);
         const nsStyleCoord *styleWidth =
             &colFrame->StylePosition()->mWidth;
         if (styleWidth->ConvertsToLength()) {
@@ -160,6 +160,7 @@ FixedTableLayoutStrategy::ComputeColumnWidths(const nsHTMLReflowState& aReflowSt
 
     nsTableCellMap *cellMap = mTableFrame->GetCellMap();
     int32_t colCount = cellMap->GetColCount();
+    nscoord spacing = mTableFrame->GetCellSpacingX();
 
     if (colCount == 0) {
         // No Columns - nothing to compute
@@ -167,8 +168,8 @@ FixedTableLayoutStrategy::ComputeColumnWidths(const nsHTMLReflowState& aReflowSt
     }
 
     // border-spacing isn't part of the basis for percentages.
-    tableWidth -= mTableFrame->GetCellSpacingX(-1, colCount);
-
+    tableWidth -= spacing * (colCount + 1);
+    
     // store the old column widths. We might call multiple times SetFinalWidth
     // on the columns, due to this we can't compare at the last call that the
     // width has changed with the respect to the last call to
@@ -279,7 +280,6 @@ FixedTableLayoutStrategy::ComputeColumnWidths(const nsHTMLReflowState& aReflowSt
                         // row, split up the space evenly.  (XXX This
                         // isn't quite right if some of the columns it's
                         // in have specified widths.  Should we care?)
-                        nscoord spacing = mTableFrame->GetCellSpacingX(col);
                         colWidth = ((colWidth + spacing) / colSpan) - spacing;
                         if (colWidth < 0)
                             colWidth = 0;

@@ -351,7 +351,6 @@ struct RuntimeSizes
     macro(_, _, contexts) \
     macro(_, _, dtoa) \
     macro(_, _, temporary) \
-    macro(_, _, regexpData) \
     macro(_, _, interpreterStack) \
     macro(_, _, mathCache) \
     macro(_, _, sourceDataCache) \
