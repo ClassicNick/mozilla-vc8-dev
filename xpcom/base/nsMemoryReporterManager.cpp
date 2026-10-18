@@ -122,7 +122,7 @@ public:
   NS_DECL_ISUPPORTS
 
   NS_METHOD CollectReports(nsIHandleReportCallback* aHandleReport,
-                           nsISupports* aData)
+                           nsISupports* aData, bool aAnonymize)
   {
     int64_t amount = 0;
     nsresult rv = ResidentUniqueDistinguishedAmount(&amount);
@@ -524,7 +524,7 @@ public:
   NS_DECL_ISUPPORTS
 
   NS_METHOD CollectReports(nsIHandleReportCallback* aHandleReport,
-                           nsISupports* aData)
+                           nsISupports* aData, bool aAnonymize)
   {
     int64_t amount;
     nsresult rv = VsizeMaxContiguousDistinguishedAmount(&amount);
@@ -545,7 +545,7 @@ public:
   NS_DECL_ISUPPORTS
 
   NS_METHOD CollectReports(nsIHandleReportCallback* aHandleReport,
-                           nsISupports* aData)
+                           nsISupports* aData, bool aAnonymize)
   {
     int64_t amount;
     nsresult rv = PrivateDistinguishedAmount(&amount);
@@ -567,7 +567,7 @@ public:
   NS_DECL_ISUPPORTS
 
   NS_METHOD CollectReports(nsIHandleReportCallback* aHandleReport,
-                           nsISupports* aData)
+                           nsISupports* aData, bool aAnonymize)
   {
     int64_t amount;
     nsresult rv = VsizeDistinguishedAmount(&amount);
@@ -592,7 +592,7 @@ public:
   NS_DECL_ISUPPORTS
 
   NS_METHOD CollectReports(nsIHandleReportCallback* aHandleReport,
-                           nsISupports* aData)
+                           nsISupports* aData, bool aAnonymize)
   {
     int64_t amount;
     nsresult rv = ResidentDistinguishedAmount(&amount);
@@ -624,7 +624,7 @@ public:
   NS_DECL_ISUPPORTS
 
   NS_METHOD CollectReports(nsIHandleReportCallback* aHandleReport,
-                           nsISupports* aData)
+                           nsISupports* aData, bool aAnonymize)
   {
     struct rusage usage;
     int err = getrusage(RUSAGE_SELF, &usage);
@@ -666,7 +666,7 @@ public:
   NS_DECL_ISUPPORTS
 
   NS_METHOD CollectReports(nsIHandleReportCallback* aHandleReport,
-                           nsISupports* aData)
+                           nsISupports* aData, bool aAnonymize)
   {
     int64_t amount = 0;
     nsresult rv = PageFaultsHardDistinguishedAmount(&amount);
@@ -713,7 +713,7 @@ public:
   NS_DECL_ISUPPORTS
 
   NS_METHOD CollectReports(nsIHandleReportCallback* aHandleReport,
-                           nsISupports* aData)
+                           nsISupports* aData, bool aAnonymize)
   {
     jemalloc_stats_t stats;
     jemalloc_stats(&stats);
@@ -817,7 +817,7 @@ public:
   NS_DECL_ISUPPORTS
 
   NS_METHOD CollectReports(nsIHandleReportCallback* aHandleReport,
-                           nsISupports* aData)
+                           nsISupports* aData, bool aAnonymize)
   {
     return MOZ_COLLECT_REPORT(
       "explicit/atom-tables", KIND_HEAP, UNITS_BYTES,
@@ -838,7 +838,7 @@ public:
   NS_DECL_ISUPPORTS
 
   NS_IMETHOD CollectReports(nsIHandleReportCallback* aHandleReport,
-                            nsISupports* aData)
+                            nsISupports* aData, bool aAnonymize)
   {
     dmd::Sizes sizes;
     dmd::SizeOf(&sizes);
@@ -996,10 +996,12 @@ nsMemoryReporterManager::GetReports(
   nsIHandleReportCallback* aHandleReport,
   nsISupports* aHandleReportData,
   nsIFinishReportingCallback* aFinishReporting,
-  nsISupports* aFinishReportingData)
+  nsISupports* aFinishReportingData,
+  bool aAnonymize)
 {
   return GetReportsExtended(aHandleReport, aHandleReportData,
                             aFinishReporting, aFinishReportingData,
+                            aAnonymize,
                             /* minimize = */ false,
                             /* DMDident = */ nsString());
 }
@@ -1010,6 +1012,7 @@ nsMemoryReporterManager::GetReportsExtended(
   nsISupports* aHandleReportData,
   nsIFinishReportingCallback* aFinishReporting,
   nsISupports* aFinishReportingData,
+  bool aAnonymize,
   bool aMinimize,
   const nsAString& aDMDDumpIdent)
 {
@@ -1042,8 +1045,8 @@ nsMemoryReporterManager::GetReportsExtended(
       do_GetService("@mozilla.org/observer-service;1");
     NS_ENSURE_STATE(obs);
 
-    nsPrintfCString genStr("generation=%x minimize=%d DMDident=",
-                           generation, aMinimize ? 1 : 0);
+    nsPrintfCString genStr("generation=%x anonymize=%d minimize=%d DMDident=",
+                           generation, aAnonymize ? 1 : 0, aMinimize ? 1 : 0);
     nsAutoString msg = NS_ConvertUTF8toUTF16(genStr);
     msg += aDMDDumpIdent;
 
@@ -1058,6 +1061,7 @@ nsMemoryReporterManager::GetReportsExtended(
     NS_ENSURE_SUCCESS(rv, rv);
 
     mGetReportsState = new GetReportsState(generation,
+                                           aAnonymize,
                                            timer,
                                            mNumChildProcesses,
                                            aHandleReport,
@@ -1067,6 +1071,7 @@ nsMemoryReporterManager::GetReportsExtended(
                                            aDMDDumpIdent);
   } else {
     mGetReportsState = new GetReportsState(generation,
+                                           aAnonymize,
                                            nullptr,
                                            /* mNumChildProcesses = */ 0,
                                            aHandleReport,
@@ -1091,7 +1096,7 @@ nsMemoryReporterManager::StartGettingReports()
 
   // Get reports for this process.
   GetReportsForThisProcessExtended(s->mHandleReport, s->mHandleReportData,
-                                   s->mDMDDumpIdent);
+                                   s->mAnonymize, s->mDMDDumpIdent);
   s->mParentDone = true;
 
   // If there are no remaining child processes, we can finish up immediately.
@@ -1121,18 +1126,16 @@ WeakEnumerator(nsPtrHashKey<nsIMemoryReporter>* aElem, void* aData)
 NS_IMETHODIMP
 nsMemoryReporterManager::GetReportsForThisProcess(
   nsIHandleReportCallback* aHandleReport,
-  nsISupports* aHandleReportData)
+  nsISupports* aHandleReportData, bool aAnonymize)
 {
-  return GetReportsForThisProcessExtended(aHandleReport,
-                                          aHandleReportData,
-                                          nsString());
+  return GetReportsForThisProcessExtended(aHandleReport, aHandleReportData,
+                                          aAnonymize, nsString());
 }
 
 NS_IMETHODIMP
 nsMemoryReporterManager::GetReportsForThisProcessExtended(
-  nsIHandleReportCallback* aHandleReport,
-  nsISupports* aHandleReportData,
-  const nsAString& aDMDDumpIdent)
+  nsIHandleReportCallback* aHandleReport, nsISupports* aHandleReportData,
+  bool aAnonymize, const nsAString& aDMDDumpIdent)
 {
   // Memory reporters are not necessarily threadsafe, so this function must
   // be called from the main thread.
@@ -1155,7 +1158,8 @@ nsMemoryReporterManager::GetReportsForThisProcessExtended(
     mWeakReporters->EnumerateEntries(WeakEnumerator, &allReporters);
   }
   for (uint32_t i = 0; i < allReporters.Length(); i++) {
-    allReporters[i]->CollectReports(aHandleReport, aHandleReportData);
+    allReporters[i]->CollectReports(aHandleReport, aHandleReportData,
+                                    aAnonymize);
   }
 
 #ifdef MOZ_DMD
@@ -1502,7 +1506,11 @@ nsMemoryReporterManager::GetExplicit(int64_t* aAmount)
   nsRefPtr<ExplicitCallback> handleReport = new ExplicitCallback();
   nsRefPtr<Int64Wrapper> wrappedExplicitSize = new Int64Wrapper();
 
-  GetReportsForThisProcess(handleReport, wrappedExplicitSize);
+  // Anonymization doesn't matter here, because we're only summing all the
+  // reported values. Enable it anyway because it's slightly faster, since it
+  // doesn't have to get URLs, find notable strings, etc.
+  GetReportsForThisProcess(handleReport, wrappedExplicitSize,
+                           /* anonymize = */ true);
 
   *aAmount = wrappedExplicitSize->mValue;
 
@@ -1984,7 +1992,7 @@ RunReportersForThisProcess()
 
   nsRefPtr<DoNothingCallback> doNothing = new DoNothingCallback();
 
-  mgr->GetReportsForThisProcess(doNothing, nullptr);
+  mgr->GetReportsForThisProcess(doNothing, nullptr, /* anonymize = */ false);
 }
 
 } // namespace dmd

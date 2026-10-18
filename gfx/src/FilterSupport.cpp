@@ -258,6 +258,8 @@ private:
 
   // This array is indexed by ColorModel::ToIndex.
   RefPtr<FilterNode> mFilterForColorModel[4];
+
+  ~FilterCachedColorModels() {}
 };
 
 FilterCachedColorModels::FilterCachedColorModels(DrawTarget* aDT,

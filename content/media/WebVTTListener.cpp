@@ -114,6 +114,9 @@ WebVTTListener::OnStopRequest(nsIRequest* aRequest,
   if (mElement->ReadyState() != FailedToLoad) {
     mElement->SetReadyState(Loaded);
   }
+
+  mElement->DropChannel();
+
   return aStatus;
 }
 
