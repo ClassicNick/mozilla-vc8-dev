@@ -5711,6 +5711,7 @@ Selection::Modify(const nsAString& aAlter, const nsAString& aDirection,
            aGranularity.LowerCaseEqualsLiteral("paragraphboundary") ||
            aGranularity.LowerCaseEqualsLiteral("documentboundary")) {
     aRv.Throw(NS_ERROR_NOT_IMPLEMENTED);
+    return;
   }
   else {
     aRv.Throw(NS_ERROR_DOM_SYNTAX_ERR);

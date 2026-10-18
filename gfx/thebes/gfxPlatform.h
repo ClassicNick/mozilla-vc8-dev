@@ -176,6 +176,9 @@ public:
      */
     static void Shutdown();
 
+    static void InitLayersIPC();
+    static void ShutdownLayersIPC();
+
     /**
      * Create an offscreen surface of the given dimensions
      * and image format.
@@ -446,15 +449,8 @@ public:
 
     static bool OffMainThreadCompositingEnabled();
 
-    /** Use gfxPlatform::GetPref* methods instead of direct calls to Preferences
-     * to get the values for layers preferences.  These will only be evaluated
-     * only once, and remain the same until restart.
-     */
-    static bool GetPrefLayersOffMainThreadCompositionEnabled();
     static bool CanUseDirect3D9();
     static bool CanUseDirect3D11();
-
-    static bool OffMainThreadCompositionRequired();
 
     /**
      * Is it possible to use buffer rotation.  Note that these
@@ -556,6 +552,8 @@ public:
 
     virtual bool IsInGonkEmulator() const { return false; }
 
+    static bool UsesOffMainThreadCompositing();
+
 protected:
     gfxPlatform();
     virtual ~gfxPlatform();
@@ -641,8 +639,6 @@ private:
     friend void RecordingPrefChanged(const char *aPrefName, void *aClosure);
 
     virtual void GetPlatformCMSOutputProfile(void *&mem, size_t &size);
-
-    virtual bool SupportsOffMainThreadCompositing() { return true; }
 
     nsRefPtr<gfxASurface> mScreenReferenceSurface;
     mozilla::RefPtr<mozilla::gfx::DrawTarget> mScreenReferenceDrawTarget;

@@ -32,6 +32,7 @@
 #include <math.h>
 #include "platform.h"
 #include "TableTicker.h"
+#include "ThreadResponsiveness.h"
 #include "ProfileEntry.h"
 #include "UnwinderThread2.h"
 
@@ -139,6 +140,8 @@ class SamplerThread : public Thread {
             info->Profile()->flush();
             continue;
           }
+
+          info->Profile()->GetThreadResponsiveness()->Update();
 
           ThreadProfile* thread_profile = info->Profile();
 

@@ -43,6 +43,7 @@ SIZE nsUXThemeData::sCommandButtons[4];
 nsUXThemeData::OpenThemeDataPtr nsUXThemeData::openTheme = NULL;
 nsUXThemeData::CloseThemeDataPtr nsUXThemeData::closeTheme = NULL;
 nsUXThemeData::DrawThemeBackgroundPtr nsUXThemeData::drawThemeBG = NULL;
+nsUXThemeData::DrawThemeBackgroundExPtr nsUXThemeData::drawThemeBGEx = NULL;
 nsUXThemeData::DrawThemeEdgePtr nsUXThemeData::drawThemeEdge = NULL;
 nsUXThemeData::GetThemeContentRectPtr nsUXThemeData::getThemeContentRect = NULL;
 nsUXThemeData::GetThemeBackgroundRegionPtr nsUXThemeData::getThemeBackgroundRegion = NULL;
@@ -88,6 +89,7 @@ nsUXThemeData::Initialize()
     openTheme = (OpenThemeDataPtr)GetProcAddress(sThemeDLL, "OpenThemeData");
     closeTheme = (CloseThemeDataPtr)GetProcAddress(sThemeDLL, "CloseThemeData");
     drawThemeBG = (DrawThemeBackgroundPtr)GetProcAddress(sThemeDLL, "DrawThemeBackground");
+	drawThemeBGEx = (DrawThemeBackgroundExPtr)GetProcAddress(sThemeDLL, "DrawThemeBackgroundEx");
     drawThemeEdge = (DrawThemeEdgePtr)GetProcAddress(sThemeDLL, "DrawThemeEdge");
     getThemeContentRect = (GetThemeContentRectPtr)GetProcAddress(sThemeDLL, "GetThemeBackgroundContentRect");
     getThemeBackgroundRegion = (GetThemeBackgroundRegionPtr)GetProcAddress(sThemeDLL, "GetThemeBackgroundRegion");

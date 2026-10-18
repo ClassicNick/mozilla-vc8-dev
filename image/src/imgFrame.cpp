@@ -44,6 +44,13 @@ VolatileBufferRelease(void *vbuf)
   delete static_cast<VolatileBufferPtr<unsigned char>*>(vbuf);
 }
 
+static int32_t
+VolatileSurfaceStride(const IntSize& size, SurfaceFormat format)
+{
+  // Stride must be a multiple of four or cairo will complain.
+  return (size.width * BytesPerPixel(format) + 0x3) & ~0x3;
+}
+
 gfxImageSurface *
 LockedImageSurface::CreateSurface(VolatileBuffer *vbuf,
                                   const gfxIntSize& size,

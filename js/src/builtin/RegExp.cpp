@@ -6,6 +6,8 @@
 
 #include "builtin/RegExp.h"
 
+#include "mozilla/TypeTraits.h"
+
 #include "jscntxt.h"
 
 #ifndef JS_YARR
@@ -91,7 +93,7 @@ js::CreateRegExpMatchResult(JSContext *cx, HandleString input, const MatchPairs 
 
 static RegExpRunStatus
 ExecuteRegExpImpl(JSContext *cx, RegExpStatics *res, RegExpShared &re,
-                  Handle<JSLinearString*> input, const jschar *chars, size_t length,
+                  HandleLinearString input, const jschar *chars, size_t length,
                   size_t *lastIndex, MatchConduit &matches)
 {
     RegExpRunStatus status;
@@ -121,7 +123,7 @@ ExecuteRegExpImpl(JSContext *cx, RegExpStatics *res, RegExpShared &re,
 /* Legacy ExecuteRegExp behavior is baked into the JSAPI. */
 bool
 js::ExecuteRegExpLegacy(JSContext *cx, RegExpStatics *res, RegExpObject &reobj,
-                        Handle<JSLinearString*> input_, const jschar *chars, size_t length,
+                        HandleLinearString input_, const jschar *chars, size_t length,
                         size_t *lastIndex, bool test, MutableHandleValue rval)
 {
     RegExpGuard shared(cx);
@@ -160,39 +162,51 @@ js::ExecuteRegExpLegacy(JSContext *cx, RegExpStatics *res, RegExpObject &reobj,
 }
 
 /* Note: returns the original if no escaping need be performed. */
-static JSAtom *
-EscapeNakedForwardSlashes(JSContext *cx, HandleAtom unescaped)
+template <typename CharT>
+static bool
+EscapeNakedForwardSlashes(StringBuffer &sb, const CharT *oldChars, size_t oldLen)
 {
-    size_t oldLen = unescaped->length();
-    const jschar *oldChars = unescaped->chars();
-
-    JS::Anchor<JSString *> anchor(unescaped);
-
-    /* We may never need to use |sb|. Start using it lazily. */
-    StringBuffer sb(cx);
-
-    for (const jschar *it = oldChars; it < oldChars + oldLen; ++it) {
+    for (const CharT *it = oldChars; it < oldChars + oldLen; ++it) {
         if (*it == '/' && (it == oldChars || it[-1] != '\\')) {
             /* There's a forward slash that needs escaping. */
             if (sb.empty()) {
                 /* This is the first one we've seen, copy everything up to this point. */
-                if (unescaped->hasTwoByteChars() && !sb.ensureTwoByteChars())
-                    return nullptr;
+                if (mozilla::IsSame<CharT, jschar>::value && !sb.ensureTwoByteChars())
+                    return false;
 
                 if (!sb.reserve(oldLen + 1))
-                    return nullptr;
+                    return false;
 
                 sb.infallibleAppend(oldChars, size_t(it - oldChars));
             }
             if (!sb.append('\\'))
-                return nullptr;
+                return false;
         }
 
         if (!sb.empty() && !sb.append(*it))
+            return false;
+    }
+
+    return true;
+}
+
+static JSAtom *
+EscapeNakedForwardSlashes(JSContext *cx, JSAtom *unescaped)
+{
+    /* We may never need to use |sb|. Start using it lazily. */
+    StringBuffer sb(cx);
+
+    if (unescaped->hasLatin1Chars()) {
+        JS::AutoCheckCannotGC nogc;
+        if (!EscapeNakedForwardSlashes(sb, unescaped->latin1Chars(nogc), unescaped->length()))
+            return nullptr;
+    } else {
+        JS::AutoCheckCannotGC nogc;
+        if (!EscapeNakedForwardSlashes(sb, unescaped->twoByteChars(nogc), unescaped->length()))
             return nullptr;
     }
 
-    return sb.empty() ? (JSAtom *)unescaped : sb.finishAtom();
+    return sb.empty() ? unescaped : sb.finishAtom();
 }
 
 /*
@@ -301,7 +315,7 @@ CompileRegExpObject(JSContext *cx, RegExpObjectBuilder &builder, CallArgs args)
     CompileOptions options(cx);
     frontend::TokenStream dummyTokenStream(cx, options, nullptr, 0, nullptr);
 
-    if (!irregexp::ParsePatternSyntax(dummyTokenStream, cx->tempLifoAlloc(), escapedSourceStr->chars(), escapedSourceStr->length()))
+    if (!irregexp::ParsePatternSyntax(dummyTokenStream, cx->tempLifoAlloc(), escapedSourceStr))
         return false;
 #endif // JS_YARR
 
@@ -562,7 +576,7 @@ js::ExecuteRegExp(JSContext *cx, HandleObject regexp, HandleString string,
     }
 
     /* Step 3. */
-    Rooted<JSLinearString*> input(cx, string->ensureLinear(cx));
+    RootedLinearString input(cx, string->ensureLinear(cx));
     if (!input)
         return RegExpRunStatus_Error;
 
