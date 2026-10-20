@@ -1513,6 +1513,8 @@ struct nsIDocument::FrameRequest
   int32_t mHandle;
 };
 
+static already_AddRefed<mozilla::dom::NodeInfo> nullNodeInfo(nullptr);
+
 // ==================================================================
 // =
 // ==================================================================
@@ -5224,7 +5226,7 @@ nsIDocument::CreateElementNS(const nsAString& aNamespaceURI,
                              const nsAString& aQualifiedName,
                              ErrorResult& rv)
 {
-  nsCOMPtr<nsINodeInfo> nodeInfo;
+  nsRefPtr<mozilla::dom::NodeInfo> nodeInfo;
   rv = nsContentUtils::GetNodeInfoFromQName(aNamespaceURI,
                                             aQualifiedName,
                                             mNodeInfoManager,
@@ -5411,7 +5413,7 @@ nsIDocument::CreateAttribute(const nsAString& aName, ErrorResult& rv)
     return nullptr;
   }
 
-  nsCOMPtr<nsINodeInfo> nodeInfo;
+  nsRefPtr<mozilla::dom::NodeInfo> nodeInfo;
   res = mNodeInfoManager->GetNodeInfo(aName, nullptr, kNameSpaceID_None,
                                       nsIDOMNode::ATTRIBUTE_NODE,
                                       getter_AddRefs(nodeInfo));
@@ -5443,7 +5445,7 @@ nsIDocument::CreateAttributeNS(const nsAString& aNamespaceURI,
 {
   WarnOnceAbout(eCreateAttributeNS);
 
-  nsCOMPtr<nsINodeInfo> nodeInfo;
+  nsRefPtr<mozilla::dom::NodeInfo> nodeInfo;
   rv = nsContentUtils::GetNodeInfoFromQName(aNamespaceURI,
                                             aQualifiedName,
                                             mNodeInfoManager,
@@ -5523,7 +5525,7 @@ nsDocument::RegisterUnresolvedElement(Element* aElement, nsIAtom* aTypeName)
     return NS_OK;
   }
 
-  nsINodeInfo* info = aElement->NodeInfo();
+  mozilla::dom::NodeInfo* info = aElement->NodeInfo();
 
   // Candidate may be a custom element through extension,
   // in which case the custom element type name will not
@@ -5591,7 +5593,7 @@ nsDocument::EnqueueLifecycleCallback(nsIDocument::ElementCallbackType aType,
   // Let DEFINITION be ELEMENT's definition
   CustomElementDefinition* definition = aDefinition;
   if (!definition) {
-    nsINodeInfo* info = aCustomElement->NodeInfo();
+    mozilla::dom::NodeInfo* info = aCustomElement->NodeInfo();
 
     // Make sure we get the correct definition in case the element
     // is a extended custom element e.g. <button is="x-button">.
@@ -6733,7 +6735,7 @@ nsDocument::SetTitle(const nsAString& aTitle)
       return NS_OK;
 
     {
-      nsCOMPtr<nsINodeInfo> titleInfo;
+      nsRefPtr<mozilla::dom::NodeInfo> titleInfo;
       titleInfo = mNodeInfoManager->GetNodeInfo(nsGkAtoms::title, nullptr,
                                                 kNameSpaceID_XHTML,
                                                 nsIDOMNode::ELEMENT_NODE);
@@ -8255,7 +8257,7 @@ nsDocument::CreateElem(const nsAString& aName, nsIAtom *aPrefix, int32_t aNamesp
 
   *aResult = nullptr;
 
-  nsCOMPtr<nsINodeInfo> nodeInfo;
+  nsRefPtr<mozilla::dom::NodeInfo> nodeInfo;
   mNodeInfoManager->GetNodeInfo(aName, aPrefix, aNamespaceID,
                                 nsIDOMNode::ELEMENT_NODE,
                                 getter_AddRefs(nodeInfo));
@@ -12231,7 +12233,7 @@ nsIDocument::SetStateObject(nsIStructuredCloneContainer *scContainer)
 already_AddRefed<Element>
 nsIDocument::CreateHTMLElement(nsIAtom* aTag)
 {
-  nsCOMPtr<nsINodeInfo> nodeInfo;
+  nsRefPtr<mozilla::dom::NodeInfo> nodeInfo;
   nodeInfo = mNodeInfoManager->GetNodeInfo(aTag, nullptr, kNameSpaceID_XHTML,
                                            nsIDOMNode::ELEMENT_NODE);
   MOZ_ASSERT(nodeInfo, "GetNodeInfo should never fail");

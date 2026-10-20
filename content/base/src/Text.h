@@ -15,7 +15,8 @@ namespace dom {
 class Text : public nsGenericDOMDataNode
 {
 public:
-  Text(already_AddRefed<nsINodeInfo> aNodeInfo)
+
+  Text(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
     : nsGenericDOMDataNode(aNodeInfo)
   {}
 
