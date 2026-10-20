@@ -2106,10 +2106,10 @@ nsNativeThemeCocoa::IsParentScrollbarRolledOver(nsIFrame* aFrame)
 }
 
 static bool
-IsHiDPIContext(nsDeviceContext* aContext)
+IsHiDPIContext(nsPresContext* aContext)
 {
   return nsPresContext::AppUnitsPerCSSPixel() >=
-    2 * aContext->UnscaledAppUnitsPerDevPixel();
+    2 * aContext->DeviceContext()->UnscaledAppUnitsPerDevPixel();
 }
 
 NS_IMETHODIMP
@@ -2122,7 +2122,7 @@ nsNativeThemeCocoa::DrawWidgetBackground(nsRenderingContext* aContext,
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
   // setup to draw into the correct port
-  int32_t p2a = aContext->AppUnitsPerDevPixel();
+  int32_t p2a = aFrame->PresContext()->AppUnitsPerDevPixel();
 
   gfxRect nativeDirtyRect(aDirtyRect.x, aDirtyRect.y,
                           aDirtyRect.width, aDirtyRect.height);
@@ -2139,7 +2139,7 @@ nsNativeThemeCocoa::DrawWidgetBackground(nsRenderingContext* aContext,
 
   gfxContextMatrixAutoSaveRestore save(thebesCtx);
 
-  bool hidpi = IsHiDPIContext(aContext->DeviceContext());
+  bool hidpi = IsHiDPIContext(aFrame->PresContext());
   if (hidpi) {
     // Use high-resolution drawing.
     nativeWidgetRect.ScaleInverse(2.0f);
@@ -2843,7 +2843,7 @@ nsNativeThemeCocoa::GetWidgetBorder(nsDeviceContext* aContext,
       break;
   }
 
-  if (IsHiDPIContext(aContext)) {
+  if (IsHiDPIContext(aFrame->PresContext())) {
     *aResult = *aResult + *aResult; // doubled
   }
 
@@ -2881,7 +2881,7 @@ bool
 nsNativeThemeCocoa::GetWidgetOverflow(nsDeviceContext* aContext, nsIFrame* aFrame,
                                       uint8_t aWidgetType, nsRect* aOverflowRect)
 {
-  int32_t p2a = aContext->AppUnitsPerDevPixel();
+  int32_t p2a = aFrame->PresContext()->AppUnitsPerDevPixel();
   switch (aWidgetType) {
     case NS_THEME_BUTTON:
     case NS_THEME_MOZ_MAC_HELP_BUTTON:
@@ -3222,7 +3222,7 @@ nsNativeThemeCocoa::GetMinimumWidgetSize(nsRenderingContext* aContext,
     }
   }
 
-  if (IsHiDPIContext(aContext->DeviceContext())) {
+  if (IsHiDPIContext(aFrame->PresContext())) {
     *aResult = *aResult * 2;
   }
 

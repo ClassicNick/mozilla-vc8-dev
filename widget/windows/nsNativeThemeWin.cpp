@@ -1602,7 +1602,7 @@ nsNativeThemeWin::DrawWidgetBackground(nsRenderingContext* aContext,
     return NS_OK;
   }
 
-  gfxFloat p2a = gfxFloat(aContext->AppUnitsPerDevPixel());
+  gfxFloat p2a = gfxFloat(aFrame->PresContext()->AppUnitsPerDevPixel());
   RECT widgetRect;
   RECT clipRect;
   gfxRect tr(aRect.x, aRect.y, aRect.width, aRect.height),
@@ -3585,7 +3585,7 @@ nsresult nsNativeThemeWin::ClassicDrawWidgetBackground(nsRenderingContext* aCont
     return NS_OK;
   }
 
-  gfxFloat p2a = gfxFloat(aContext->AppUnitsPerDevPixel());
+  gfxFloat p2a = gfxFloat(aFrame->PresContext()->AppUnitsPerDevPixel());
   RECT widgetRect;
   gfxRect tr(aRect.x, aRect.y, aRect.width, aRect.height),
           dr(aDirtyRect.x, aDirtyRect.y, aDirtyRect.width, aDirtyRect.height);

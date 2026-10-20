@@ -328,7 +328,7 @@ AddAnimationForProperty(nsIFrame* aFrame, nsCSSProperty aProperty,
     aLayer->AddAnimationForNextTransaction() :
     aLayer->AddAnimation();
 
-  animation->startTime() = ea->mStartTime + ea->mDelay;
+  animation->startTime() = ea->mStartTime + ea->mTiming.mDelay;
   animation->duration() = ea->mTiming.mIterationDuration;
   animation->iterationCount() = ea->mTiming.mIterationCount;
   animation->direction() = ea->mTiming.mDirection;
@@ -415,10 +415,9 @@ nsDisplayListBuilder::AddAnimationsAndTransitionsToLayer(Layer* aLayer,
   if (!content) {
     return;
   }
-  ElementTransitions* et =
-    nsTransitionManager::GetTransitionsForCompositor(content, aProperty);
-
-  ElementAnimations* ea =
+  CommonElementAnimationData* et =
+    nsTransitionManager::GetAnimationsForCompositor(content, aProperty);
+  CommonElementAnimationData* ea =
     nsAnimationManager::GetAnimationsForCompositor(content, aProperty);
 
   if (!ea && !et) {

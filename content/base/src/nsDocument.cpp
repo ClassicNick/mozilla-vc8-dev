@@ -760,7 +760,7 @@ nsDOMStyleSheetList::Length()
   return mLength;
 }
 
-nsCSSStyleSheet*
+CSSStyleSheet*
 nsDOMStyleSheetList::IndexedGetter(uint32_t aIndex, bool& aFound)
 {
   if (!mDocument || aIndex >= (uint32_t)mDocument->GetNumberOfStyleSheets()) {
@@ -772,7 +772,7 @@ nsDOMStyleSheetList::IndexedGetter(uint32_t aIndex, bool& aFound)
   nsIStyleSheet *sheet = mDocument->GetStyleSheetAt(aIndex);
   NS_ASSERTION(sheet, "Must have a sheet");
 
-  return static_cast<nsCSSStyleSheet*>(sheet);
+  return static_cast<CSSStyleSheet*>(sheet);
 }
 
 void
@@ -3969,7 +3969,7 @@ nsDocument::RemoveChildAt(uint32_t aIndex, bool aNotify)
 }
 
 void
-nsDocument::EnsureOnDemandBuiltInUASheet(nsCSSStyleSheet* aSheet)
+nsDocument::EnsureOnDemandBuiltInUASheet(CSSStyleSheet* aSheet)
 {
   // Contains() takes nsISupport*, so annoyingly we have to cast here
   if (mOnDemandBuiltInUASheets.Contains(static_cast<nsIStyleSheet*>(aSheet))) {
@@ -3981,7 +3981,7 @@ nsDocument::EnsureOnDemandBuiltInUASheet(nsCSSStyleSheet* aSheet)
 }
 
 void
-nsDocument::AddOnDemandBuiltInUASheet(nsCSSStyleSheet* aSheet)
+nsDocument::AddOnDemandBuiltInUASheet(CSSStyleSheet* aSheet)
 {
   // Contains() takes nsISupport*, so annoyingly we have to cast here
   MOZ_ASSERT(!mOnDemandBuiltInUASheets.Contains(static_cast<nsIStyleSheet*>(aSheet)));
@@ -4279,7 +4279,7 @@ nsDocument::LoadAdditionalStyleSheet(additionalSheetType aType, nsIURI* aSheetUR
   // Loading the sheet sync.
   nsRefPtr<mozilla::css::Loader> loader = new mozilla::css::Loader();
 
-  nsRefPtr<nsCSSStyleSheet> sheet;
+  nsRefPtr<CSSStyleSheet> sheet;
   nsresult rv = loader->LoadSheetSync(aSheetURI, aType == eAgentSheet,
     true, getter_AddRefs(sheet));
   NS_ENSURE_SUCCESS(rv, rv);
@@ -9330,7 +9330,7 @@ namespace {
 class StubCSSLoaderObserver MOZ_FINAL : public nsICSSLoaderObserver {
 public:
   NS_IMETHOD
-  StyleSheetLoaded(nsCSSStyleSheet*, bool, nsresult)
+  StyleSheetLoaded(CSSStyleSheet*, bool, nsresult)
   {
     return NS_OK;
   }
@@ -9356,7 +9356,7 @@ nsDocument::PreloadStyle(nsIURI* uri, const nsAString& charset,
 
 nsresult
 nsDocument::LoadChromeSheetSync(nsIURI* uri, bool isAgentSheet,
-                                nsCSSStyleSheet** sheet)
+                                CSSStyleSheet** sheet)
 {
   return CSSLoader()->LoadSheetSync(uri, isAgentSheet, isAgentSheet, sheet);
 }
@@ -9705,10 +9705,10 @@ nsIDocument::CreateStaticClone(nsIDocShell* aCloneContainer)
       }
       int32_t sheetsCount = GetNumberOfStyleSheets();
       for (int32_t i = 0; i < sheetsCount; ++i) {
-        nsRefPtr<nsCSSStyleSheet> sheet = do_QueryObject(GetStyleSheetAt(i));
+        nsRefPtr<CSSStyleSheet> sheet = do_QueryObject(GetStyleSheetAt(i));
         if (sheet) {
           if (sheet->IsApplicable()) {
-            nsRefPtr<nsCSSStyleSheet> clonedSheet =
+            nsRefPtr<CSSStyleSheet> clonedSheet =
               sheet->Clone(nullptr, nullptr, clonedDoc, nullptr);
             NS_WARN_IF_FALSE(clonedSheet, "Cloning a stylesheet didn't work!");
             if (clonedSheet) {
@@ -9721,11 +9721,11 @@ nsIDocument::CreateStaticClone(nsIDocShell* aCloneContainer)
       sheetsCount = thisAsDoc->mOnDemandBuiltInUASheets.Count();
       // Iterate backwards to maintain order
       for (int32_t i = sheetsCount - 1; i >= 0; --i) {
-        nsRefPtr<nsCSSStyleSheet> sheet =
+        nsRefPtr<CSSStyleSheet> sheet =
           do_QueryObject(thisAsDoc->mOnDemandBuiltInUASheets[i]);
         if (sheet) {
           if (sheet->IsApplicable()) {
-            nsRefPtr<nsCSSStyleSheet> clonedSheet =
+            nsRefPtr<CSSStyleSheet> clonedSheet =
               sheet->Clone(nullptr, nullptr, clonedDoc, nullptr);
             NS_WARN_IF_FALSE(clonedSheet, "Cloning a stylesheet didn't work!");
             if (clonedSheet) {

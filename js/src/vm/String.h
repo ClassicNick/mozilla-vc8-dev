@@ -1082,15 +1082,15 @@ class MOZ_STACK_CLASS AutoStableStringChars
     bool ownsChars_;
 
   public:
-    AutoStableStringChars(JSContext *cx, JSLinearString *s)
-      : s_(cx, s), state_(Uninitialized), ownsChars_(false)
+    AutoStableStringChars(JSContext *cx)
+      : s_(cx), state_(Uninitialized), ownsChars_(false)
     {};
     ~AutoStableStringChars();
 
-    bool init();
+    bool init(JSContext *cx, JSString *s);
 
     /* Like init(), but Latin1 chars are inflated to TwoByte. */
-    bool initTwoByte(JSContext *cx);
+    bool initTwoByte(JSContext *cx, JSString *s);
 
     bool isLatin1() const { return state_ == Latin1; }
     bool isTwoByte() const { return state_ == TwoByte; }
@@ -1270,6 +1270,10 @@ class AutoNameVector : public AutoVectorRooter<PropertyName *>
 
     MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
+
+template <typename CharT>
+void
+CopyChars(CharT *dest, const JSLinearString &str);
 
 } /* namespace js */
 
