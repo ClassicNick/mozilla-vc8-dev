@@ -192,7 +192,7 @@ ParseEvalStringAsJSON(JSContext *cx, const Range<const CharT> chars, MutableHand
     MOZ_ASSERT((chars[0] == '(' && chars[len - 1] == ')') ||
                (chars[0] == '[' && chars[len - 1] == ']'));
 
-    auto jsonChars = (chars[0] == '[')
+    Range<const CharT> jsonChars = (chars[0] == '[')
                      ? chars
                      : Range<const CharT>(chars.start().get() + 1U, len - 2);
 

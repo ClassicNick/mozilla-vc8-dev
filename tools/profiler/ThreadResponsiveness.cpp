@@ -75,7 +75,7 @@ private:
   bool mStop;
 };
 
-NS_IMPL_ISUPPORTS_INHERITED(CheckResponsivenessTask, nsRunnable, nsITimerCallback)
+NS_IMPL_ISUPPORTS_INHERITED1(CheckResponsivenessTask, nsRunnable, nsITimerCallback)
 
 ThreadResponsiveness::ThreadResponsiveness(ThreadProfile *aThreadProfile)
   : mThreadProfile(aThreadProfile)
