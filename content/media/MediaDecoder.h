@@ -608,7 +608,7 @@ public:
 
   // Set a flag indicating whether seeking is supported
   virtual void SetMediaSeekable(bool aMediaSeekable) MOZ_OVERRIDE;
-  virtual void SetTransportSeekable(bool aTransportSeekable) MOZ_FINAL MOZ_OVERRIDE;
+
   // Returns true if this media supports seeking. False for example for WebM
   // files without an index and chained ogg files.
   virtual bool IsMediaSeekable() MOZ_FINAL MOZ_OVERRIDE;
@@ -718,14 +718,14 @@ public:
   // Records activity stopping on the channel. The monitor must be held.
   virtual void NotifyPlaybackStarted() {
     GetReentrantMonitor().AssertCurrentThreadIn();
-    mPlaybackStatistics.Start();
+    mPlaybackStatistics->Start();
   }
 
   // Used to estimate rates of data passing through the decoder's channel.
   // Records activity stopping on the channel. The monitor must be held.
   virtual void NotifyPlaybackStopped() {
     GetReentrantMonitor().AssertCurrentThreadIn();
-    mPlaybackStatistics.Stop();
+    mPlaybackStatistics->Stop();
   }
 
   // The actual playback rate computation. The monitor must be held.
@@ -1037,10 +1037,6 @@ protected:
   // True when playback should start with audio captured (not playing).
   bool mInitialAudioCaptured;
 
-  // True if the resource is seekable at a transport level (server supports byte
-  // range requests, local file, etc.).
-  bool mTransportSeekable;
-
   // True if the media is seekable (i.e. supports random access).
   bool mMediaSeekable;
 
@@ -1194,7 +1190,7 @@ protected:
   // Data needed to estimate playback data rate. The timeline used for
   // this estimate is "decode time" (where the "current time" is the
   // time of the last decoded video frame).
-  MediaChannelStatistics mPlaybackStatistics;
+  nsRefPtr<MediaChannelStatistics> mPlaybackStatistics;
 
   // True when our media stream has been pinned. We pin the stream
   // while seeking.

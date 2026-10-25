@@ -27,6 +27,7 @@
 #include "jsobjinlines.h"
 
 #include "vm/String-inl.h"
+#include "vm/Symbol-inl.h"
 
 using namespace js;
 using namespace js::gc;
@@ -125,6 +126,7 @@ JSRuntime::initializeAtoms(JSContext *cx)
         commonNames = parentRuntime->commonNames;
         emptyString = parentRuntime->emptyString;
         permanentAtoms = parentRuntime->permanentAtoms;
+        wellKnownSymbols = parentRuntime->wellKnownSymbols;
         return true;
     }
 
@@ -159,30 +161,43 @@ JSRuntime::initializeAtoms(JSContext *cx)
     JS_ASSERT(uintptr_t(names) == uintptr_t(commonNames + 1));
 
     emptyString = commonNames->empty;
+
+    // Create the well-known symbols.
+    wellKnownSymbols = cx->new_<WellKnownSymbols>();
+    if (!wellKnownSymbols)
+        return false;
+
+    ImmutablePropertyNamePtr *descriptions = &commonNames->Symbol_iterator;
+    ImmutableSymbolPtr *symbols = reinterpret_cast<ImmutableSymbolPtr *>(wellKnownSymbols);
+    for (size_t i = 0; i < JS::WellKnownSymbolLimit; i++) {
+        JS::Symbol *symbol = JS::Symbol::new_(cx, JS::SymbolCode(i), descriptions[i]);
+        if (!symbol) {
+            js_ReportOutOfMemory(cx);
+            return false;
+        }
+        symbols[i].init(symbol);
+    }
+
     return true;
 }
 
 void
 JSRuntime::finishAtoms()
 {
-    if (atoms_)
-        js_delete(atoms_);
+    js_delete(atoms_);
 
     if (!parentRuntime) {
-        if (staticStrings)
-            js_delete(staticStrings);
-
-        if (commonNames)
-            js_delete(commonNames);
-
-        if (permanentAtoms)
-            js_delete(permanentAtoms);
+        js_delete(staticStrings);
+        js_delete(commonNames);
+        js_delete(permanentAtoms);
+        js_delete(wellKnownSymbols);
     }
 
     atoms_ = nullptr;
     staticStrings = nullptr;
     commonNames = nullptr;
     permanentAtoms = nullptr;
+    wellKnownSymbols = nullptr;
     emptyString = nullptr;
 }
 
@@ -223,6 +238,20 @@ js::MarkPermanentAtoms(JSTracer *trc)
             JSAtom *atom = entry.asPtr();
             MarkPermanentAtom(trc, atom, "permanent_table");
         }
+    }
+}
+
+void
+js::MarkWellKnownSymbols(JSTracer *trc)
+{
+    JSRuntime *rt = trc->runtime();
+
+    if (rt->parentRuntime)
+        return;
+
+    if (WellKnownSymbols *wks = rt->wellKnownSymbols) {
+        for (size_t i = 0; i < JS::WellKnownSymbolLimit; i++)
+            MarkWellKnownSymbol(trc, wks->get(i));
     }
 }
 
@@ -380,6 +409,9 @@ AtomizeAndCopyChars(ExclusiveContext *cx, const CharT *tbchars, size_t length, I
 
     JSFlatString *flat = js_NewStringCopyN<NoGC>(cx, tbchars, length);
     if (!flat) {
+        // Grudgingly forgo last-ditch GC. The alternative would be to release
+        // the lock, manually GC here, and retry from the top. If you fix this,
+        // please also fix or comment the similar case in Symbol::new_.
         js_ReportOutOfMemory(cx);
         return nullptr;
     }
@@ -430,11 +462,14 @@ js::AtomizeString(ExclusiveContext *cx, JSString *str,
         return &atom;
     }
 
-    const jschar *chars = str->getChars(cx);
-    if (!chars)
+    JSLinearString *linear = str->ensureLinear(cx);
+    if (!linear)
         return nullptr;
 
-    return AtomizeAndCopyChars(cx, chars, str->length(), ib);
+    JS::AutoCheckCannotGC nogc;
+    return linear->hasLatin1Chars()
+           ? AtomizeAndCopyChars(cx, linear->latin1Chars(nogc), linear->length(), ib)
+           : AtomizeAndCopyChars(cx, linear->twoByteChars(nogc), linear->length(), ib);
 }
 
 JSAtom *

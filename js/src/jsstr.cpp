@@ -66,6 +66,9 @@ using namespace js::gc;
 using namespace js::types;
 using namespace js::unicode;
 
+using JS::Symbol;
+using JS::SymbolCode;
+
 using mozilla::CheckedInt;
 using mozilla::IsNaN;
 using mozilla::IsNegativeZero;
@@ -1738,14 +1741,14 @@ HasSubstringAt(JSLinearString *text, JSLinearString *pat, size_t start)
         if (pat->hasLatin1Chars())
             return PodEqual(textChars, pat->latin1Chars(nogc), patLen);
 
-        return EqualCharsLatin1TwoByte(textChars, pat->twoByteChars(nogc), patLen);
+        return EqualChars(textChars, pat->twoByteChars(nogc), patLen);
     }
 
     const jschar *textChars = text->twoByteChars(nogc) + start;
     if (pat->hasTwoByteChars())
         return PodEqual(textChars, pat->twoByteChars(nogc), patLen);
 
-    return EqualCharsLatin1TwoByte(pat->latin1Chars(nogc), textChars, patLen);
+    return EqualChars(pat->latin1Chars(nogc), textChars, patLen);
 }
 
 /* ES6 20131108 draft 21.1.3.18. */
@@ -1995,20 +1998,14 @@ HasRegExpMetaChars(const CharT *chars, size_t length)
     return false;
 }
 
-static inline bool
-HasRegExpMetaChars(JSLinearString *str)
+bool
+js::StringHasRegExpMetaChars(JSLinearString *str)
 {
     AutoCheckCannotGC nogc;
     if (str->hasLatin1Chars())
         return HasRegExpMetaChars(str->latin1Chars(nogc), str->length());
 
     return HasRegExpMetaChars(str->twoByteChars(nogc), str->length());
-}
-
-bool
-js::StringHasRegExpMetaChars(const jschar *chars, size_t length)
-{
-    return HasRegExpMetaChars(chars, length);
 }
 
 namespace {
@@ -2134,7 +2131,7 @@ class MOZ_STACK_CLASS StringRegExpGuard
             return nullptr;
 
         size_t patLen = fm.pat_->length();
-        if (checkMetaChars && (patLen > MAX_FLAT_PAT_LEN || HasRegExpMetaChars(fm.pat_)))
+        if (checkMetaChars && (patLen > MAX_FLAT_PAT_LEN || StringHasRegExpMetaChars(fm.pat_)))
             return nullptr;
 
         /*
@@ -4172,16 +4169,9 @@ js::str_fromCharCode(JSContext *cx, unsigned argc, Value *vp)
     CallArgs args = CallArgsFromVp(argc, vp);
 
     JS_ASSERT(args.length() <= ARGS_LENGTH_MAX);
-    if (args.length() == 1) {
-        uint16_t code;
-        if (!ToUint16(cx, args[0], &code))
-            return false;
-        if (StaticStrings::hasUnit(code)) {
-            args.rval().setString(cx->staticStrings().getUnit(code));
-            return true;
-        }
-        args[0].setInt32(code);
-    }
+    if (args.length() == 1)
+        return str_fromCharCode_one_arg(cx, args[0], args.rval());
+
     jschar *chars = cx->pod_malloc<jschar>(args.length() + 1);
     if (!chars)
         return false;
@@ -4191,7 +4181,7 @@ js::str_fromCharCode(JSContext *cx, unsigned argc, Value *vp)
             js_free(chars);
             return false;
         }
-        chars[i] = (jschar)code;
+        chars[i] = jschar(code);
     }
     chars[args.length()] = 0;
     JSString *str = js_NewString<CanGC>(cx, chars, args.length());
@@ -4201,6 +4191,34 @@ js::str_fromCharCode(JSContext *cx, unsigned argc, Value *vp)
     }
 
     args.rval().setString(str);
+    return true;
+}
+
+bool
+js::str_fromCharCode_one_arg(JSContext *cx, HandleValue code, MutableHandleValue rval)
+{
+    uint16_t ucode;
+
+    if (!ToUint16(cx, code, &ucode))
+        return false;
+
+    if (StaticStrings::hasUnit(ucode)) {
+        rval.setString(cx->staticStrings().getUnit(ucode));
+        return true;
+    }
+
+    jschar *chars = cx->pod_malloc<jschar>(2);
+    if (!chars)
+        return false;
+    chars[0] = jschar(ucode);
+    chars[1] = 0;
+    JSString *str = js_NewString<CanGC>(cx, chars, 1);
+    if (!str) {
+        js_free(chars);
+        return false;
+    }
+
+    rval.setString(str);
     return true;
 }
 
@@ -4249,8 +4267,8 @@ js_InitStringClass(JSContext *cx, HandleObject obj)
     if (!LinkConstructorAndPrototype(cx, ctor, proto))
         return nullptr;
 
-    if (!DefinePropertiesAndBrand(cx, proto, nullptr, string_methods) ||
-        !DefinePropertiesAndBrand(cx, ctor, nullptr, string_static_methods))
+    if (!DefinePropertiesAndFunctions(cx, proto, nullptr, string_methods) ||
+        !DefinePropertiesAndFunctions(cx, ctor, nullptr, string_static_methods))
     {
         return nullptr;
     }
@@ -4490,7 +4508,14 @@ js::ToStringSlow(ExclusiveContext *cx, typename MaybeRooted<Value, allowGC>::Han
         str = js_BooleanToString(cx, v.toBoolean());
     } else if (v.isNull()) {
         str = cx->names().null;
+    } else if (v.isSymbol()) {
+        if (cx->shouldBeJSContext() && allowGC) {
+            JS_ReportErrorNumber(cx->asJSContext(), js_GetErrorMessage, nullptr,
+                                 JSMSG_SYMBOL_TO_STRING);
+        }
+        return nullptr;
     } else {
+        MOZ_ASSERT(v.isUndefined());
         str = cx->names().undefined;
     }
     return str;
@@ -4508,6 +4533,30 @@ js::ToStringSlow(JSContext *cx, HandleValue v)
     return ToStringSlow<CanGC>(cx, v);
 }
 
+static JSString *
+SymbolToSource(JSContext *cx, Symbol *symbol)
+{
+    RootedString desc(cx, symbol->description());
+    SymbolCode code = symbol->code();
+    if (code != SymbolCode::InSymbolRegistry && code != SymbolCode::UniqueSymbol) {
+        // Well-known symbol.
+        MOZ_ASSERT(uint32_t(code) < JS::WellKnownSymbolLimit);
+        return desc;
+    }
+
+    StringBuffer buf(cx);
+    if (code == SymbolCode::InSymbolRegistry ? !buf.append("Symbol.for(") : !buf.append("Symbol("))
+        return nullptr;
+    if (desc) {
+        desc = StringToSource(cx, desc);
+        if (!desc || !buf.append(desc))
+            return nullptr;
+    }
+    if (!buf.append(')'))
+        return nullptr;
+    return buf.finishString();
+}
+
 JSString *
 js::ValueToSource(JSContext *cx, HandleValue v)
 {
@@ -4518,6 +4567,8 @@ js::ValueToSource(JSContext *cx, HandleValue v)
         return cx->names().void0;
     if (v.isString())
         return StringToSource(cx, v.toString());
+    if (v.isSymbol())
+        return SymbolToSource(cx, v.toSymbol());
     if (v.isPrimitive()) {
         /* Special case to preserve negative zero, _contra_ toString. */
         if (v.isDouble() && IsNegativeZero(v.toDouble())) {
@@ -4561,13 +4612,13 @@ js::EqualChars(JSLinearString *str1, JSLinearString *str2)
         if (str2->hasTwoByteChars())
             return PodEqual(str1->twoByteChars(nogc), str2->twoByteChars(nogc), len);
 
-        return EqualCharsLatin1TwoByte(str2->latin1Chars(nogc), str1->twoByteChars(nogc), len);
+        return EqualChars(str2->latin1Chars(nogc), str1->twoByteChars(nogc), len);
     }
 
     if (str2->hasLatin1Chars())
         return PodEqual(str1->latin1Chars(nogc), str2->latin1Chars(nogc), len);
 
-    return EqualCharsLatin1TwoByte(str1->latin1Chars(nogc), str2->twoByteChars(nogc), len);
+    return EqualChars(str1->latin1Chars(nogc), str2->twoByteChars(nogc), len);
 }
 
 bool
@@ -4628,6 +4679,15 @@ CompareStringsImpl(JSLinearString *str1, JSLinearString *str2)
            : CompareChars(chars1, len1, str2->twoByteChars(nogc), len2);
 }
 
+int32_t
+js::CompareChars(const jschar *s1, size_t len1, JSLinearString *s2)
+{
+    AutoCheckCannotGC nogc;
+    return s2->hasLatin1Chars()
+           ? CompareChars(s1, len1, s2->latin1Chars(nogc), s2->length())
+           : CompareChars(s1, len1, s2->twoByteChars(nogc), s2->length());
+}
+
 bool
 js::CompareStrings(JSContext *cx, JSString *str1, JSString *str2, int32_t *result)
 {
@@ -4673,7 +4733,7 @@ js::StringEqualsAscii(JSLinearString *str, const char *asciiBytes)
     AutoCheckCannotGC nogc;
     return str->hasLatin1Chars()
            ? PodEqual(latin1, str->latin1Chars(nogc), length)
-           : EqualCharsLatin1TwoByte(latin1, str->twoByteChars(nogc), length);
+           : EqualChars(latin1, str->twoByteChars(nogc), length);
 }
 
 size_t
@@ -5325,3 +5385,11 @@ js::PutEscapedStringImpl(char *buffer, size_t bufferSize, FILE *fp, const Latin1
 template size_t
 js::PutEscapedStringImpl(char *buffer, size_t bufferSize, FILE *fp, const jschar *chars,
                          size_t length, uint32_t quote);
+
+template size_t
+js::PutEscapedString(char *buffer, size_t bufferSize, const Latin1Char *chars, size_t length,
+                     uint32_t quote);
+
+template size_t
+js::PutEscapedString(char *buffer, size_t bufferSize, const jschar *chars, size_t length,
+                     uint32_t quote);

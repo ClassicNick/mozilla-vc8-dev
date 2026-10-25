@@ -320,6 +320,8 @@ class VectorBase : private AllocPolicy
     typedef T ElementType;
 
     explicit VectorBase(AllocPolicy = AllocPolicy());
+	explicit VectorBase(ThisVector&); /* Copy constructor. */
+    ThisVector& operator=(ThisVector&); /* Copy assignment. */
     VectorBase(MoveRef<ThisVector>); /* Move constructor. */
     ThisVector& operator=(MoveRef<ThisVector>); /* Move assignment. */
     ~VectorBase();
@@ -588,6 +590,56 @@ VectorBase<T, N, AP, TV>::VectorBase(AP ap)
 #endif
 {
   mBegin = static_cast<T*>(storage.addr());
+}
+
+/* Copy constructor. */
+template<typename T, size_t N, class AllocPolicy, class TV>
+MOZ_ALWAYS_INLINE
+VectorBase<T, N, AllocPolicy, TV>::VectorBase(TV& rhs)
+  : AllocPolicy(rhs)
+#ifdef DEBUG
+    , entered(false)
+#endif
+{
+  mLength = rhs.mLength;
+  mCapacity = rhs.mCapacity;
+#ifdef DEBUG
+  mReserved = rhs.mReserved;
+#endif
+
+  if (rhs.usingInlineStorage()) {
+    /* We can't move the buffer over in this case, so copy elements. */
+    mBegin = static_cast<T*>(storage.addr());
+    Impl::moveConstruct(mBegin, rhs.beginNoCheck(), rhs.endNoCheck());
+    /*
+     * Leave rhs's mLength, mBegin, mCapacity, and mReserved as they are.
+     * The elements in its in-line storage still need to be destroyed.
+     */
+  } else {
+    /*
+     * Take src's buffer, and turn src into an empty vector using
+     * in-line storage.
+     */
+    mBegin = rhs.mBegin;
+    rhs.mBegin = static_cast<T*>(rhs.storage.addr());
+    rhs.mCapacity = sInlineCapacity;
+    rhs.mLength = 0;
+#ifdef DEBUG
+    rhs.mReserved = sInlineCapacity;
+#endif
+  }
+}
+
+/* Copy assignment. */
+template<typename T, size_t N, class AP, class TV>
+MOZ_ALWAYS_INLINE
+TV&
+VectorBase<T, N, AP, TV>::operator=(TV& rhs)
+{
+  TV* tv = static_cast<TV*>(this);
+  tv->~TV();
+  new(tv) TV(rhs);
+  return *tv;
 }
 
 /* Move constructor. */
@@ -1203,6 +1255,10 @@ class Vector
 
   public:
     Vector(AllocPolicy alloc = AllocPolicy()) : Base(alloc) {}
+	explicit Vector(Vector& vec) : Base(vec) {}
+    Vector& operator=(Vector& vec) {
+      return Base::operator=(vec);
+    }
     Vector(mozilla::MoveRef<Vector> vec) : Base(vec) {}
     Vector& operator=(mozilla::MoveRef<Vector> vec) {
       return Base::operator=(vec);

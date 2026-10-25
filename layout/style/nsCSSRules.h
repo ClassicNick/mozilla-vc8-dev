@@ -60,7 +60,7 @@ public:
 #endif
 
   // Rule methods
-  virtual void SetStyleSheet(nsCSSStyleSheet* aSheet); //override GroupRule
+  virtual void SetStyleSheet(mozilla::CSSStyleSheet* aSheet); //override GroupRule
   virtual int32_t GetType() const;
   virtual already_AddRefed<Rule> Clone() const;
   virtual nsIDOMCSSRule* GetDOMRule()
@@ -208,6 +208,8 @@ public:
   virtual JSObject* WrapObject(JSContext *cx) MOZ_OVERRIDE;
 
 protected:
+  ~nsCSSFontFaceStyleDecl() {}
+
   friend class nsCSSFontFaceRule;
 #define CSS_FONT_DESC(name_, method_) nsCSSValue m##method_;
 #include "nsCSSFontDescList.h"
@@ -261,6 +263,8 @@ public:
   virtual size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const MOZ_OVERRIDE;
 
 protected:
+  ~nsCSSFontFaceRule() {}
+
   friend class nsCSSFontFaceStyleDecl;
   nsCSSFontFaceStyleDecl mDecl;
 };
@@ -341,6 +345,8 @@ public:
   }
 
 protected:
+  ~nsCSSFontFeatureValuesRule() {}
+
   mozilla::FontFamilyList mFamilyList;
   nsTArray<gfxFontFeatureValueSet::FeatureValues> mFeatureValues;
 };
@@ -394,7 +400,6 @@ class nsCSSKeyframeStyleDeclaration MOZ_FINAL : public nsDOMCSSDeclaration
 {
 public:
   nsCSSKeyframeStyleDeclaration(nsCSSKeyframeRule *aRule);
-  virtual ~nsCSSKeyframeStyleDeclaration();
 
   NS_IMETHOD GetParentRule(nsIDOMCSSRule **aParent) MOZ_OVERRIDE;
   void DropReference() { mRule = nullptr; }
@@ -410,6 +415,8 @@ public:
   virtual nsINode* GetParentObject() MOZ_OVERRIDE;
 
 protected:
+  virtual ~nsCSSKeyframeStyleDeclaration();
+
   // This reference is not reference-counted. The rule object tells us
   // when it's about to go away.
   nsCSSKeyframeRule *mRule;
@@ -522,7 +529,6 @@ class nsCSSPageStyleDeclaration MOZ_FINAL : public nsDOMCSSDeclaration
 {
 public:
   nsCSSPageStyleDeclaration(nsCSSPageRule *aRule);
-  virtual ~nsCSSPageStyleDeclaration();
 
   NS_IMETHOD GetParentRule(nsIDOMCSSRule **aParent) MOZ_OVERRIDE;
   void DropReference() { mRule = nullptr; }
@@ -538,6 +544,8 @@ public:
   virtual nsINode *GetParentObject() MOZ_OVERRIDE;
 
 protected:
+  virtual ~nsCSSPageStyleDeclaration();
+
   // This reference is not reference-counted. The rule object tells us
   // when it's about to go away.
   nsCSSPageRule *mRule;

@@ -63,11 +63,6 @@ TiledLayerBufferComposite::TiledLayerBufferComposite(ISurfaceAllocator* aAllocat
     switch (tileDesc.type()) {
       case TileDescriptor::TTexturedTileDescriptor : {
         texture = TextureHost::AsTextureHost(tileDesc.get_TexturedTileDescriptor().textureParent());
-#if defined(MOZ_WIDGET_GONK) && ANDROID_VERSION >= 17
-        if (!gfxPrefs::LayersUseSimpleTiles()) {
-          texture->SetRecycleCallback(RecycleCallback, nullptr);
-        }
-#endif
         const TileLock& ipcLock = tileDesc.get_TexturedTileDescriptor().sharedLock();
         nsRefPtr<gfxSharedReadLock> sharedLock;
         if (ipcLock.type() == TileLock::TShmemSection) {
@@ -305,8 +300,12 @@ TiledContentHost::Composite(EffectChain& aEffectChain,
     }
   }
 
-  RenderLayerBuffer(mLowPrecisionTiledBuffer, aEffectChain, aOpacity, aFilter,
-                    aClipRect, aLayerProperties->mVisibleRegion, aTransform);
+  // Render the low and high precision buffers. Reduce the opacity of the
+  // low-precision buffer to make it a little more subtle and less jarring.
+  // In particular, text rendered at low-resolution and scaled tends to look
+  // pretty heavy and this helps mitigate that.
+  RenderLayerBuffer(mLowPrecisionTiledBuffer, aEffectChain, aOpacity * gfxPrefs::LowPrecisionOpacity(),
+                    aFilter, aClipRect, aLayerProperties->mVisibleRegion, aTransform);
   RenderLayerBuffer(mTiledBuffer, aEffectChain, aOpacity, aFilter,
                     aClipRect, aLayerProperties->mVisibleRegion, aTransform);
 

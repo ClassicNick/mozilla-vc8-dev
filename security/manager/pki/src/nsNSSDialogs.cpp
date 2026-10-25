@@ -47,12 +47,13 @@ nsNSSDialogs::~nsNSSDialogs()
 {
 }
 
-NS_IMPL_ISUPPORTS6(nsNSSDialogs, nsITokenPasswordDialogs,
-                  nsIClientAuthDialogs,
-                  nsICertPickDialogs,
-                  nsITokenDialogs,
-                  nsIDOMCryptoDialogs,
-                  nsIGeneratingKeypairInfoDialogs)
+NS_IMPL_ISUPPORTS7(nsNSSDialogs, nsITokenPasswordDialogs,
+                   nsICertificateDialogs,
+                   nsIClientAuthDialogs,
+                   nsICertPickDialogs,
+                   nsITokenDialogs,
+                   nsIDOMCryptoDialogs,
+                   nsIGeneratingKeypairInfoDialogs)
 
 nsresult
 nsNSSDialogs::Init()

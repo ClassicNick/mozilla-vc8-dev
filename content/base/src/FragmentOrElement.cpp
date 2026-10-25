@@ -62,7 +62,6 @@
 #ifdef MOZ_XUL
 #include "nsXULElement.h"
 #endif /* MOZ_XUL */
-#include "nsFrameManager.h"
 #include "nsFrameSelection.h"
 #ifdef DEBUG
 #include "nsRange.h"
@@ -499,6 +498,12 @@ nsNodeWeakReference::QueryReferent(const nsIID& aIID, void** aInstancePtr)
 {
   return mNode ? mNode->QueryInterface(aIID, aInstancePtr) :
                  NS_ERROR_NULL_POINTER;
+}
+
+size_t
+nsNodeWeakReference::SizeOfOnlyThis(mozilla::MallocSizeOf aMallocSizeOf) const
+{
+  return aMallocSizeOf(this);
 }
 
 
