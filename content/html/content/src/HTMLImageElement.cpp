@@ -49,7 +49,7 @@ NS_IMPL_NS_NEW_HTML_ELEMENT(Image)
 namespace mozilla {
 namespace dom {
 
-HTMLImageElement::HTMLImageElement(already_AddRefed<nsINodeInfo> aNodeInfo)
+HTMLImageElement::HTMLImageElement(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
   : nsGenericHTMLElement(aNodeInfo)
   , mForm(nullptr)
 {
@@ -615,12 +615,12 @@ HTMLImageElement::Image(const GlobalObject& aGlobal,
     return nullptr;
   }
 
-  nsCOMPtr<nsINodeInfo> nodeInfo =
+  already_AddRefed<mozilla::dom::NodeInfo> nodeInfo =
     doc->NodeInfoManager()->GetNodeInfo(nsGkAtoms::img, nullptr,
                                         kNameSpaceID_XHTML,
                                         nsIDOMNode::ELEMENT_NODE);
 
-  nsRefPtr<HTMLImageElement> img = new HTMLImageElement(nodeInfo.forget());
+  nsRefPtr<HTMLImageElement> img = new HTMLImageElement(nodeInfo);
 
   if (aWidth.WasPassed()) {
     img->SetWidth(aWidth.Value(), aError);

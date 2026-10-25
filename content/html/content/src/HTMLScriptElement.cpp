@@ -34,7 +34,7 @@ HTMLScriptElement::WrapNode(JSContext *aCx)
   return HTMLScriptElementBinding::Wrap(aCx, this);
 }
 
-HTMLScriptElement::HTMLScriptElement(already_AddRefed<nsINodeInfo> aNodeInfo,
+HTMLScriptElement::HTMLScriptElement(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo,
                                      FromParser aFromParser)
   : nsGenericHTMLElement(aNodeInfo)
   , nsScriptElement(aFromParser)
@@ -86,13 +86,12 @@ HTMLScriptElement::ParseAttribute(int32_t aNamespaceID,
 }
 
 nsresult
-HTMLScriptElement::Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const
+HTMLScriptElement::Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const
 {
   *aResult = nullptr;
 
-  nsCOMPtr<nsINodeInfo> ni = aNodeInfo;
-  HTMLScriptElement* it =
-    new HTMLScriptElement(ni.forget(), NOT_FROM_PARSER);
+  already_AddRefed<mozilla::dom::NodeInfo> ni = nsRefPtr<mozilla::dom::NodeInfo>(aNodeInfo).forget();
+  HTMLScriptElement* it = new HTMLScriptElement(ni, NOT_FROM_PARSER);
 
   nsCOMPtr<nsINode> kungFuDeathGrip = it;
   nsresult rv = const_cast<HTMLScriptElement*>(this)->CopyInnerTo(it);
