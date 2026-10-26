@@ -83,9 +83,11 @@ using namespace js;
 using namespace js::cli;
 
 using mozilla::ArrayLength;
-using mozilla::NumberEqualsInt32;
+using mozilla::MakeUnique;
 using mozilla::Maybe;
+using mozilla::NumberEqualsInt32;
 using mozilla::PodCopy;
+using mozilla::UniquePtr;
 
 enum JSShellExitCode {
     EXITCODE_RUNTIME_ERROR      = 3,
@@ -2891,7 +2893,7 @@ WorkerMain(void *arg)
 {
     WorkerInput *input = (WorkerInput *) arg;
 
-    JSRuntime *rt = JS_NewRuntime(8L * 1024L * 1024L, input->runtime);
+    JSRuntime *rt = JS_NewRuntime(8L * 1024L * 1024L, 2L * 1024L * 1024L, input->runtime);
     if (!rt) {
         js_delete(input);
         return;
@@ -4458,12 +4460,14 @@ WithSourceHook(JSContext *cx, unsigned argc, jsval *vp)
         return false;
     }
 
-    ShellSourceHook *hook = new ShellSourceHook(cx, args[0].toObject().as<JSFunction>());
+    UniquePtr<ShellSourceHook> hook =
+        MakeUnique<ShellSourceHook>(cx, args[0].toObject().as<JSFunction>());
     if (!hook)
         return false;
 
-    SourceHook *savedHook = js::ForgetSourceHook(cx->runtime());
+    UniquePtr<SourceHook> savedHook = js::ForgetSourceHook(cx->runtime());
     js::SetSourceHook(cx->runtime(), hook);
+
     RootedObject fun(cx, &args[1].toObject());
     bool result = Call(cx, UndefinedHandleValue, fun, JS::HandleValueArray::empty(), args.rval());
     js::SetSourceHook(cx->runtime(), savedHook);
@@ -6340,6 +6344,9 @@ main(int argc, char **argv, char **envp)
         || !op.addIntOption('\0', "mips-sim-stop-at", "NUMBER", "Stop the MIPS simulator after the given "
                             "NUMBER of instructions.", -1)
 #endif
+#ifdef JSGC_GENERATIONAL
+        || !op.addIntOption('\0', "nursery-size", "SIZE-MB", "Set the maximum nursery size in MB", 16)
+#endif
     )
     {
         return EXIT_FAILURE;
@@ -6405,8 +6412,13 @@ main(int argc, char **argv, char **envp)
     if (!JS_Init())
         return 1;
 
+    size_t nurseryBytes = JS::DefaultNurseryBytes;
+#ifdef JSGC_GENERATIONAL
+    nurseryBytes = op.getIntOption("nursery-size") * 1024L * 1024L;
+#endif
+
     /* Use the same parameters as the browser in xpcjsruntime.cpp. */
-    rt = JS_NewRuntime(32L * 1024L * 1024L);
+    rt = JS_NewRuntime(32L * 1024L * 1024L, nurseryBytes);
     if (!rt)
         return 1;
 

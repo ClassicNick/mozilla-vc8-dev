@@ -21,11 +21,12 @@
 
 using namespace js;
 
-using mozilla::NumberEqualsInt32;
-using mozilla::IsNaN;
-using mozilla::OldMove;
-using mozilla::MoveRef;
 using mozilla::ArrayLength;
+using mozilla::IsNaN;
+using mozilla::MoveRef;
+using mozilla::OldMove;
+using mozilla::NumberEqualsInt32;
+
 using JS::DoubleNaNValue;
 using JS::ForOfIterator;
 
@@ -1168,9 +1169,8 @@ MapObject::construct(JSContext *cx, unsigned argc, Value *vp)
         return false;
 
     ValueMap *map = cx->new_<ValueMap>(cx->runtime());
-    if (!map)
-        return false;
-    if (!map->init()) {
+    if (!map || !map->init()) {
+        js_delete(map);
         js_ReportOutOfMemory(cx);
         return false;
     }
@@ -1678,9 +1678,8 @@ SetObject::construct(JSContext *cx, unsigned argc, Value *vp)
         return false;
 
     ValueSet *set = cx->new_<ValueSet>(cx->runtime());
-    if (!set)
-        return false;
-    if (!set->init()) {
+    if (!set || !set->init()) {
+        js_delete(set);
         js_ReportOutOfMemory(cx);
         return false;
     }

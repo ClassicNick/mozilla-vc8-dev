@@ -11,6 +11,7 @@
 
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/Range.h"
 #include "mozilla/RangedPtr.h"
 #include "mozilla/TypedEnum.h"
 
@@ -1263,7 +1264,9 @@ extern JS_PUBLIC_API(void)
 JS_ShutDown(void);
 
 extern JS_PUBLIC_API(JSRuntime *)
-JS_NewRuntime(uint32_t maxbytes, JSRuntime *parentRuntime = nullptr);
+JS_NewRuntime(uint32_t maxbytes,
+              uint32_t maxNurseryBytes = JS::DefaultNurseryBytes,
+              JSRuntime *parentRuntime = nullptr);
 
 extern JS_PUBLIC_API(void)
 JS_DestroyRuntime(JSRuntime *rt);
@@ -4180,6 +4183,18 @@ JS_GetLatin1StringCharsAndLength(JSContext *cx, const JS::AutoCheckCannotGC &nog
 extern JS_PUBLIC_API(const jschar *)
 JS_GetTwoByteStringCharsAndLength(JSContext *cx, const JS::AutoCheckCannotGC &nogc, JSString *str,
                                   size_t *length);
+
+extern JS_PUBLIC_API(bool)
+JS_GetStringCharAt(JSContext *cx, JSString *str, size_t index, jschar *res);
+
+extern JS_PUBLIC_API(jschar)
+JS_GetFlatStringCharAt(JSFlatString *str, size_t index);
+
+extern JS_PUBLIC_API(const jschar *)
+JS_GetTwoByteExternalStringChars(JSString *str);
+
+extern JS_PUBLIC_API(bool)
+JS_CopyStringChars(JSContext *cx, mozilla::Range<jschar> dest, JSString *str);
 
 extern JS_PUBLIC_API(const jschar *)
 JS_GetInternedStringChars(JSString *str);

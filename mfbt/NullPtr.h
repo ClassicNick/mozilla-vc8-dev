@@ -36,6 +36,7 @@
  */
 
 #ifndef MOZ_HAVE_CXX11_NULLPTR
+namespace mozilla { typedef void* NullptrT; }
 #  if defined(__GNUC__)
 #    define nullptr __null
 #  elif defined(_WIN64)

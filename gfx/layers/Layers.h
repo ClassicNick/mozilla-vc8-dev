@@ -214,6 +214,7 @@ public:
    * and is used for drawing into the widget.
    */
   virtual bool IsWidgetLayerManager() { return true; }
+  virtual bool IsInactiveLayerManager() { return false; }
 
   /**
    * Start a new transaction. Nested transactions are not allowed so
@@ -572,7 +573,9 @@ public:
     char line[1024];
     while (!ss.eof()) {
       ss.getline(line, sizeof(line));
-      printf_stderr("%s", line);
+      if (!ss.eof() || strlen(line) > 0) {
+        printf_stderr("%s\n", line);
+      }
       if (ss.fail()) {
         // line was too long, skip to next newline
         ss.clear();
@@ -2177,7 +2180,6 @@ protected:
   uint64_t mId;
 };
 
-void SetAntialiasingFlags(Layer* aLayer, gfxContext* aTarget);
 void SetAntialiasingFlags(Layer* aLayer, gfx::DrawTarget* aTarget);
 
 #ifdef MOZ_DUMP_PAINTING

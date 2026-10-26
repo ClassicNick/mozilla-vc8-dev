@@ -32,6 +32,9 @@ SVGSymbolElement::SVGSymbolElement(already_AddRefed<mozilla::dom::NodeInfo> aNod
 {
 }
 
+SVGSymbolElement::~SVGSymbolElement()
+{
+}
 
 //----------------------------------------------------------------------
 // nsIDOMNode methods

@@ -7,7 +7,7 @@
 #include "builtin/TestingFunctions.h"
 
 #include "mozilla/Move.h"
-#include "mozilla/Scoped.h"
+#include "mozilla/UniquePtr.h"
 
 #include "jsapi.h"
 #include "jscntxt.h"
@@ -40,7 +40,8 @@ using namespace js;
 using namespace JS;
 
 using mozilla::ArrayLength;
-using mozilla::ScopedFreePtr;
+using mozilla::OldMove;
+using mozilla::UniquePtr;
 
 // If fuzzingSafe is set, remove functionality that could cause problems with
 // fuzzers. Set this via the environment variable MOZ_FUZZING_SAFE.

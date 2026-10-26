@@ -7,6 +7,7 @@
 /* Per JSRuntime object */
 
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/UniquePtr.h"
 
 #include "xpcprivate.h"
 #include "xpcpublic.h"
@@ -375,7 +376,8 @@ bool CompartmentPrivate::TryParseLocationURI(CompartmentPrivate::LocationHint aL
         // Strip current item and continue.
         chain = Substring(chain, 0, idx);
     }
-    MOZ_ASSUME_UNREACHABLE("Chain parser loop does not terminate");
+
+    MOZ_CRASH("Chain parser loop does not terminate");
 }
 
 static bool
@@ -3259,7 +3261,8 @@ XPCJSRuntime::XPCJSRuntime(nsXPConnect* aXPConnect)
     // compileAndGo mode and compiled function bodies (from
     // JS_CompileFunction*). In practice, this means content scripts and event
     // handlers.
-    js::SetSourceHook(runtime, new XPCJSSourceHook);
+    UniquePtr<XPCJSSourceHook> hook(new XPCJSSourceHook);
+    js::SetSourceHook(runtime, hook);
 
     // Set up locale information and callbacks for the newly-created runtime so
     // that the various toLocaleString() methods, localeCompare(), and other

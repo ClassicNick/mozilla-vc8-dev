@@ -32,6 +32,10 @@ CreateElementTxn::CreateElementTxn()
 {
 }
 
+CreateElementTxn::~CreateElementTxn()
+{
+}
+
 NS_IMPL_CYCLE_COLLECTION_INHERITED_3(CreateElementTxn, EditTxn,
                                      mParent,
                                      mNewNode,

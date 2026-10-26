@@ -184,6 +184,10 @@ XULLinkAccessible::
 {
 }
 
+XULLinkAccessible::~XULLinkAccessible()
+{
+}
+
 // Expose nsIAccessibleHyperLink unconditionally
 NS_IMPL_ISUPPORTS_INHERITED1(XULLinkAccessible, XULLabelAccessible,
                              nsIAccessibleHyperLink)
