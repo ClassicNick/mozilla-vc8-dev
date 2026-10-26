@@ -26,6 +26,7 @@ public class testGetUserMedia extends BaseTest {
         if (Build.VERSION.SDK_INT < 9) {
             return;
         }
+
         if (Camera.getNumberOfCameras() <= 0) {
             return;
         }

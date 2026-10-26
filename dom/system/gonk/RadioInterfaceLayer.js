@@ -24,8 +24,11 @@ Cu.import("resource://gre/modules/systemlibs.js");
 Cu.import("resource://gre/modules/Promise.jsm");
 Cu.import("resource://gre/modules/FileUtils.jsm");
 
-var RIL = {};
-Cu.import("resource://gre/modules/ril_consts.js", RIL);
+XPCOMUtils.defineLazyGetter(this, "RIL", function () {
+  let obj = {};
+  Cu.import("resource://gre/modules/ril_consts.js", obj);
+  return obj;
+});
 
 // Ril quirk to attach data registration on demand.
 let RILQUIRKS_DATA_REGISTRATION_ON_DEMAND =
@@ -3293,6 +3296,10 @@ RadioInterface.prototype = {
     // Update lastKnownHomeNetwork.
     if (message.mcc && message.mnc) {
       this._lastKnownHomeNetwork = message.mcc + "-" + message.mnc;
+      // Append spn information if available.
+      if (message.spn) {
+        this._lastKnownHomeNetwork += "-" + message.spn;
+      }
     }
 
     // If spn becomes available, we should check roaming again.

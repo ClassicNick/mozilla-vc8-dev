@@ -468,6 +468,13 @@ class HashSet
             impl.rekeyAndMaybeRehash(p, new_lookup, new_value);
     }
 
+    // Infallibly rekey one entry with a new key that is equivalent.
+    void rekeyInPlace(Ptr p, const T &new_value)
+    {
+        MOZ_ASSERT(HashPolicy::match(*p, new_value));
+        impl.rekeyInPlace(p, new_value);
+    }
+
     // HashSet is movable
     HashSet(mozilla::MoveRef<HashSet> rhs) : impl(mozilla::OldMove(rhs->impl)) {}
     void operator=(mozilla::MoveRef<HashSet> rhs) { impl = mozilla::OldMove(rhs->impl); }
@@ -1606,6 +1613,14 @@ class HashTable : private AllocPolicy
     {
         rekeyWithoutRehash(p, l, k);
         checkOverRemoved();
+    }
+
+    void rekeyInPlace(Ptr p, const Key &k)
+    {
+        MOZ_ASSERT(table);
+        mozilla::ReentrancyGuard g(*this);
+        MOZ_ASSERT(p.found());
+        HashPolicy::rekey(const_cast<Key &>(*p), const_cast<Key &>(k));
     }
 
 #undef METER

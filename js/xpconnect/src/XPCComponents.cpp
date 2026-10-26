@@ -2945,7 +2945,7 @@ nsXPCComponents_Utils::NondeterministicGetWeakMapKeys(HandleValue aMap,
     return NS_OK;
 }
 
-/* void getDebugObject(); */
+/* [implicit_jscontext] jsval getJSTestingFunctions(); */
 NS_IMETHODIMP
 nsXPCComponents_Utils::GetJSTestingFunctions(JSContext *cx,
                                              MutableHandleValue retval)
@@ -3174,8 +3174,8 @@ nsXPCComponents_Utils::GetComponentsForScope(HandleValue vscope, JSContext *cx,
         return NS_ERROR_INVALID_ARG;
     JSObject *scopeObj = js::UncheckedUnwrap(&vscope.toObject());
     XPCWrappedNativeScope *scope = GetObjectScope(scopeObj);
-    RootedObject components(cx, scope->GetComponentsJSObject());
-    if (!components)
+    RootedObject components(cx);
+    if (!scope->GetComponentsJSObject(&components))
         return NS_ERROR_FAILURE;
     if (!JS_WrapObject(cx, &components))
         return NS_ERROR_FAILURE;

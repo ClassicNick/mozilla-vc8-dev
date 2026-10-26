@@ -313,8 +313,6 @@ public:
       return gReportAllJSExceptions > 0;
     }
 
-    static void CheckForDebugMode(JSRuntime *rt);
-
 protected:
     virtual ~nsXPConnect();
 
@@ -987,8 +985,8 @@ public:
     bool AttachComponentsObject(JSContext *aCx);
 
     // Returns the JS object reflection of the Components object.
-    JSObject*
-    GetComponentsJSObject();
+    bool
+    GetComponentsJSObject(JS::MutableHandleObject obj);
 
     JSObject*
     GetGlobalJSObject() const {
@@ -1006,7 +1004,7 @@ public:
     }
 
     JSObject*
-    GetExpandoChain(JSObject *target);
+    GetExpandoChain(JS::HandleObject target);
 
     bool
     SetExpandoChain(JSContext *cx, JS::HandleObject target, JS::HandleObject chain);
@@ -3649,9 +3647,6 @@ GetObjectScope(JSObject *obj)
 
 // This returns null if a scope doesn't already exist.
 XPCWrappedNativeScope* MaybeGetObjectScope(JSObject *obj);
-
-extern bool gDebugMode;
-extern bool gDesiredDebugMode;
 
 extern const JSClass SafeJSContextGlobalClass;
 

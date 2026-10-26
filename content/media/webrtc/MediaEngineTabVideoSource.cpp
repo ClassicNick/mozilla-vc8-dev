@@ -37,14 +37,6 @@ MediaEngineTabVideoSource::MediaEngineTabVideoSource()
 nsresult
 MediaEngineTabVideoSource::StartRunnable::Run()
 {
-  nsCOMPtr<nsIDOMWindow> win;
-  nsresult rv = mVideoSource->mTabSource->GetTabToStream(getter_AddRefs(win));
-  NS_ENSURE_SUCCESS(rv, rv);
-  if (!win)
-    return NS_OK;
-
-  mVideoSource->mWindow = win;
-
   mVideoSource->Draw();
   nsCOMPtr<nsPIDOMWindow> privateDOMWindow = do_QueryInterface(mVideoSource->mWindow);
   if (privateDOMWindow) {
@@ -61,7 +53,7 @@ nsresult
 MediaEngineTabVideoSource::StopRunnable::Run()
 {
   nsCOMPtr<nsPIDOMWindow> privateDOMWindow = do_QueryInterface(mVideoSource->mWindow);
-  if (privateDOMWindow && mVideoSource && privateDOMWindow->GetChromeEventHandler()) {
+  if (privateDOMWindow && privateDOMWindow->GetChromeEventHandler()) {
     privateDOMWindow->GetChromeEventHandler()->RemoveEventListener(NS_LITERAL_STRING("MozAfterPaint"), mVideoSource, false);
   }
 
@@ -102,6 +94,13 @@ MediaEngineTabVideoSource::InitRunnable::Run()
   mVideoSource->mTabSource = do_GetService(NS_TABSOURCESERVICE_CONTRACTID, &rv);
   NS_ENSURE_SUCCESS(rv, rv);
 
+  nsCOMPtr<nsIDOMWindow> win;
+  rv = mVideoSource->mTabSource->GetTabToStream(getter_AddRefs(win));
+  NS_ENSURE_SUCCESS(rv, rv);
+  if (!win)
+    return NS_OK;
+
+  mVideoSource->mWindow = win;
   nsCOMPtr<nsIRunnable> start(new StartRunnable(mVideoSource));
   start->Run();
   return NS_OK;
@@ -289,6 +288,9 @@ MediaEngineTabVideoSource::Draw() {
 nsresult
 MediaEngineTabVideoSource::Stop(mozilla::SourceMediaStream*, mozilla::TrackID)
 {
+  if (!mWindow)
+    return NS_OK;
+
   NS_DispatchToMainThread(new StopRunnable(this));
   return NS_OK;
 }
