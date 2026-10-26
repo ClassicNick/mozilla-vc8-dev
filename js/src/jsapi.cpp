@@ -1193,20 +1193,16 @@ JS_InitStandardClasses(JSContext *cx, HandleObject obj)
     return GlobalObject::initStandardClasses(cx, global);
 }
 
-#define CLASP(name)                 (&name##Class)
-#define OCLASP(name)                (&name##Object::class_)
-#define TYPED_ARRAY_CLASP(type)     (&TypedArrayObject::classes[ScalarTypeDescr::type])
 #define EAGER_ATOM(name)            NAME_OFFSET(name)
-#define EAGER_CLASS_ATOM(name)      NAME_OFFSET(name)
 
 static js::Class DummyClass;
 static js::Class SentinelClass;
 
 typedef struct JSStdName {
     size_t      atomOffset;     /* offset of atom pointer in JSAtomState */
-    const Class *clasp;
-    bool isDummy() const { return clasp == &DummyClass; };
-    bool isSentinel() const { return clasp == &SentinelClass; };
+    JSProtoKey  key;
+    bool isDummy() const { return key == JSProto_Null; };
+    bool isSentinel() const { return key == JSProto_LIMIT; };
 } JSStdName;
 
 static const JSStdName*
@@ -1230,51 +1226,47 @@ LookupStdName(JSRuntime *rt, HandleString name, const JSStdName *table)
  * JSProtoKey does not correspond to a class with a meaningful constructor, we
  * insert a null entry into the table.
  */
-#define STD_NAME_ENTRY(name, code, init, clasp) { EAGER_CLASS_ATOM(name), clasp },
-#define STD_DUMMY_ENTRY(name, code, init, dummy) { 0, &DummyClass },
+#define STD_NAME_ENTRY(name, code, init, clasp) { EAGER_ATOM(name), static_cast<JSProtoKey>(code) },
+#define STD_DUMMY_ENTRY(name, code, init, dummy) { 0, JSProto_Null },
 static const JSStdName standard_class_names[] = {
   JS_FOR_PROTOTYPES(STD_NAME_ENTRY, STD_DUMMY_ENTRY)
-  { 0, &SentinelClass }
+  { 0, JSProto_LIMIT }
 };
 
 /*
- * Table of top-level function and constant names and the init function of the
- * corresponding standard class that sets them up.
+ * Table of top-level function and constant names and the JSProtoKey of the
+ * standard class that initializes them.
  */
 static const JSStdName builtin_property_names[] = {
-    { EAGER_ATOM(eval), &JSObject::class_ },
+    { EAGER_ATOM(eval), JSProto_Object },
 
     /* Global properties and functions defined by the Number class. */
-    { EAGER_ATOM(NaN), OCLASP(Number) },
-    { EAGER_ATOM(Infinity), OCLASP(Number) },
-    { EAGER_ATOM(isNaN), OCLASP(Number) },
-    { EAGER_ATOM(isFinite), OCLASP(Number) },
-    { EAGER_ATOM(parseFloat), OCLASP(Number) },
-    { EAGER_ATOM(parseInt), OCLASP(Number) },
+    { EAGER_ATOM(NaN), JSProto_Number },
+    { EAGER_ATOM(Infinity), JSProto_Number },
+    { EAGER_ATOM(isNaN), JSProto_Number },
+    { EAGER_ATOM(isFinite), JSProto_Number },
+    { EAGER_ATOM(parseFloat), JSProto_Number },
+    { EAGER_ATOM(parseInt), JSProto_Number },
 
     /* String global functions. */
-    { EAGER_ATOM(escape), OCLASP(String) },
-    { EAGER_ATOM(unescape), OCLASP(String) },
-    { EAGER_ATOM(decodeURI), OCLASP(String) },
-    { EAGER_ATOM(encodeURI), OCLASP(String) },
-    { EAGER_ATOM(decodeURIComponent), OCLASP(String) },
-    { EAGER_ATOM(encodeURIComponent), OCLASP(String) },
+    { EAGER_ATOM(escape), JSProto_String },
+    { EAGER_ATOM(unescape), JSProto_String },
+    { EAGER_ATOM(decodeURI), JSProto_String },
+    { EAGER_ATOM(encodeURI), JSProto_String },
+    { EAGER_ATOM(decodeURIComponent), JSProto_String },
+    { EAGER_ATOM(encodeURIComponent), JSProto_String },
 #if JS_HAS_UNEVAL
-    { EAGER_ATOM(uneval), OCLASP(String) },
+    { EAGER_ATOM(uneval), JSProto_String },
 #endif
 #ifdef ENABLE_BINARYDATA
-    { EAGER_ATOM(SIMD), OCLASP(SIMD) },
-    { EAGER_ATOM(TypedObject), OCLASP(TypedObjectModule) },
+    { EAGER_ATOM(SIMD), JSProto_SIMD },
+    { EAGER_ATOM(TypedObject), JSProto_TypedObject },
 #endif
 
-    { 0, &SentinelClass }
+    { 0, JSProto_LIMIT }
 };
 
-#undef CLASP
-#undef TYPED_ARRAY_CLASP
 #undef EAGER_ATOM
-#undef EAGER_CLASS_ATOM
-#undef EAGER_ATOM_CLASP
 
 JS_PUBLIC_API(bool)
 JS_ResolveStandardClass(JSContext *cx, HandleObject obj, HandleId id, bool *resolved)
@@ -1314,9 +1306,9 @@ JS_ResolveStandardClass(JSContext *cx, HandleObject obj, HandleId id, bool *reso
 
     // If this class is anonymous, then it doesn't exist as a global
     // property, so we won't resolve anything.
-    if (stdnm && !(stdnm->clasp->flags & JSCLASS_IS_ANONYMOUS)) {
-        JSProtoKey key = JSCLASS_CACHED_PROTO_KEY(stdnm->clasp);
-        if (!GlobalObject::ensureConstructor(cx, global, key))
+    JSProtoKey key = stdnm ? stdnm->key : JSProto_Null;
+    if (key != JSProto_Null && !(ProtoKeyToClass(key)->flags & JSCLASS_IS_ANONYMOUS)) {
+        if (!GlobalObject::ensureConstructor(cx, global, stdnm->key))
             return false;
 
         *resolved = true;
@@ -5321,6 +5313,12 @@ JS_GetStringLength(JSString *str)
     return str->length();
 }
 
+JS_PUBLIC_API(bool)
+JS_StringHasLatin1Chars(JSString *str)
+{
+    return str->hasLatin1Chars();
+}
+
 JS_PUBLIC_API(const jschar *)
 JS_GetStringCharsZ(JSContext *cx, JSString *str)
 {
@@ -5357,6 +5355,36 @@ JS_GetStringCharsAndLength(JSContext *cx, JSString *str, size_t *plength)
         return nullptr;
     *plength = linear->length();
     return linear->chars();
+}
+
+JS_PUBLIC_API(const JS::Latin1Char *)
+JS_GetLatin1StringCharsAndLength(JSContext *cx, const JS::AutoCheckCannotGC &nogc, JSString *str,
+                                 size_t *plength)
+{
+    JS_ASSERT(plength);
+    AssertHeapIsIdleOrStringIsFlat(cx, str);
+    CHECK_REQUEST(cx);
+    assertSameCompartment(cx, str);
+    JSLinearString *linear = str->ensureLinear(cx);
+    if (!linear)
+        return nullptr;
+    *plength = linear->length();
+    return linear->latin1Chars(nogc);
+}
+
+JS_PUBLIC_API(const jschar *)
+JS_GetTwoByteStringCharsAndLength(JSContext *cx, const JS::AutoCheckCannotGC &nogc, JSString *str,
+                                  size_t *plength)
+{
+    JS_ASSERT(plength);
+    AssertHeapIsIdleOrStringIsFlat(cx, str);
+    CHECK_REQUEST(cx);
+    assertSameCompartment(cx, str);
+    JSLinearString *linear = str->ensureLinear(cx);
+    if (!linear)
+        return nullptr;
+    *plength = linear->length();
+    return linear->twoByteChars(nogc);
 }
 
 JS_PUBLIC_API(const jschar *)
@@ -5544,8 +5572,7 @@ JS_GetStringEncodingLength(JSContext *cx, JSString *str)
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
 
-    const jschar *chars = str->getChars(cx);
-    if (!chars)
+    if (!str->ensureLinear(cx))
         return size_t(-1);
     return str->length();
 }
@@ -5562,10 +5589,21 @@ JS_EncodeStringToBuffer(JSContext *cx, JSString *str, char *buffer, size_t lengt
      * error.
      */
     size_t writtenLength = length;
-    const jschar *chars = str->getChars(nullptr);
-    if (!chars)
-        return size_t(-1);
-    if (DeflateStringToBuffer(nullptr, chars, str->length(), buffer, &writtenLength)) {
+    JSLinearString *linear = str->ensureLinear(cx);
+    if (!linear)
+         return size_t(-1);
+
+    bool res;
+    if (linear->hasLatin1Chars()) {
+        JS::AutoCheckCannotGC nogc;
+        res = DeflateStringToBuffer(nullptr, linear->latin1Chars(nogc), linear->length(), buffer,
+                                    &writtenLength);
+    } else {
+        JS::AutoCheckCannotGC nogc;
+        res = DeflateStringToBuffer(nullptr, linear->twoByteChars(nogc), linear->length(), buffer,
+                                    &writtenLength);
+    }
+    if (res) {
         JS_ASSERT(writtenLength <= length);
         return writtenLength;
     }
@@ -5624,12 +5662,12 @@ JS_Stringify(JSContext *cx, MutableHandleValue vp, HandleObject replacer,
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, replacer, space);
     StringBuffer sb(cx);
+    if (!sb.ensureTwoByteChars())
+        return false;
     if (!js_Stringify(cx, vp, replacer, space, sb))
         return false;
-    if (sb.empty()) {
-        HandlePropertyName null = cx->names().null;
-        return callback(null->chars(), null->length(), data);
-    }
+    if (sb.empty() && !sb.append(cx->names().null))
+        return false;
     return callback(sb.rawTwoByteBegin(), sb.length(), data);
 }
 
@@ -6543,12 +6581,12 @@ JS::SetOutOfMemoryCallback(JSRuntime *rt, OutOfMemoryCallback cb, void *data)
 }
 
 JS_PUBLIC_API(bool)
-JS::CaptureCurrentStack(JSContext *cx, JS::MutableHandleObject stackp)
+JS::CaptureCurrentStack(JSContext *cx, JS::MutableHandleObject stackp, unsigned maxFrameCount)
 {
     JSCompartment *compartment = cx->compartment();
     JS_ASSERT(compartment);
     Rooted<SavedFrame *> frame(cx);
-    if (!compartment->savedStacks().saveCurrentStack(cx, &frame))
+    if (!compartment->savedStacks().saveCurrentStack(cx, &frame, maxFrameCount))
         return false;
     stackp.set(frame.get());
     return true;

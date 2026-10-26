@@ -27,7 +27,6 @@
 
 #include <ctype.h>
 #include <string.h>
-#include <wchar.h>
 
 #include "jsapi.h"
 #include "jsarray.h"
@@ -1168,23 +1167,12 @@ FirstCharMatcher8bit(const char *text, uint32_t n, const char pat)
 }
 
 static const jschar *
-FirstCharMatcher16bit (const jschar *text, uint32_t n, const jschar pat)
+FirstCharMatcher16bit(const jschar *text, uint32_t n, const jschar pat)
 {
-#if !defined (_MSC_VER) || _MSC_VER >= 1600
-    /* Some platforms define wchar_t as signed and others not. */
-#if (WCHAR_MIN == 0 && WCHAR_MAX == UINT16_MAX) || (WCHAR_MIN == INT16_MIN && WCHAR_MAX == INT16_MAX)
+#if defined(XP_MACOSX) || defined(XP_WIN)
     /*
-     * Wmemchr works the best.
-     * But only possible to use this when,
-     * size of jschar = size of wchar_t.
-     */
-    const wchar_t *wtext = (const wchar_t *) text;
-    const wchar_t wpat = (const wchar_t) pat;
-    return (jschar *) (wmemchr(wtext, wpat, n));
-#elif defined(__clang__)
-    /*
-     * Performance under memchr is horrible in clang.
-     * Hence it is best to use UnrolledMatcher in this case
+     * Performance of memchr is horrible in OSX. Windows is better,
+     * but it is still better to use UnrolledMatcher.
      */
     return FirstCharMatcherUnrolled<jschar, jschar>(text, n, pat);
 #else
@@ -1222,17 +1210,8 @@ FirstCharMatcher16bit (const jschar *text, uint32_t n, const jschar pat)
     }
     return nullptr;
 #endif
-#else
-	/*
-     * Wmemchr works the best.
-     * But only possible to use this when,
-     * size of jschar = size of wchar_t.
-     */
-    const wchar_t *wtext = (const wchar_t *) text;
-    const wchar_t wpat = (const wchar_t) pat;
-    return (jschar *) (wmemchr(wtext, wpat, n));
-#endif
 }
+
 
 template <class InnerMatch, typename TextChar, typename PatChar>
 static int
@@ -4899,14 +4878,15 @@ js::InflateString(ThreadSafeContext *cx, const char *bytes, size_t *lengthp)
     return nullptr;
 }
 
+template <typename CharT>
 bool
-js::DeflateStringToBuffer(JSContext *maybecx, const jschar *src, size_t srclen,
+js::DeflateStringToBuffer(JSContext *maybecx, const CharT *src, size_t srclen,
                           char *dst, size_t *dstlenp)
 {
     size_t dstlen = *dstlenp;
     if (srclen > dstlen) {
         for (size_t i = 0; i < dstlen; i++)
-            dst[i] = (char) src[i];
+            dst[i] = char(src[i]);
         if (maybecx) {
             AutoSuppressGC suppress(maybecx);
             JS_ReportErrorNumber(maybecx, js_GetErrorMessage, nullptr,
@@ -4915,10 +4895,18 @@ js::DeflateStringToBuffer(JSContext *maybecx, const jschar *src, size_t srclen,
         return false;
     }
     for (size_t i = 0; i < srclen; i++)
-        dst[i] = (char) src[i];
+        dst[i] = char(src[i]);
     *dstlenp = srclen;
     return true;
 }
+
+template bool
+js::DeflateStringToBuffer(JSContext *maybecx, const Latin1Char *src, size_t srclen,
+                          char *dst, size_t *dstlenp);
+
+template bool
+js::DeflateStringToBuffer(JSContext *maybecx, const jschar *src, size_t srclen,
+                          char *dst, size_t *dstlenp);
 
 #define ____ false
 

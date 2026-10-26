@@ -501,7 +501,6 @@ RNot::recover(JSContext *cx, SnapshotIterator &iter) const
     RootedValue v(cx, iter.read());
     RootedValue result(cx);
 
-    MOZ_ASSERT(!v.isObject());
     result.setBoolean(!ToBoolean(v));
 
     iter.storeInstructionResult(result);
@@ -704,6 +703,58 @@ RPowHalf::recover(JSContext *cx, SnapshotIterator &iter) const
 
     MOZ_ASSERT(base.isNumber());
     if (!js_math_pow_handle(cx, base, power, &result))
+        return false;
+
+    iter.storeInstructionResult(result);
+    return true;
+}
+
+bool
+MMinMax::writeRecoverData(CompactBufferWriter &writer) const
+{
+    MOZ_ASSERT(canRecoverOnBailout());
+    writer.writeUnsigned(uint32_t(RInstruction::Recover_MinMax));
+    writer.writeByte(isMax_);
+    return true;
+}
+
+RMinMax::RMinMax(CompactBufferReader &reader)
+{
+    isMax_ = reader.readByte();
+}
+
+bool
+RMinMax::recover(JSContext *cx, SnapshotIterator &iter) const
+{
+    RootedValue a(cx, iter.read());
+    RootedValue b(cx, iter.read());
+    RootedValue result(cx);
+
+    if (!js_minmax_impl(cx, isMax_, a, b, &result))
+        return false;
+
+    iter.storeInstructionResult(result);
+    return true;
+}
+
+bool
+MAbs::writeRecoverData(CompactBufferWriter &writer) const
+{
+    MOZ_ASSERT(canRecoverOnBailout());
+    writer.writeUnsigned(uint32_t(RInstruction::Recover_Abs));
+    return true;
+}
+
+RAbs::RAbs(CompactBufferReader &reader)
+{ }
+
+bool
+RAbs::recover(JSContext *cx, SnapshotIterator &iter) const
+{
+    RootedValue v(cx, iter.read());
+    RootedValue result(cx);
+
+    if (!js_math_abs_handle(cx, v, &result))
         return false;
 
     iter.storeInstructionResult(result);

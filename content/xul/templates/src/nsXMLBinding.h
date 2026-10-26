@@ -33,7 +33,7 @@ struct nsXMLBinding {
 
   nsAutoPtr<nsXMLBinding> mNext;
 
-  nsXMLBinding(nsIAtom* aVar, nsAutoPtr<mozilla::dom::XPathExpression>&& aExpr)
+  nsXMLBinding(nsIAtom* aVar, nsAutoPtr<mozilla::dom::XPathExpression> aExpr)
     : mVar(aVar), mExpr(aExpr), mNext(nullptr)
   {
     MOZ_COUNT_CTOR(nsXMLBinding);
@@ -63,7 +63,7 @@ public:
    * Add a binding to the set
    */
   void
-  AddBinding(nsIAtom* aVar, nsAutoPtr<mozilla::dom::XPathExpression>&& aExpr);
+  AddBinding(nsIAtom* aVar, nsAutoPtr<mozilla::dom::XPathExpression> aExpr);
 
   /**
    * The nsXMLBindingValues class stores an array of values, one for each

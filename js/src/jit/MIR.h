@@ -3936,6 +3936,10 @@ class MMinMax
         return AliasSet::None();
     }
     void computeRange(TempAllocator &alloc);
+    bool writeRecoverData(CompactBufferWriter &writer) const;
+    bool canRecoverOnBailout() const {
+        return true;
+    }
 };
 
 class MAbs
@@ -3982,6 +3986,11 @@ class MAbs
     void computeRange(TempAllocator &alloc);
     bool isFloat32Commutative() const { return true; }
     void trySpecializeFloat32(TempAllocator &alloc);
+
+    bool writeRecoverData(CompactBufferWriter &writer) const;
+    bool canRecoverOnBailout() const {
+        return true;
+    }
 };
 
 // Inline implementation of Math.sqrt().
@@ -6246,11 +6255,7 @@ class MNot
     }
     bool writeRecoverData(CompactBufferWriter &writer) const;
     bool canRecoverOnBailout() const {
-        // Non objects are recoverable and objects that cannot emulate
-        // undefined get folded into 'true' by GVN.
-        // So the only way to reach this function with an operand that
-        // is an object is when that object might emulate undefined.
-        return !operandMightEmulateUndefined_;
+        return true;
     }
 };
 

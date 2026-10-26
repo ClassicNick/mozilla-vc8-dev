@@ -37,6 +37,8 @@ WEBIDL_FILES = [
     'AudioParam.webidl',
     'AudioProcessingEvent.webidl',
     'AudioStreamTrack.webidl',
+    'AudioTrack.webidl',
+    'AudioTrackList.webidl',
     'BarProp.webidl',
     'BatteryManager.webidl',
     'BeforeUnloadEvent.webidl',
@@ -297,9 +299,12 @@ WEBIDL_FILES = [
     'PositionError.webidl',
     'ProcessingInstruction.webidl',
     'Promise.webidl',
+    'PromiseDebugging.webidl',
     'PushManager.webidl',
     'Range.webidl',
     'Rect.webidl',
+    'ResourceStats.webidl',
+    'ResourceStatsManager.webidl',
     'RGBColor.webidl',
     'RTCConfiguration.webidl',
     'RTCIceCandidate.webidl',
@@ -463,6 +468,8 @@ WEBIDL_FILES = [
     'ValidityState.webidl',
     'VideoPlaybackQuality.webidl',
     'VideoStreamTrack.webidl',
+    'VideoTrack.webidl',
+    'VideoTrackList.webidl',
     'VTTCue.webidl',
     'VTTRegion.webidl',
     'WaveShaperNode.webidl',
@@ -561,6 +568,7 @@ if CONFIG['MOZ_B2G_BT']:
         WEBIDL_FILES += [
             'BluetoothAdapter2.webidl',
             'BluetoothDevice2.webidl',
+            'BluetoothDiscoveryHandle.webidl',
             'BluetoothManager2.webidl',
         ]
     else:

@@ -433,6 +433,6 @@ nsSystemInfo::GetProfileHDDInfo()
   return rv;
 }
 
-NS_IMPL_ISUPPORTS_INHERITED(nsSystemInfo, nsHashPropertyBag, nsIObserver)
+NS_IMPL_ISUPPORTS_INHERITED1(nsSystemInfo, nsHashPropertyBag, nsIObserver)
 #endif // defined(XP_WIN)
 

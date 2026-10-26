@@ -191,7 +191,7 @@ ParseEvalStringAsJSON(JSContext *cx, const mozilla::Range<const CharT> chars, Mu
     MOZ_ASSERT((chars[0] == '(' && chars[len - 1] == ')') ||
                (chars[0] == '[' && chars[len - 1] == ']'));
 
-    Range<const CharT> jsonChars = (chars[0] == '[')
+    mozilla::Range<const CharT> jsonChars = (chars[0] == '[')
                      ? chars
                      : mozilla::Range<const CharT>(chars.start().get() + 1U, len - 2);
 

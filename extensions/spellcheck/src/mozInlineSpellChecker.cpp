@@ -1632,7 +1632,7 @@ mozInlineSpellChecker::ResumeCheck(mozInlineSpellStatus* aStatus)
   rv = GetSpellCheckSelection(getter_AddRefs(spellCheckSelectionRef));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  auto spellCheckSelection =
+  Selection * spellCheckSelection =
     static_cast<Selection *>(spellCheckSelectionRef.get());
 
   nsAutoString currentDictionary;

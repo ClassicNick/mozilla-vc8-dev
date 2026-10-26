@@ -16,9 +16,9 @@ nsXMLBindingSet::~nsXMLBindingSet()
 {}
 
 void
-nsXMLBindingSet::AddBinding(nsIAtom* aVar, nsAutoPtr<XPathExpression>&& aExpr)
+nsXMLBindingSet::AddBinding(nsIAtom* aVar, nsAutoPtr<XPathExpression> aExpr)
 {
-  nsAutoPtr<nsXMLBinding> newbinding(new nsXMLBinding(aVar, Move(aExpr)));
+  nsAutoPtr<nsXMLBinding> newbinding(new nsXMLBinding(aVar, aExpr));
 
   if (mFirst) {
     nsXMLBinding* binding = mFirst;

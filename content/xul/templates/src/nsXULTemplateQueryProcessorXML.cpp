@@ -257,7 +257,7 @@ nsXULTemplateQueryProcessorXML::CompileQuery(nsIXULTemplateBuilder* aBuilder,
     }
 
     nsRefPtr<nsXMLQuery> query =
-        new nsXMLQuery(this, aMemberVariable, Move(compiledexpr));
+        new nsXMLQuery(this, aMemberVariable, compiledexpr);
 
     for (nsIContent* condition = content->GetFirstChild();
          condition;
@@ -281,7 +281,7 @@ nsXULTemplateQueryProcessorXML::CompileQuery(nsIXULTemplateBuilder* aBuilder,
 
                 nsCOMPtr<nsIAtom> varatom = do_GetAtom(var);
 
-                query->AddBinding(varatom, Move(compiledexpr));
+                query->AddBinding(varatom, compiledexpr);
             }
         }
     }
@@ -364,7 +364,7 @@ nsXULTemplateQueryProcessorXML::AddBinding(nsIDOMNode* aRuleNode,
     }
 
     // aRef isn't currently used for XML query processors
-    bindings->AddBinding(aVar, Move(compiledexpr));
+    bindings->AddBinding(aVar, compiledexpr);
     return NS_OK;
 }
 
