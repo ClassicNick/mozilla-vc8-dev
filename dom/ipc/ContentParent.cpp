@@ -66,6 +66,7 @@
 #include "mozilla/Services.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/unused.h"
+#include "nsAnonymousTemporaryFile.h"
 #include "nsAppRunner.h"
 #include "nsAutoPtr.h"
 #include "nsCDefaultURIFixup.h"
@@ -118,6 +119,8 @@
 #include "nsIDocShell.h"
 #include "mozilla/net/NeckoMessageUtils.h"
 #include "gfxPrefs.h"
+#include "prio.h"
+#include "private/pprio.h"
 
 #if defined(ANDROID) || defined(LINUX)
 #include "nsSystemInfo.h"
@@ -1890,10 +1893,15 @@ ContentParent::InitInternal(ProcessPriority aInitialPriority,
             DebugOnly<bool> opened = PCompositor::Open(this);
             MOZ_ASSERT(opened);
 
+#ifndef MOZ_WIDGET_GONK
             if (gfxPrefs::AsyncVideoOOPEnabled()) {
                 opened = PImageBridge::Open(this);
                 MOZ_ASSERT(opened);
             }
+#else
+            opened = PImageBridge::Open(this);
+            MOZ_ASSERT(opened);
+#endif
         }
     }
 #ifdef MOZ_WIDGET_GONK
@@ -3652,6 +3660,21 @@ ContentParent::RecvBackUpXResources(const FileDescriptor& aXSocketFd)
         mChildXSocketFdDup.reset(aXSocketFd.PlatformHandle());
     }
 #endif
+    return true;
+}
+
+bool
+ContentParent::RecvOpenAnonymousTemporaryFile(FileDescriptor *aFD)
+{
+    PRFileDesc *prfd;
+    nsresult rv = NS_OpenAnonymousTemporaryFile(&prfd);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+        return false;
+    }
+    *aFD = FileDescriptor::PlatformHandleType(PR_FileDesc2NativeHandle(prfd));
+    // The FileDescriptor object owns a duplicate of the file handle; we
+    // must close the original (and clean up the NSPR descriptor).
+    PR_Close(prfd);
     return true;
 }
 

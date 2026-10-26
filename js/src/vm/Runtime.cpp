@@ -230,8 +230,6 @@ JSRuntime::JSRuntime(JSRuntime *parentRuntime)
 {
     liveRuntimesCount++;
 
-    setGCMode(JSGC_MODE_GLOBAL);
-
     /* Initialize infallibly first, so we can goto bad and JS_DestroyRuntime. */
     JS_INIT_CLIST(&onNewGlobalObjectWatchers);
 
@@ -248,7 +246,7 @@ JitSupportsFloatingPoint()
         return false;
 
 #if defined(JS_ION) && WTF_ARM_ARCH_VERSION == 6
-    if (!js::jit::hasVFP())
+    if (!js::jit::HasVFP())
         return false;
 #endif
 
@@ -580,7 +578,7 @@ JSRuntime::requestInterrupt(InterruptMode mode)
      * handlers to halt running code.
      */
     if (!SignalBasedTriggersDisabled()) {
-        RequestInterruptForAsmJSCode(this);
+        RequestInterruptForAsmJSCode(this, mode);
         jit::RequestInterruptForIonCode(this, mode);
     }
 #endif

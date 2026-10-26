@@ -430,7 +430,7 @@ TimeDuration::ToSecondsSigDigits() const
 TimeDuration
 TimeDuration::FromMilliseconds(double aMilliseconds)
 {
-  return TimeDuration::FromTicks(int64_t(ms2mt(aMilliseconds)));
+  return TimeDuration::FromTicks(ms2mt(aMilliseconds));
 }
 
 TimeDuration

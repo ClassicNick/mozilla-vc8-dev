@@ -360,6 +360,11 @@ class LiveInterval
     bool addRequirement(const Requirement &newRequirement) {
         return requirement_.mergeRequirement(newRequirement);
     }
+    void addHint(const Requirement &newHint) {
+        // Unlike addRequirement, here in addHint we ignore merge failures,
+        // because these are just hints.
+        hint_.mergeRequirement(newHint);
+    }
     const Requirement *hint() const {
         return &hint_;
     }
@@ -373,6 +378,7 @@ class LiveInterval
 
     void addUse(UsePosition *use);
     void addUseAtEnd(UsePosition *use);
+    UsePosition *popUse();
     UsePosition *nextUseAfter(CodePosition pos);
     CodePosition nextUsePosAfter(CodePosition pos);
     CodePosition firstIncompatibleUse(LAllocation alloc);
@@ -491,8 +497,20 @@ class VirtualRegister
         interval->setIndex(found - intervals_.begin());
         return intervals_.insert(found, interval);
     }
+    void removeInterval(LiveInterval *interval) {
+        intervals_.erase(intervals_.begin() + interval->index());
+        for (size_t i = interval->index(), e = intervals_.length(); i < e; ++i)
+            intervals_[i]->setIndex(i);
+        interval->setIndex(-1);
+    }
     bool isFloatReg() const {
         return def_->isFloatReg();
+    }
+    bool isCompatibleReg(const AnyRegister &r) const {
+        return def_->isCompatibleReg(r);
+    }
+    bool isCompatibleVReg(const VirtualRegister &vr) const {
+        return def_->isCompatibleDef(*vr.def_);
     }
 
     LiveInterval *intervalFor(CodePosition pos);

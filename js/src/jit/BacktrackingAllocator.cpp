@@ -209,7 +209,7 @@ BacktrackingAllocator::tryGroupRegisters(uint32_t vreg0, uint32_t vreg1)
     // already grouped with reg0 or reg1.
     BacktrackingVirtualRegister *reg0 = &vregs[vreg0], *reg1 = &vregs[vreg1];
 
-    if (reg0->isFloatReg() != reg1->isFloatReg())
+    if (!reg0->isCompatibleVReg(*reg1))
         return true;
 
     VirtualRegisterGroup *group0 = reg0->group(), *group1 = reg1->group();
@@ -477,7 +477,9 @@ BacktrackingAllocator::tryAllocateNonFixed(LiveInterval *interval, bool *success
     }
 
     // Spill intervals which have no hint or register requirement.
-    if (interval->requirement()->kind() == Requirement::NONE) {
+    if (interval->requirement()->kind() == Requirement::NONE &&
+        interval->hint()->kind() != Requirement::REGISTER)
+    {
         spill(interval);
         *success = true;
         return true;
@@ -492,6 +494,14 @@ BacktrackingAllocator::tryAllocateNonFixed(LiveInterval *interval, bool *success
             if (*success)
                 return true;
         }
+    }
+
+    // Spill intervals which have no register requirement if they didn't get
+    // allocated.
+    if (interval->requirement()->kind() == Requirement::NONE) {
+        spill(interval);
+        *success = true;
+        return true;
     }
 
     // We failed to allocate this interval.
@@ -688,6 +698,9 @@ BacktrackingAllocator::setIntervalRequirement(LiveInterval *interval)
         } else if (policy == LUse::REGISTER) {
             if (!interval->addRequirement(Requirement(Requirement::REGISTER)))
                 return false;
+        } else if (policy == LUse::ANY) {
+            // ANY differs from KEEPALIVE by actively preferring a register.
+            interval->addHint(Requirement(Requirement::REGISTER));
         }
     }
 
@@ -703,7 +716,7 @@ BacktrackingAllocator::tryAllocateGroupRegister(PhysicalRegister &r, VirtualRegi
     if (!r.allocatable)
         return true;
 
-    if (r.reg.isFloat() != vregs[group->registers[0]].isFloatReg())
+    if (!vregs[group->registers[0]].isCompatibleReg(r.reg))
         return true;
 
     bool allocatable = true;
@@ -753,7 +766,7 @@ BacktrackingAllocator::tryAllocateRegister(PhysicalRegister &r, LiveInterval *in
         return true;
 
     BacktrackingVirtualRegister *reg = &vregs[interval->vreg()];
-    if (reg->isFloatReg() != r.reg.isFloat())
+    if (!reg->isCompatibleReg(r.reg))
         return true;
 
     JS_ASSERT_IF(interval->requirement()->kind() == Requirement::FIXED,
@@ -761,25 +774,29 @@ BacktrackingAllocator::tryAllocateRegister(PhysicalRegister &r, LiveInterval *in
 
     for (size_t i = 0; i < interval->numRanges(); i++) {
         AllocatedRange range(interval, interval->getRange(i)), existing;
-        if (r.allocations.contains(range, &existing)) {
-            if (existing.interval->hasVreg()) {
-                if (IonSpewEnabled(IonSpew_RegAlloc)) {
+        for (size_t a = 0; a < r.reg.numAliased(); a++) {
+            PhysicalRegister &rAlias = registers[r.reg.aliased(a).code()];
+            if (rAlias.allocations.contains(range, &existing)) {
+                if (existing.interval->hasVreg()) {
+                    if (IonSpewEnabled(IonSpew_RegAlloc)) {
                     IonSpew(IonSpew_RegAlloc, "  %s collides with v%u[%u] %s [weight %lu]",
-                            r.reg.name(), existing.interval->vreg(),
-                            existing.interval->index(),
                             existing.range->toString(),
-                            computeSpillWeight(existing.interval));
-                }
-                if (!*pconflicting || computeSpillWeight(existing.interval) < computeSpillWeight(*pconflicting))
-                    *pconflicting = existing.interval;
-            } else {
-                if (IonSpewEnabled(IonSpew_RegAlloc)) {
+                                rAlias.reg.name(), existing.interval->vreg(),
+                                existing.interval->index(),
+                                existing.range->toString(),
+                                computeSpillWeight(existing.interval));
+                    }
+                    if (!*pconflicting || computeSpillWeight(existing.interval) < computeSpillWeight(*pconflicting))
+                        *pconflicting = existing.interval;
+                } else {
+                    if (IonSpewEnabled(IonSpew_RegAlloc)) {
                     IonSpew(IonSpew_RegAlloc, "  %s collides with fixed use %s",
-                            r.reg.name(), existing.range->toString());
+                                rAlias.reg.name(), existing.range->toString());
+                    }
+                    *pfixed = true;
                 }
-                *pfixed = true;
+                return true;
             }
-            return true;
         }
     }
 
@@ -911,6 +928,14 @@ BacktrackingAllocator::spill(LiveInterval *interval)
     JS_ASSERT(interval->hasVreg());
 
     BacktrackingVirtualRegister *reg = &vregs[interval->vreg()];
+
+    if (LiveInterval *spillInterval = interval->spillInterval()) {
+        IonSpew(IonSpew_RegAlloc, "    Spilling to existing spill interval");
+        while (!interval->usesEmpty())
+            spillInterval->addUse(interval->popUse());
+        reg->removeInterval(interval);
+        return;
+    }
 
     bool useCanonical = !reg->hasCanonicalSpillExclude()
         || interval->start() < reg->canonicalSpillExclude();
@@ -1303,7 +1328,7 @@ struct BacktrackingAllocator::PrintLiveIntervalRange
 {
     bool &first_;
 
-    explicit PrintLiveIntervalRange(bool first) : first_(first) {}
+    explicit PrintLiveIntervalRange(bool &first) : first_(first) {}
 
     void operator()(const AllocatedRange &item)
     {
@@ -1609,6 +1634,55 @@ BacktrackingAllocator::trySplitAfterLastRegisterUse(LiveInterval *interval, Live
 }
 
 bool
+BacktrackingAllocator::trySplitBeforeFirstRegisterUse(LiveInterval *interval, LiveInterval *conflict, bool *success)
+{
+    // If this interval's earlier uses do not require it to be in a register,
+    // split it before the first use which does require a register. If conflict
+    // is specified, only consider register uses after the conflict ends.
+
+    if (isRegisterDefinition(interval)) {
+        IonSpew(IonSpew_RegAlloc, "  interval is defined by a register");
+        return true;
+    }
+    if (interval->index() != 0) {
+        IonSpew(IonSpew_RegAlloc, "  interval is not defined in memory");
+        return true;
+    }
+
+    CodePosition firstRegisterFrom;
+
+    for (UsePositionIterator iter(interval->usesBegin());
+         iter != interval->usesEnd();
+         iter++)
+    {
+        LUse *use = iter->use;
+        LInstruction *ins = insData[iter->pos].ins();
+
+        if (!conflict || outputOf(ins) >= conflict->end()) {
+            if (isRegisterUse(use, ins, /* considerCopy = */ true)) {
+                firstRegisterFrom = inputOf(ins);
+                break;
+            }
+        }
+    }
+
+    if (!firstRegisterFrom.bits()) {
+        // Can't trim non-register uses off the beginning by splitting.
+        IonSpew(IonSpew_RegAlloc, "  interval has no register uses");
+        return true;
+    }
+
+    IonSpew(IonSpew_RegAlloc, "  split before first register use at %u",
+            firstRegisterFrom.bits());
+
+    SplitPositions splitPositions;
+    if (!splitPositions.append(firstRegisterFrom))
+        return false;
+    *success = true;
+    return splitAt(interval, splitPositions);
+}
+
+bool
 BacktrackingAllocator::splitAtAllRegisterUses(LiveInterval *interval)
 {
     // Split this interval so that all its register uses become minimal
@@ -1821,6 +1895,11 @@ BacktrackingAllocator::chooseIntervalSplit(LiveInterval *interval, LiveInterval 
     bool success = false;
 
     if (!trySplitAcrossHotcode(interval, &success))
+        return false;
+    if (success)
+        return true;
+
+    if (!trySplitBeforeFirstRegisterUse(interval, conflict, &success))
         return false;
     if (success)
         return true;
