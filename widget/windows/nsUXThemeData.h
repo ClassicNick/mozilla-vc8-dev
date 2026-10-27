@@ -124,7 +124,6 @@ public:
   typedef HANDLE (WINAPI*OpenThemeDataPtr)(HWND hwnd, LPCWSTR pszClassList);
   typedef HRESULT (WINAPI*CloseThemeDataPtr)(HANDLE hTheme);
   typedef HRESULT (WINAPI*DrawThemeBackgroundPtr)(HANDLE hTheme, HDC hdc, int iPartId, int iStateId, const RECT *pRect, const RECT* pClipRect);
-  typedef HRESULT (WINAPI*DrawThemeBackgroundExPtr)(HANDLE hTheme, HDC hdc, int iPartId, int iStateId, const RECT *pRect, const DTBGOPTS* pOpts);
   typedef HRESULT (WINAPI*DrawThemeEdgePtr)(HANDLE hTheme, HDC hdc, int iPartId, int iStateId, const RECT *pDestRect, UINT uEdge, UINT uFlags, const RECT* pContentRect);
   typedef HRESULT (WINAPI*GetThemeContentRectPtr)(HANDLE hTheme, HDC hdc, int iPartId, int iStateId, const RECT* pRect,  RECT* pContentRect);
   typedef HRESULT (WINAPI*GetThemeBackgroundRegionPtr)(HANDLE hTheme, HDC hdc, int iPartId, int iStateId, const RECT* pRect, HRGN *pRegion);
@@ -141,7 +140,6 @@ public:
   static OpenThemeDataPtr openTheme;
   static CloseThemeDataPtr closeTheme;
   static DrawThemeBackgroundPtr drawThemeBG;
-  static DrawThemeBackgroundExPtr drawThemeBGEx;
   static DrawThemeEdgePtr drawThemeEdge;
   static GetThemeContentRectPtr getThemeContentRect;
   static GetThemeBackgroundRegionPtr getThemeBackgroundRegion;
