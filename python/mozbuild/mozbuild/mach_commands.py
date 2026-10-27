@@ -369,9 +369,16 @@ class Build(MachCommandBase):
                 make_extra = self.mozconfig['make_extra'] or []
                 make_extra = dict(m.split('=', 1) for m in make_extra)
 
+                # For universal builds, we need to run the automation steps in
+                # the first architecture from MOZ_BUILD_PROJECTS
+                projects = make_extra.get('MOZ_BUILD_PROJECTS')
+                if projects:
+                    subdir = os.path.join(self.topobjdir, projects.split()[0])
+                else:
+                    subdir = self.topobjdir
                 moz_automation = os.getenv('MOZ_AUTOMATION') or make_extra.get('export MOZ_AUTOMATION', None)
                 if moz_automation and status == 0:
-                    status = self._run_make(target='automation/build',
+                    status = self._run_make(target='automation/build', directory=subdir,
                         line_handler=output.on_line, log=False, print_directory=False,
                         ensure_exit_code=False, num_jobs=jobs, silent=not verbose)
 
@@ -396,7 +403,19 @@ class Build(MachCommandBase):
                     self.run_process([notifier, '-title',
                         'Mozilla Build System', '-group', 'mozbuild',
                         '-message', 'Build complete'], ensure_exit_code=False)
-            except which.WhichError:
+                elif sys.platform.startswith('linux'):
+                    try:
+                        import dbus
+                        bus = dbus.SessionBus()
+                        notify = bus.get_object('org.freedesktop.Notifications',
+                                                '/org/freedesktop/Notifications')
+                        method = notify.get_dbus_method('Notify',
+                                                        'org.freedesktop.Notifications')
+                        method('Mozilla Build System', 0, '', 'Build complete', '', [], [], -1)
+                    except (dbus.exceptions.DBusException, ImportError):
+                        pass
+
+            except (which.WhichError, ImportError):
                 pass
             except Exception as e:
                 self.log(logging.WARNING, 'notifier-failed', {'error':
@@ -738,7 +757,7 @@ class RunProgram(MachCommandBase):
     @CommandArgument('+background', '+b', action='store_true',
         help='Do not pass the -foreground argument by default on Mac')
     @CommandArgument('+profile', '+P', action='store_true',
-        help='Specifiy thr profile to use')
+        help='Specify the profile to use')
     def run(self, params, remote, background, profile):
         try:
             args = [self.get_binary_path('app')]

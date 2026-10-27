@@ -115,6 +115,8 @@ private:
   static uint32_t GetHash(const HangStack& aStack);
 
   HangStack mStack;
+  // Native stack that corresponds to the pseudostack in mStack
+  HangStack mNativeStack;
   // Use a hash to speed comparisons
   const uint32_t mHash;
 
@@ -127,6 +129,7 @@ public:
   HangHistogram(mozilla::MoveRef<HangHistogram> aOther)
     : TimeHistogram(aOther)
     , mStack(mozilla::OldMove(aOther->mStack))
+    , mNativeStack(mozilla::OldMove(aOther->mNativeStack))
     , mHash(mozilla::OldMove(aOther->mHash))
   {
   }
@@ -137,6 +140,12 @@ public:
   }
   const HangStack& GetStack() const {
     return mStack;
+  }
+  HangStack& GetNativeStack() {
+    return mNativeStack;
+  }
+  const HangStack& GetNativeStack() const {
+    return mNativeStack;
   }
 };
 

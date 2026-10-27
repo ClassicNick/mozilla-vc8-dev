@@ -118,7 +118,7 @@ str_encodeURI_Component(JSContext *cx, unsigned argc, Value *vp);
 
 /* ES5 B.2.1 */
 template <typename CharT>
-static jschar *
+static Latin1Char *
 Escape(JSContext *cx, const CharT *chars, uint32_t length, uint32_t *newLengthOut)
 {
     static const uint8_t shouldPassThrough[128] = {
@@ -150,7 +150,7 @@ Escape(JSContext *cx, const CharT *chars, uint32_t length, uint32_t *newLengthOu
                       "newlength must not overflow");
     }
 
-    jschar *newChars = cx->pod_malloc<jschar>(newLength + 1);
+    Latin1Char *newChars = cx->pod_malloc<Latin1Char>(newLength + 1);
     if (!newChars)
         return nullptr;
 
@@ -190,8 +190,7 @@ str_escape(JSContext *cx, unsigned argc, Value *vp)
     if (!str)
         return false;
 
-    /* TODO: Once Latin1 strings are enabled, return a Latin1 string. */
-    ScopedJSFreePtr<jschar> newChars;
+    ScopedJSFreePtr<Latin1Char> newChars;
     uint32_t newLength;
     if (str->hasLatin1Chars()) {
         AutoCheckCannotGC nogc;
@@ -4563,15 +4562,25 @@ js_strcmp(const jschar *lhs, const jschar *rhs)
     }
 }
 
+UniquePtr<char[], JS::FreePolicy>
+js::DuplicateString(js::ThreadSafeContext *cx, const char *s)
+{
+    size_t n = strlen(s) + 1;
+    auto ret = cx->make_pod_array<char>(n);
+    if (!ret)
+        return ret;
+    PodCopy(ret.get(), s, n);
+    return ret;
+}
+
 UniquePtr<jschar[], JS::FreePolicy>
 js::DuplicateString(js::ThreadSafeContext *cx, const jschar *s)
 {
-    size_t n = js_strlen(s);
-    UniquePtr<jschar[], JS::FreePolicy> ret = mozilla::OldMove(cx->make_pod_array<jschar>(n + 1));
+    size_t n = js_strlen(s) + 1;
+    UniquePtr<jschar[], JS::FreePolicy> ret = mozilla::OldMove(cx->make_pod_array<jschar>(n));
     if (!ret)
         return ret;
-    js_strncpy(ret.get(), s, n);
-    ret[n] = '\0';
+    PodCopy(ret.get(), s, n);
     return ret;
 }
 

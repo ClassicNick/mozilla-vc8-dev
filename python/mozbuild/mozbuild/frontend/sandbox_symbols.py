@@ -50,10 +50,9 @@ class FinalTargetValue(SandboxDerivedValue, unicode):
 # Tier says for which specific tier the variable has an effect.
 # Valid tiers are:
 # - 'export'
-# - 'compile': everything in relation with compiling objects.
 # - 'binaries': everything in relation with linking objects, producing
 #      programs and libraries.
-# - 'libs': everything that is not compile or binaries and that has
+# - 'libs': everything that is not binaries and that has
 #      traditionally been in the libs tier.
 # - 'tools'
 # A value of None means the variable has no direct effect on any tier.
@@ -89,14 +88,14 @@ VARIABLES = {
 
         This variable contains a list of source code files to compile.
         Accepts assembler, C, C++, Objective C/C++.
-        """, 'compile'),
+        """, None),
 
     'GENERATED_SOURCES': (StrictOrderingOnAppendList, list,
         """Generated source code files.
 
         This variable contains a list of generated source code files to
         compile. Accepts assembler, C, C++, Objective C/C++.
-        """, 'compile'),
+        """, None),
 
     'FILES_PER_UNIFIED_FILE': (int, int,
         """The number of source files to compile into each unified source file.
@@ -110,7 +109,7 @@ VARIABLES = {
         that can be concatenated all together and built as a single source
         file. This can help make the build faster and reduce the debug info
         size.
-        """, 'compile'),
+        """, None),
 
     'GENERATED_UNIFIED_SOURCES': (StrictOrderingOnAppendList, list,
         """Generated source code files that can be compiled together.
@@ -119,7 +118,7 @@ VARIABLES = {
         compile, that can be concatenated all together, with UNIFIED_SOURCES,
         and built as a single source file. This can help make the build faster
         and reduce the debug info size.
-        """, 'compile'),
+        """, None),
 
     'GENERATED_FILES': (StrictOrderingOnAppendList, list,
         """Generic generated files.
@@ -234,10 +233,14 @@ VARIABLES = {
         """, 'binaries'),
 
     'CPP_UNIT_TESTS': (StrictOrderingOnAppendList, list,
-        """C++ source files for unit tests.
+        """Compile a list of C++ unit test names.
 
-        This is a list of C++ unit test sources. Entries must be files that
-        exist. These generally have ``.cpp`` extensions.
+        Each name in this variable corresponds to an executable built from the
+        corresponding source file with the same base name.
+
+        If the configuration token ``BIN_SUFFIX`` is set, its value will be
+        automatically appended to each name. If a name already ends with
+        ``BIN_SUFFIX``, the name will remain unchanged.
         """, 'binaries'),
 
     'FAIL_ON_WARNINGS': (bool, bool,
@@ -269,10 +272,12 @@ VARIABLES = {
 
         This variable contains a list of source code files to compile.
         with the host compiler.
-        """, 'compile'),
+        """, None),
 
     'IS_COMPONENT': (bool, bool,
         """Whether the library contains a binary XPCOM component manifest.
+
+        Implies FORCE_SHARED_LIB.
         """, None),
 
     'PARALLEL_DIRS': (list, list,
@@ -306,8 +311,9 @@ VARIABLES = {
         """, None),
 
     'LIBRARY_NAME': (unicode, unicode,
-        """The name of the library generated for a directory.
+        """The code name of the library generated for a directory.
 
+        By default STATIC_LIBRARY_NAME and SHARED_LIBRARY_NAME take this name.
         In ``example/components/moz.build``,::
 
            LIBRARY_NAME = 'xpcomsample'
@@ -316,10 +322,33 @@ VARIABLES = {
         ``example/components/xpcomsample.lib`` on Windows.
         """, 'binaries'),
 
-    'LIBS': (StrictOrderingOnAppendList, list,
-        """Linker libraries and flags.
+    'SHARED_LIBRARY_NAME': (unicode, unicode,
+        """The name of the static library generated for a directory, if it needs to
+        differ from the library code name.
 
-        A list of libraries and flags to include when linking.
+        Implies FORCE_SHARED_LIB.
+        """, None),
+
+    'IS_FRAMEWORK': (bool, bool,
+        """Whether the library to build should be built as a framework on OSX.
+
+        This implies the name of the library won't be prefixed nor suffixed.
+        Implies FORCE_SHARED_LIB.
+        """, None),
+
+    'STATIC_LIBRARY_NAME': (unicode, unicode,
+        """The name of the static library generated for a directory, if it needs to
+        differ from the library code name.
+
+        Implies FORCE_STATIC_LIB.
+        """, None),
+
+    'USE_LIBS': (StrictOrderingOnAppendList, list,
+        """List of libraries to link to programs and libraries.
+        """, None),
+
+    'HOST_USE_LIBS': (StrictOrderingOnAppendList, list,
+        """List of libraries to link to host programs and libraries.
         """, None),
 
     'LOCAL_INCLUDES': (StrictOrderingOnAppendList, list,
@@ -395,11 +424,10 @@ VARIABLES = {
            RESOURCE_FILES.fonts['baz.res.in'].preprocess = True
         """, None),
 
-    'SDK_LIBRARY': (StrictOrderingOnAppendList, list,
-        """Elements of the distributed SDK.
+    'SDK_LIBRARY': (bool, bool,
+        """Whether the library built in the directory is part of the SDK.
 
-        Files on this list will be copied into ``SDK_LIB_DIR``
-        (``$DIST/sdk/lib``).
+        The library will be copied into ``SDK_LIB_DIR`` (``$DIST/sdk/lib``).
         """, None),
 
     'SIMPLE_PROGRAMS': (StrictOrderingOnAppendList, list,
@@ -863,7 +891,7 @@ FUNCTIONS = {
         :py:class:`mozbuild.frontend.data.AndroidEclipseProjectData`.
         """),
 
-    'add_tier_dir': ('_add_tier_directory', (str, [str, list], bool, bool),
+    'add_tier_dir': ('_add_tier_directory', (str, [str, list], bool, bool, str),
         """Register a directory for tier traversal.
 
         This is the preferred way to populate the TIERS variable.
@@ -900,6 +928,11 @@ FUNCTIONS = {
         content, but traversed with export, libs, and tools subtiers::
 
            add_tier_dir('base', 'bar', external=True)
+
+        Note there is a temporary ``trigger`` parameter that tells the build
+        system that if it sees the given string in a Makefile, then the compile
+        rules in that directory depend on the directories listed in the
+        add_tier_dir call.
         """),
 
     'export': ('_export', (str,),

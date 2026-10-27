@@ -191,9 +191,7 @@ js::NewContext(JSRuntime *rt, size_t stackChunkSize)
      * of the struct.
      */
     if (!rt->haveCreatedContext) {
-#ifdef JS_THREADSAFE
         JS_BeginRequest(cx);
-#endif
         bool ok = rt->initializeAtoms(cx);
         if (ok)
             ok = rt->initSelfHosting(cx);
@@ -201,9 +199,8 @@ js::NewContext(JSRuntime *rt, size_t stackChunkSize)
         if (ok && !rt->parentRuntime)
             ok = rt->transformToPermanentAtoms();
 
-#ifdef JS_THREADSAFE
         JS_EndRequest(cx);
-#endif
+
         if (!ok) {
             DestroyContext(cx, DCM_NEW_FAILED);
             return nullptr;
@@ -227,10 +224,8 @@ js::DestroyContext(JSContext *cx, DestroyContextMode mode)
     JSRuntime *rt = cx->runtime();
     JS_AbortIfWrongThread(rt);
 
-#ifdef JS_THREADSAFE
     if (cx->outstandingRequests != 0)
         MOZ_CRASH();
-#endif
 
     cx->checkNoGCRooters();
 
@@ -619,16 +614,6 @@ js::PrintError(JSContext *cx, FILE *file, const char *message, JSErrorReport *re
     return true;
 }
 
-char *
-js_strdup(ExclusiveContext *cx, const char *s)
-{
-    size_t n = strlen(s) + 1;
-    void *p = cx->malloc_(n);
-    if (!p)
-        return nullptr;
-    return (char *)js_memcpy(p, s, n);
-}
-
 /*
  * The arguments from ap need to be packaged up into an array and stored
  * into the report struct.
@@ -761,7 +746,7 @@ js_ExpandErrorArguments(ExclusiveContext *cx, JSErrorCallback callback,
              */
             if (efs->format) {
                 size_t len;
-                *messagep = js_strdup(cx, efs->format);
+                *messagep = DuplicateString(cx, efs->format).release();
                 if (!*messagep)
                     goto error;
                 len = strlen(*messagep);
@@ -989,7 +974,7 @@ js_GetErrorMessage(void *userRef, const unsigned errorNumber)
 bool
 js::InvokeInterruptCallback(JSContext *cx)
 {
-    JS_ASSERT_REQUEST_DEPTH(cx);
+    JS_ASSERT(cx->runtime()->requestDepth >= 1);
 
     JSRuntime *rt = cx->runtime();
     JS_ASSERT(rt->interrupt);
@@ -1006,9 +991,7 @@ js::InvokeInterruptCallback(JSContext *cx)
     js::gc::GCIfNeeded(cx);
 
 #ifdef JS_ION
-#ifdef JS_THREADSAFE
     rt->interruptPar = false;
-#endif
 
     // A worker thread may have requested an interrupt after finishing an Ion
     // compilation.
@@ -1124,9 +1107,7 @@ JSContext::JSContext(JSRuntime *rt)
     errorReporter(nullptr),
     data(nullptr),
     data2(nullptr),
-#ifdef JS_THREADSAFE
     outstandingRequests(0),
-#endif
     iterValue(MagicValue(JS_NO_ITER_VALUE)),
     jitIsBroken(false),
 #ifdef MOZ_TRACE_JSCALLS
@@ -1134,10 +1115,6 @@ JSContext::JSContext(JSRuntime *rt)
 #endif
     innermostGenerator_(nullptr)
 {
-#ifdef DEBUG
-    stackIterAssertionEnabled = true;
-#endif
-
     JS_ASSERT(static_cast<ContextFriendFields*>(this) ==
               ContextFriendFields::get(this));
 }
@@ -1359,7 +1336,7 @@ JSContext::findVersion() const
     return runtime()->defaultVersion();
 }
 
-#if defined JS_THREADSAFE && defined DEBUG
+#ifdef DEBUG
 
 JS::AutoCheckRequestDepth::AutoCheckRequestDepth(JSContext *cx)
     : cx(cx)

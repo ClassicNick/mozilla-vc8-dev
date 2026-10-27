@@ -776,8 +776,6 @@ MOZ_USER_DIR=".mozilla"
 
 MOZ_FIX_LINK_PATHS='-Wl,-rpath-link,$(LIBXUL_DIST)/bin -Wl,-rpath-link,$(prefix)/lib'
 
-MOZ_COMPONENT_NSPR_LIBS='-L$(LIBXUL_DIST)/bin $(NSPR_LIBS)'
-
 USE_DEPENDENT_LIBS=1
 
 _PLATFORM_DEFAULT_TOOLKIT=cairo-gtk2
@@ -1688,7 +1686,6 @@ ia64*-hpux*)
         WARNINGS_AS_ERRORS='-WX'
         MOZ_OPTIMIZE_FLAGS="-O2"
         MOZ_FIX_LINK_PATHS=
-        MOZ_COMPONENT_NSPR_LIBS='$(NSPR_LIBS)'
         # Disable these flags on clang-cl since it doesn't ignore unknown arguments by default, and
         # autoconf insists on passing $LDFLAGS to the compiler.
         if test -z "$CLANG_CL"; then
@@ -1962,7 +1959,7 @@ case "$target" in
         ;;
     *-solaris*)
         if test -z "$GNU_CC"; then
-         MOZ_COMPONENTS_VERSION_SCRIPT_LDFLAGS='-M $(BUILD_TOOLS)/gnu-ld-scripts/components-mapfile'
+         eOZ_COMPONENTS_VERSION_SCRIPT_LDFLAGS='-M $(BUILD_TOOLS)/gnu-ld-scripts/components-mapfile'
         else
          if test -z "$GCC_USE_GNU_LD"; then
           MOZ_COMPONENTS_VERSION_SCRIPT_LDFLAGS='-Wl,-M -Wl,$(BUILD_TOOLS)/gnu-ld-scripts/components-mapfile'
@@ -2764,30 +2761,22 @@ dnl =
 dnl ========================================================
 MOZ_ARG_HEADER(External Packages)
 
-JS_THREADSAFE=1
-MOZ_ARG_DISABLE_BOOL(threadsafe,
-[  --disable-threadsafe    Disable support for multiple threads.],
-    JS_THREADSAFE= ,
-    JS_THREADSAFE=1 )
-if test -n "$JS_THREADSAFE"; then
-    AC_DEFINE(JS_THREADSAFE)
-fi
-JS_THREADSAFE_CONFIGURED=$JS_THREADSAFE
-AC_SUBST(JS_THREADSAFE_CONFIGURED)
-
 MOZ_CONFIG_NSPR(js)
 
 dnl ========================================================
 dnl system zlib Support
 dnl ========================================================
 dnl Standalone js defaults to system zlib
-ZLIB_DIR=yes
+if test -n "$JS_STANDALONE"; then
+    ZLIB_DIR=yes
+fi
 
 MOZ_ZLIB_CHECK([1.2.3])
 
 if test -n "$ZLIB_IN_MOZGLUE"; then
     AC_DEFINE(ZLIB_IN_MOZGLUE)
 fi
+AC_SUBST(ZLIB_IN_MOZGLUE)
 
 dnl ========================================================
 dnl system libffi Support
@@ -3624,7 +3613,7 @@ MOZ_ARG_ENABLE_BOOL(readline,
     JS_WANT_READLINE=1,
     JS_WANT_READLINE= )
 
-JS_NATIVE_EDITLINE=
+JS_BUNDLED_EDITLINE=
 EDITLINE_LIBS=
 JS_DISABLE_SHELL=
 
@@ -3643,14 +3632,13 @@ if test -z "$SKIP_LIBRARY_CHECKS" -a -z "$NO_EDITLINE"; then
                  AC_MSG_ERROR([No system readline library found.]))
   else
     dnl By default, we use editline
-    JS_NATIVE_EDITLINE=1
-    EDITLINE_LIBS='$(DEPTH)/js/src/editline/$(LIB_PREFIX)editline.$(LIB_SUFFIX)'
+    JS_BUNDLED_EDITLINE=1
   fi
 
   dnl Either way, we want to build with line editing support.
   AC_DEFINE(EDITLINE)
 fi
-AC_SUBST(JS_NATIVE_EDITLINE)
+AC_SUBST(JS_BUNDLED_EDITLINE)
 AC_SUBST(JS_DISABLE_SHELL)
 AC_SUBST(EDITLINE_LIBS)
 
@@ -3740,7 +3728,6 @@ AC_SUBST(ENABLE_STRIP)
 AC_SUBST(PKG_SKIP_STRIP)
 AC_SUBST(INCREMENTAL_LINKER)
 AC_SUBST(MOZ_COMPONENTS_VERSION_SCRIPT_LDFLAGS)
-AC_SUBST(MOZ_COMPONENT_NSPR_LIBS)
 
 AC_SUBST(MOZ_FIX_LINK_PATHS)
 
@@ -3866,37 +3853,6 @@ AC_SUBST(MSMANIFEST_TOOL)
 AC_SUBST(MOZ_LINKER)
 
 AC_CHECK_FUNCS(posix_fadvise posix_fallocate)
-
-dnl Check for missing components
-if test "$COMPILE_ENVIRONMENT"; then
-if test "$MOZ_X11"; then
-    dnl ====================================================
-    dnl = Check if X headers exist
-    dnl ====================================================
-    _SAVE_CFLAGS=$CFLAGS
-    CFLAGS="$CFLAGS $XCFLAGS"
-    AC_TRY_COMPILE([
-        #include <stdio.h>
-        #include <stdlib.h>
-        #include <X11/Xlib.h>
-        #include <X11/Intrinsic.h>
-    ],
-    [
-        Display *dpy = 0;
-        if ((dpy = XOpenDisplay(NULL)) == NULL) {
-            fprintf(stderr, ": can't open %s\n", XDisplayName(NULL));
-            exit(1);
-        }
-    ], [],
-    [ AC_MSG_ERROR([Can't find X headers (install libxt-dev (Debian/Ubuntu), libXt-devel (Fedora), or xorg-x11-libXt-devel (SuSE)).]) ])
-    CFLAGS="$_SAVE_CFLAGS"
-
-    if test -n "$MISSING_X"; then
-        AC_MSG_ERROR([ Could not find the following X libraries: $MISSING_X ]);
-    fi
-
-fi # MOZ_X11
-fi # COMPILE_ENVIRONMENT
 
 dnl Set various defines and substitutions
 dnl ========================================================

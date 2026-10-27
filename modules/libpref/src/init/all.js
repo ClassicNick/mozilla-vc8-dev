@@ -654,6 +654,10 @@ pref("devtools.dump.emit", false);
 pref("devtools.discovery.log", false);
 // Disable scanning for DevTools devices via WiFi
 pref("devtools.remote.wifi.scan", false);
+// Hide UI options for controlling device visibility over WiFi
+// N.B.: This does not set whether the device can be discovered via WiFi, only
+// whether the UI control to make such a choice is shown to the user
+pref("devtools.remote.wifi.visible", false);
 
 // view source
 pref("view_source.syntax_highlight", true);
@@ -1109,9 +1113,6 @@ pref("network.http.connection-timeout", 90);
 // when starting a new speculative connection.
 pref("network.http.speculative-parallel-limit", 6);
 
-// Allow/Forbid speculative connections on loopback.
-pref("network.http.speculative.allowLoopback", false);
-
 // Whether or not to block requests for non head js/css items (e.g. media)
 // while those elements load.
 pref("network.http.rendering-critical-requests-prioritization", true);
@@ -1530,10 +1531,6 @@ pref("network.proxy.autoconfig_retry_interval_max", 300);  // 5 minutes
 
 // Use the HSTS preload list by default
 pref("network.stricttransportsecurity.preloadlist", true);
-
-// Prohibit resource loads from private networks (e.g. RFC1918 like IP
-// addresses) by documents which were loaded from public networks.
-pref("network.zonepolicy.enabled", true);
 
 pref("converter.html2txt.structs",          true); // Output structured phrases (strong, em, code, sub, sup, b, i, u)
 pref("converter.html2txt.header_strategy",  1); // 0 = no indention; 1 = indention, increased with header level; 2 = numbering and slight indention
@@ -1996,6 +1993,9 @@ pref("layout.css.overflow-clip-box.enabled", false);
 // Is support for CSS grid enabled?
 pref("layout.css.grid.enabled", false);
 
+// Is support for CSS Ruby enabled?
+pref("layout.css.ruby.enabled", false);
+
 // Is support for CSS box-decoration-break enabled?
 pref("layout.css.box-decoration-break.enabled", true);
 
@@ -2038,6 +2038,9 @@ pref("layout.display-list.dump", false);
 // but provides more time for other operations when the browser is
 // heavily loaded.
 pref("layout.frame_rate.precise", false);
+
+// pref to control whether layout warnings that are hit quite often are enabled 
+pref("layout.spammy_warnings.enabled", true);
 
 // Is support for the Web Animations API enabled?
 #ifdef RELEASE_BUILD
@@ -3988,8 +3991,6 @@ pref("dom.sms.defaultServiceId", 0);
 
 // WebContacts
 pref("dom.mozContacts.enabled", false);
-pref("dom.navigator-property.disable.mozContacts", true);
-pref("dom.global-constructor.disable.mozContact", true);
 
 // WebAlarms
 pref("dom.mozAlarms.enabled", false);

@@ -21,7 +21,6 @@ SIMPLE_PROGRAMS = [
     'ReadNTLM',
     'TestBlockingSocket',
     'TestCallbacks',
-    'TestCookie',
     'TestDNS',
     'TestIncrementalDownload',
     'TestOpen',
@@ -52,11 +51,20 @@ SOURCES += [
 ]
 
 CPP_UNIT_TESTS += [
-    'TestSTSParser.cpp',
-    'TestUDPSocket.cpp',
+    'TestCookie',
+    'TestSTSParser',
+    'TestUDPSocket',
 ]
+
+SOURCES += sorted('%s.cpp' % t for t in CPP_UNIT_TESTS)
 
 RESOURCE_FILES += [
     'urlparse.dat',
     'urlparse_unx.dat',
+]
+
+USE_LIBS += [
+    'mozalloc',
+    'xpcomglue_s',
+    'xul',
 ]
