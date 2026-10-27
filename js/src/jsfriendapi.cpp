@@ -516,21 +516,6 @@ js::NewFunctionByIdWithReserved(JSContext *cx, JSNative native, unsigned nargs, 
                        JSFunction::ExtendedFinalizeKind);
 }
 
-JS_FRIEND_API(JSObject *)
-js::InitClassWithReserved(JSContext *cx, JSObject *objArg, JSObject *parent_protoArg,
-                          const JSClass *clasp, JSNative constructor, unsigned nargs,
-                          const JSPropertySpec *ps, const JSFunctionSpec *fs,
-                          const JSPropertySpec *static_ps, const JSFunctionSpec *static_fs)
-{
-    RootedObject obj(cx, objArg);
-    RootedObject parent_proto(cx, parent_protoArg);
-    CHECK_REQUEST(cx);
-    assertSameCompartment(cx, obj, parent_proto);
-    return js_InitClass(cx, obj, parent_proto, Valueify(clasp), constructor,
-                        nargs, ps, fs, static_ps, static_fs, nullptr,
-                        JSFunction::ExtendedFinalizeKind);
-}
-
 JS_FRIEND_API(const Value &)
 js::GetFunctionNativeReserved(JSObject *fun, size_t which)
 {
@@ -1194,6 +1179,21 @@ JS_FRIEND_API(bool)
 js_ReportIsNotFunction(JSContext *cx, JS::HandleValue v)
 {
     return ReportIsNotFunction(cx, v);
+}
+
+JS_FRIEND_API(void)
+js::ReportErrorWithId(JSContext *cx, const char *msg, HandleId id)
+{
+    RootedValue idv(cx);
+    if (!JS_IdToValue(cx, id, &idv))
+        return;
+    JSString *idstr = JS::ToString(cx, idv);
+    if (!idstr)
+        return;
+    JSAutoByteString bytes(cx, idstr);
+    if (!bytes)
+        return;
+    JS_ReportError(cx, msg, bytes.ptr());
 }
 
 #ifdef DEBUG

@@ -39,6 +39,12 @@ public:
     MOZ_ASSERT(mVoicemail);
     mVoicemail = nullptr;
   }
+
+private:
+  ~Listener()
+  {
+    MOZ_ASSERT(!mVoicemail);
+  }
 };
 
 NS_IMPL_ISUPPORTS1(Voicemail::Listener, nsIVoicemailListener)

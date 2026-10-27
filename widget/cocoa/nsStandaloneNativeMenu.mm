@@ -13,7 +13,8 @@
 #include "nsObjCExceptions.h"
 
 
-NS_IMPL_ISUPPORTS2(nsStandaloneNativeMenu, nsIMutationObserver, nsIStandaloneNativeMenu)
+NS_IMPL_ISUPPORTS_INHERITED2(nsStandaloneNativeMenu, nsMenuGroupOwnerX,
+                            nsIMutationObserver, nsIStandaloneNativeMenu)
 
 nsStandaloneNativeMenu::nsStandaloneNativeMenu()
 : mMenu(nullptr)

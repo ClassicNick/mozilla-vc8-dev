@@ -354,4 +354,29 @@ tv = {
       "d98c88003f8477c1227094a0d9fa1e8c4024309ce1ecccb5210035d47ac72e8a"
     ),
   },
+
+  // RFC 6070 <http://tools.ietf.org/html/rfc6070>
+  pbkdf2_sha1: {
+    password: new TextEncoder("utf-8").encode("passwordPASSWORDpassword"),
+    salt: new TextEncoder("utf-8").encode("saltSALTsaltSALTsaltSALTsaltSALTsalt"),
+    iterations: 4096,
+    length: 25 * 8,
+
+    derived: util.hex2abv(
+      "3d2eec4fe41c849b80c8d83662c0e44a8b291a964cf2f07038"
+    )
+  },
+
+  // https://stackoverflow.com/questions/5130513/pbkdf2-hmac-sha2-test-vectors
+  pbkdf2_sha256: {
+    password: new TextEncoder("utf-8").encode("passwordPASSWORDpassword"),
+    salt: new TextEncoder("utf-8").encode("saltSALTsaltSALTsaltSALTsaltSALTsalt"),
+    iterations: 4096,
+    length: 40 * 8,
+
+    derived: util.hex2abv(
+      "348c89dbcbd32b2f32d814b8116e84cf2b17347ebc1800181c4e2a1fb8dd53e1" +
+      "c635518c7dac47e9"
+    )
+  },
 }

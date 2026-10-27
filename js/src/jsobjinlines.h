@@ -832,17 +832,6 @@ NewObjectWithGivenProto(ExclusiveContext *cx, const js::Class *clasp, JSObject *
     return NewObjectWithGivenProto(cx, clasp, TaggedProto(proto), parent, newKind);
 }
 
-inline JSProtoKey
-GetClassProtoKey(const js::Class *clasp)
-{
-    JSProtoKey key = JSCLASS_CACHED_PROTO_KEY(clasp);
-    if (key != JSProto_Null)
-        return key;
-    if (clasp->flags & JSCLASS_IS_ANONYMOUS)
-        return JSProto_Object;
-    return JSProto_Null;
-}
-
 inline bool
 FindProto(ExclusiveContext *cx, const js::Class *clasp, MutableHandleObject proto)
 {
@@ -1031,7 +1020,7 @@ ObjectClassIs(HandleObject obj, ESClassValue classValue, JSContext *cx)
         return obj->is<ArrayBufferObject>() || obj->is<SharedArrayBufferObject>();
       case ESClass_Date: return obj->is<DateObject>();
     }
-    MOZ_ASSUME_UNREACHABLE("bad classValue");
+    MOZ_CRASH("bad classValue");
 }
 
 inline bool

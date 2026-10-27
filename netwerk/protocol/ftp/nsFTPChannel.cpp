@@ -24,12 +24,13 @@ extern PRLogModuleInfo* gFTPLog;
 
 //-----------------------------------------------------------------------------
 
-NS_IMPL_ISUPPORTS_INHERITED4(nsFtpChannel,
-                             nsBaseChannel,
-                             nsIUploadChannel,
-                             nsIResumableChannel,
-                             nsIFTPChannel,
-                             nsIProxiedChannel)
+NS_IMPL_ISUPPORTS_INHERITED5(nsFtpChannel,
+                            nsBaseChannel,
+                            nsIUploadChannel,
+                            nsIResumableChannel,
+                            nsIFTPChannel,
+                            nsIProxiedChannel,
+                            nsIForcePendingChannel)
 
 //-----------------------------------------------------------------------------
 
@@ -199,7 +200,7 @@ nsFtpChannel::GetFTPEventSink(nsCOMPtr<nsIFTPEventSink> &aResult)
     aResult = mFTPEventSink;
 }
 
-void
+NS_IMETHODIMP
 nsFtpChannel::ForcePending(bool aForcePending)
 {
     // Set true here so IsPending will return true.
@@ -207,6 +208,8 @@ nsFtpChannel::ForcePending(bool aForcePending)
     // OnStopRequest can be called in the parent before callbacks are diverted
     // back from the child to the listener in the parent.
     mForcePending = aForcePending;
+
+    return NS_OK;
 }
 
 NS_IMETHODIMP

@@ -37,6 +37,12 @@ public:
     MOZ_ASSERT(mCellBroadcast);
     mCellBroadcast = nullptr;
   }
+
+private:
+  ~Listener()
+  {
+    MOZ_ASSERT(!mCellBroadcast);
+  }
 };
 
 NS_IMPL_ISUPPORTS1(CellBroadcast::Listener, nsICellBroadcastListener)

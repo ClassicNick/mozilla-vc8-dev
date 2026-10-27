@@ -251,7 +251,7 @@ ImageContainer::HasCurrentImage()
 
   if (mRemoteData) {
     CrossProcessMutexAutoLock autoLock(*mRemoteDataMutex);
-    
+
     EnsureActiveImage();
 
     return !!mActiveImage.get();
@@ -264,7 +264,7 @@ already_AddRefed<Image>
 ImageContainer::LockCurrentImage()
 {
   ReentrantMonitorAutoEnter mon(mReentrantMonitor);
-  
+
   if (mRemoteData) {
     NS_ASSERTION(mRemoteDataMutex, "Should have remote data mutex when having remote data!");
     mRemoteDataMutex->Lock();
@@ -407,13 +407,13 @@ ImageContainer::EnsureActiveImage()
     if (mRemoteData->mType == RemoteImageData::RAW_BITMAP &&
         mRemoteData->mBitmap.mData && !mActiveImage) {
       nsRefPtr<RemoteBitmapImage> newImg = new RemoteBitmapImage();
-      
+
       newImg->mFormat = mRemoteData->mFormat;
       newImg->mData = mRemoteData->mBitmap.mData;
       newImg->mSize = mRemoteData->mSize;
       newImg->mStride = mRemoteData->mBitmap.mStride;
       mRemoteData->mWasUpdated = false;
-              
+
       mActiveImage = newImg;
     }
 #if defined XP_WIN && CAIRO_HAS_D2D_SURFACE
@@ -466,10 +466,10 @@ PlanarYCbCrImage::SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const
   return size;
 }
 
-uint8_t* 
+uint8_t*
 PlanarYCbCrImage::AllocateBuffer(uint32_t aSize)
 {
-  return mRecycleBin->GetBuffer(aSize); 
+  return mRecycleBin->GetBuffer(aSize);
 }
 
 static void

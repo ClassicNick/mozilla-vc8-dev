@@ -118,6 +118,8 @@ NS_IMPL_ISUPPORTS1(GfxD2DSurfaceReporter, nsIMemoryReporter)
 #if defined CAIRO_HAS_D2D_SURFACE || defined ENABLE_GPU_MEM_REPORTER
 class GfxD2DVramReporter MOZ_FINAL : public nsIMemoryReporter
 {
+    ~GfxD2DVramReporter() {}
+
 public:
     NS_DECL_ISUPPORTS
 

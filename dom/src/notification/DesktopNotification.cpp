@@ -34,7 +34,7 @@ class DesktopNotificationRequest : public nsIContentPermissionRequest,
   }
 
 public:
-  NS_DECL_ISUPPORTS
+  NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSICONTENTPERMISSIONREQUEST
 
   DesktopNotificationRequest(DesktopNotification* notification)
@@ -309,9 +309,8 @@ DesktopNotificationCenter::WrapObject(JSContext* aCx)
 /* DesktopNotificationRequest                                               */
 /* ------------------------------------------------------------------------ */
 
-NS_IMPL_ISUPPORTS2(DesktopNotificationRequest,
-                   nsIContentPermissionRequest,
-                   nsIRunnable)
+NS_IMPL_ISUPPORTS_INHERITED1(DesktopNotificationRequest, nsRunnable,
+			    nsIContentPermissionRequest)
 
 NS_IMETHODIMP
 DesktopNotificationRequest::GetPrincipal(nsIPrincipal * *aRequestingPrincipal)

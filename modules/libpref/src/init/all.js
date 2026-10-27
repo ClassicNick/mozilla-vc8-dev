@@ -2747,8 +2747,11 @@ pref("network.autodial-helper.enabled", true);
 pref("intl.keyboard.per_window_layout", false);
 
 #ifdef NS_ENABLE_TSF
-// Enable/Disable TSF support
+// Enable/Disable TSF support on Vista or later.
 pref("intl.tsf.enable", false);
+// Force enable TSF even on WinXP or WinServer 2003.
+// Be aware, TSF framework on prior to Vista is not enough stable.
+pref("intl.tsf.force_enable", false);
 
 // Support IMEs implemented with IMM in TSF mode.
 pref("intl.tsf.support_imm", true);
@@ -4226,7 +4229,7 @@ pref("urlclassifier.disallow_completions", "test-malware-simple,test-phish-simpl
 // The table and update/gethash URLs for Safebrowsing phishing and malware
 // checks.
 pref("urlclassifier.trackingTable", "mozpub-track-digest256");
-pref("browser.trackingprotection.updateURL", "https://tracking.services.mozilla.com/update?client=SAFEBROWSING_ID&appver=%VERSION%&pver=2.2");
+pref("browser.trackingprotection.updateURL", "https://tracking.services.mozilla.com/downloads?client=SAFEBROWSING_ID&appver=%VERSION%&pver=2.2");
 pref("browser.trackingprotection.gethashURL", "https://tracking.services.mozilla.com/gethash?client=SAFEBROWSING_ID&appver=%VERSION%&pver=2.2");
 
 // Turn off Spatial navigation by default.
@@ -4270,3 +4273,11 @@ pref("beacon.enabled", true);
 // Camera prefs
 pref("camera.control.autofocus_moving_callback.enabled", true);
 pref("camera.control.face_detection.enabled", true);
+#ifdef MOZ_WIDGET_GONK
+// Empirically, this is the value returned by hal::GetTotalSystemMemory()
+// when Flame's memory is limited to 512MiB. If the camera stack determines
+// it is running on a low memory platform, features that can be reliably
+// supported will be disabled. This threshold can be adjusted to suit other
+// platforms; and set to 0 to disable the low-memory check altogether.
+pref("camera.control.low_memory_thresholdMB", 404);
+#endif
