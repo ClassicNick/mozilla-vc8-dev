@@ -22,6 +22,21 @@
 #include "sandbox/win/src/target_process.h"
 #include "sandbox/win/src/wow64.h"
 
+#ifndef GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
+#define GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS 0x00000004
+#endif
+#ifndef GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT
+#define GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT 0x00000002
+#endif
+
+typedef BOOL (WINAPI* GetModuleHandleExFunc) (
+    DWORD dwFlags,
+    LPCTSTR lpModuleName,
+    HMODULE *phModule
+);
+
+static GetModuleHandleExFunc GetModuleHandleExPtr;
+
 namespace {
 
 const char kMapViewOfSectionName[] = "NtMapViewOfSection";
@@ -448,12 +463,14 @@ bool InterceptionManager::PatchClientFunctions(DllInterceptionData* thunks,
     return false;
 
   base::win::PEImage ntdll_image(ntdll_base);
+  
+  GetModuleHandleExPtr = (GetModuleHandleExFunc) GetProcAddress(GetModuleHandle(L"kernel32.dll"), "GetModuleHandleEx");
 
   // Bypass purify's interception.
   wchar_t* loader_get = reinterpret_cast<wchar_t*>(
                             ntdll_image.GetProcAddress("LdrGetDllHandle"));
   if (loader_get) {
-    if (!GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+    if (!GetModuleHandleExPtr(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
                                GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                            loader_get, &ntdll_base))
       return false;

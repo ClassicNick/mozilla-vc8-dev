@@ -52,6 +52,10 @@
 #include "nsThreadUtils.h"
 #include "nsXULAppAPI.h"
 
+#ifndef SEE_MASK_FLAG_LOG_USAGE
+#define SEE_MASK_FLAG_LOG_USAGE 0x04000000
+#endif
+
 using namespace mozilla;
 
 #define CHECK_mWorkingPath()                    \

@@ -16,6 +16,10 @@
 #include "nsWindow.h"
 #include "WinUtils.h"
 
+#ifndef GET_MODULE_HANDLE_EX_FLAG_PIN
+#define GET_MODULE_HANDLE_EX_FLAG_PIN 0x00000001
+#endif
+
 namespace mozilla {
 namespace widget {
 

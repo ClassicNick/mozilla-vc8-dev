@@ -29,6 +29,12 @@ OSInfo* OSInfo::GetInstance() {
   return info;
 }
 
+typedef VOID (WINAPI* GetNativeSystemInfoFunc) (
+  LPSYSTEM_INFO lpSystemInfo
+);
+
+static GetNativeSystemInfoFunc GetNativeSystemInfoPtr;
+
 OSInfo::OSInfo()
     : version_(VERSION_PRE_XP),
       architecture_(OTHER_ARCHITECTURE),
@@ -66,9 +72,11 @@ OSInfo::OSInfo()
   }
   service_pack_.major = version_info.wServicePackMajor;
   service_pack_.minor = version_info.wServicePackMinor;
+  
+GetNativeSystemInfoPtr = (GetNativeSystemInfoFunc) GetProcAddress(GetModuleHandle(L"kernel32.dll"), "GetNativeSystemInfo");
 
   SYSTEM_INFO system_info = { 0 };
-  GetNativeSystemInfo(&system_info);
+  GetNativeSystemInfoPtr(&system_info);
   switch (system_info.wProcessorArchitecture) {
     case PROCESSOR_ARCHITECTURE_INTEL: architecture_ = X86_ARCHITECTURE; break;
     case PROCESSOR_ARCHITECTURE_AMD64: architecture_ = X64_ARCHITECTURE; break;

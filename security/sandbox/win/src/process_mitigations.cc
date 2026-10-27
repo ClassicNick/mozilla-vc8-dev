@@ -23,6 +23,13 @@ typedef BOOL (WINAPI *SetProcessMitigationPolicyFunction)(
 
 typedef BOOL (WINAPI *SetDefaultDllDirectoriesFunction)(
     DWORD DirectoryFlags);
+	
+typedef BOOL (WINAPI* HeapSetInformationFunction) (
+  HANDLE                 HeapHandle,
+  HEAP_INFORMATION_CLASS HeapInformationClass,
+  PVOID                  HeapInformation,
+  SIZE_T                 HeapInformationLength
+);
 
 }  // namespace
 
@@ -53,11 +60,14 @@ bool ApplyProcessMitigationsToCurrentProcess(MitigationFlags flags) {
       }
     }
   }
+  
+  static HeapSetInformationFunction HeapSetInformationPtr;
+  HeapSetInformationPtr = (HeapSetInformationFunction) ((module), "HeapSetInformation");
 
   // Set the heap to terminate on corruption
   if (version >= base::win::VERSION_VISTA &&
       (flags & MITIGATION_HEAP_TERMINATE)) {
-    if (!::HeapSetInformation(NULL, HeapEnableTerminationOnCorruption,
+    if (!HeapSetInformationPtr(NULL, HeapEnableTerminationOnCorruption,
                               NULL, 0) &&
         ERROR_ACCESS_DENIED != ::GetLastError()) {
       return false;

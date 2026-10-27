@@ -10,6 +10,38 @@
 #include "WinUtils.h"
 #include "npapi.h"
 
+#if WINVER <= 0X0500
+#define APPCOMMAND_MICROPHONE_VOLUME_MUTE 24
+#define APPCOMMAND_MICROPHONE_VOLUME_DOWN 25
+#define APPCOMMAND_MICROPHONE_VOLUME_UP   26
+#define APPCOMMAND_HELP                   27
+#define APPCOMMAND_FIND                   28
+#define APPCOMMAND_NEW                    29
+#define APPCOMMAND_OPEN                   30
+#define APPCOMMAND_CLOSE                  31
+#define APPCOMMAND_SAVE                   32
+#define APPCOMMAND_PRINT                  33
+#define APPCOMMAND_UNDO                   34
+#define APPCOMMAND_REDO                   35
+#define APPCOMMAND_COPY                   36
+#define APPCOMMAND_CUT                    37
+#define APPCOMMAND_PASTE                  38
+#define APPCOMMAND_REPLY_TO_MAIL          39
+#define APPCOMMAND_FORWARD_MAIL           40
+#define APPCOMMAND_SEND_MAIL              41
+#define APPCOMMAND_SPELL_CHECK            42
+#define APPCOMMAND_DICTATE_OR_COMMAND_CONTROL_TOGGLE    43
+#define APPCOMMAND_MIC_ON_OFF_TOGGLE      44
+#define APPCOMMAND_CORRECTION_LIST        45
+#define APPCOMMAND_MEDIA_PLAY             46
+#define APPCOMMAND_MEDIA_PAUSE            47
+#define APPCOMMAND_MEDIA_RECORD           48
+#define APPCOMMAND_MEDIA_FAST_FORWARD     49
+#define APPCOMMAND_MEDIA_REWIND           50
+#define APPCOMMAND_MEDIA_CHANNEL_UP       51
+#define APPCOMMAND_MEDIA_CHANNEL_DOWN     52
+#endif
+
 using namespace mozilla;
 using namespace mozilla::widget;
 

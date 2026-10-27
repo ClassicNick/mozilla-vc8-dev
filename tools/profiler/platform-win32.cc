@@ -39,6 +39,15 @@
 // Memory profile
 #include "nsMemoryReporterManager.h"
 
+#ifndef RtlCaptureContext
+typedef 
+VOID
+(WINAPI* RtlCaptureContextFunc) (
+    PCONTEXT ContextRecord
+    );
+static RtlCaptureContextFunc RtlCaptureContextPtr;
+#endif
+
 class PlatformData : public Malloced {
  public:
   // Get a handle to the calling thread. This is the thread that we are
@@ -366,7 +375,8 @@ void TickSample::PopulateContext(void* aContext)
   MOZ_ASSERT(aContext);
   CONTEXT* pContext = reinterpret_cast<CONTEXT*>(aContext);
   context = pContext;
-  RtlCaptureContext(pContext);
+  RtlCaptureContextPtr = (RtlCaptureContextFunc) GetProcAddress(GetModuleHandle("ntdll.dll"), "RtlCaptureContext");
+  RtlCaptureContextPtr(pContext);
 
 #if defined(SPS_PLAT_amd64_windows)
 

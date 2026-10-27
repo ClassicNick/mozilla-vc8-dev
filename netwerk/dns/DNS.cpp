@@ -107,7 +107,7 @@ const char *inet_ntop_internal(int af, const void *src, char *dst, socklen_t siz
     memset(&s, 0, sizeof(s));
     s.sin_family = AF_INET;
     memcpy(&s.sin_addr, src, sizeof(struct in_addr));
-    int result = WspiapiLegacyGetNameInfo((struct sockaddr *)&s, sizeof(struct sockaddr_in),
+    int result = mozilla::net::WspiapiLegacyGetNameInfo((struct sockaddr *)&s, sizeof(struct sockaddr_in),
                              dst, size, nullptr, 0, NI_NUMERICHOST);
     if (result == 0) {
       return dst;
@@ -118,7 +118,7 @@ const char *inet_ntop_internal(int af, const void *src, char *dst, socklen_t siz
     memset(&s, 0, sizeof(s));
     s.sin6_family = AF_INET6;
     memcpy(&s.sin6_addr, src, sizeof(struct in_addr6));
-    int result = WspiapiLegacyGetNameInfo((struct sockaddr *)&s, sizeof(struct sockaddr_in6),
+    int result = mozilla::net::WspiapiLegacyGetNameInfo((struct sockaddr *)&s, sizeof(struct sockaddr_in6),
                              dst, size, nullptr, 0, NI_NUMERICHOST);
     if (result == 0) {
       return dst;
