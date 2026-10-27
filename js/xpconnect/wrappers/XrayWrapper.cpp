@@ -21,6 +21,7 @@
 #include "nsJSUtils.h"
 #include "nsPrintfCString.h"
 
+#include "mozilla/MacroForEach.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/WindowBinding.h"
 #include "nsGlobalWindow.h"

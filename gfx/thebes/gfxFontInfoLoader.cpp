@@ -86,11 +86,7 @@ AsyncFontInfoLoader::Run()
     return NS_OK;
 }
 
-<<<<<<< HEAD
-NS_IMPL_ISUPPORTS1(AsyncFontInfoLoader, nsIRunnable);
-=======
 NS_IMPL_ISUPPORTS_INHERITED0(AsyncFontInfoLoader, nsRunnable);
->>>>>>> 926f8bf
 
 NS_IMPL_ISUPPORTS1(gfxFontInfoLoader::ShutdownObserver, nsIObserver)
 

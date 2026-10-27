@@ -167,7 +167,9 @@ class RefCountedData
   T data;
 
  private:
+#if !defined (_MSC_VER) || _MSC_VER >= 1500
   friend class base::RefCountedThreadSafe<base::RefCountedData<T> >;
+#endif
   ~RefCountedData() {}
 };
 

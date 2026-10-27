@@ -180,11 +180,7 @@ private:
   bool mUsingCustomOptions;
 };
 
-<<<<<<< HEAD
-NS_IMPL_ISUPPORTS1(EncodingRunnable, nsIRunnable)
-=======
 NS_IMPL_ISUPPORTS_INHERITED0(EncodingRunnable, nsRunnable);
->>>>>>> 926f8bf
 
 /* static */
 nsresult

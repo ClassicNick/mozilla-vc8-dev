@@ -381,7 +381,7 @@ class HighResNowSingleton {
   int64 GetQPCDriftMicroseconds() {
     if (!IsUsingHighResClock())
       return 0;
-    return abs((UnreliableNow() - ReliableNow()) - skew_);
+    return _abs64((UnreliableNow() - ReliableNow()) - skew_);
   }
 
   int64 QPCValueToMicroseconds(LONGLONG qpc_value) {

@@ -10,6 +10,13 @@
 #include "sandbox/win/src/crosscall_client.h"
 #include "base/logging.h"
 
+#if _MSC_VER <= 1400
+#define _interlockedbittestandreset _interlockedbittestandreset_NAME_CHANGED_TO_AVOID_MSVS2005_ERROR
+#define _interlockedbittestandset _interlockedbittestandset_NAME_CHANGED_TO_AVOID_MSVS2005_ERROR
+#endif
+
+#include <intrin.h>
+
 // This code performs the ipc message validation. Potential security flaws
 // on the ipc are likelier to be found in this code than in the rest of
 // the ipc code.

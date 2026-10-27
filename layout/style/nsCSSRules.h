@@ -563,17 +563,11 @@ class nsCSSPageRule MOZ_FINAL : public mozilla::css::Rule,
 {
 public:
   // WARNING: Steals the contents of aDeclaration
-<<<<<<< HEAD
-  nsCSSPageRule(nsAutoPtr<mozilla::css::Declaration> aDeclaration)
-    : mDeclaration(aDeclaration),
-      mImportantRule(nullptr)
-=======
-  nsCSSPageRule(nsAutoPtr<mozilla::css::Declaration>&& aDeclaration,
+  nsCSSPageRule(nsAutoPtr<mozilla::css::Declaration> aDeclaration,
                 uint32_t aLineNumber, uint32_t aColumnNumber)
     : mozilla::css::Rule(aLineNumber, aColumnNumber)
-    , mDeclaration(mozilla::Move(aDeclaration))
+    , mDeclaration(aDeclaration)
     , mImportantRule(nullptr)
->>>>>>> 926f8bf
   {
   }
 private:

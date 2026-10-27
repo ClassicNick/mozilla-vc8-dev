@@ -32,7 +32,7 @@ private:
   const int mTimerId;
 };
 
-NS_IMPL_ISUPPORTS_INHERITED(TimerEvent, nsRunnable, nsITimerCallback);
+NS_IMPL_ISUPPORTS_INHERITED1(TimerEvent, nsRunnable, nsITimerCallback);
 } // anonymous namespace
 
 static already_AddRefed<nsIEventTarget>

@@ -9,6 +9,8 @@
 
 #include "mozilla/Attributes.h"
 
+#include "nsID.h"
+
 #include "jswrapper.h"
 
 namespace xpc {
