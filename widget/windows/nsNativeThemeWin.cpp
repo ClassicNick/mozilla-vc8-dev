@@ -1862,7 +1862,7 @@ RENDER_AGAIN:
       DTBG_OMITCONTENT | DTBG_CLIPRECT,
       clipRect
     };
-    DrawThemeBackgroundEx(theme, hdc, part, state, &widgetRect, &opts);
+    nsUXThemeData::drawThemeBGEx(theme, hdc, part, state, &widgetRect, &opts);
   }
   // If part is negative, the element wishes us to not render a themed
   // background, instead opting to be drawn specially below.
