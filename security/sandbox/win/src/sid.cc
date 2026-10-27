@@ -6,6 +6,15 @@
 
 #include "base/logging.h"
 
+typedef BOOL (WINAPI* CreateWellKnownSidFunc) (
+  WELL_KNOWN_SID_TYPE WellKnownSidType,
+  PSID                DomainSid,
+  PSID                pSid,
+  DWORD               *cbSid
+);
+
+static CreateWellKnownSidFunc CreateWellKnownSidPtr;
+
 namespace sandbox {
 
 Sid::Sid(const SID *sid) {
@@ -13,8 +22,9 @@ Sid::Sid(const SID *sid) {
 };
 
 Sid::Sid(WELL_KNOWN_SID_TYPE type) {
+CreateWellKnownSidPtr = (CreateWellKnownSidFunc) GetProcAddress(GetModuleHandle(L"advapi32.dll"), "CreateWellKnownSid");
   DWORD size_sid = SECURITY_MAX_SID_SIZE;
-  BOOL result = ::CreateWellKnownSid(type, NULL, sid_, &size_sid);
+  BOOL result = CreateWellKnownSidPtr(type, NULL, sid_, &size_sid);
   DCHECK(result);
   DBG_UNREFERENCED_LOCAL_VARIABLE(result);
 }

@@ -18,6 +18,21 @@
 #include "sandbox/win/src/sandbox_types.h"
 #include "sandbox/win/src/target_process.h"
 
+#ifndef GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
+#define GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS 0x00000004
+#endif
+#ifndef GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT
+#define GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT 0x00000002
+#endif
+
+typedef BOOL (WINAPI* GetModuleHandleExFunc) (
+    DWORD dwFlags,
+    LPCTSTR lpModuleName,
+    HMODULE *phModule
+);
+
+static GetModuleHandleExFunc GetModuleHandleExPtr;
+
 // This code executes on the broker side, as a callback from the policy on the
 // target side (the child).
 
@@ -41,14 +56,18 @@ SANDBOX_INTERCEPT NtExports g_nt;
 bool SetupNtdllImports(TargetProcess *child) {
   HMODULE ntdll = ::GetModuleHandle(kNtdllName);
   base::win::PEImage ntdll_image(ntdll);
+  
+GetModuleHandleExPtr = (GetModuleHandleExFunc) GetProcAddress(GetModuleHandle(L"kernel32.dll"), "GetModuleHandleEx");
 
   // Bypass purify's interception.
   wchar_t* loader_get = reinterpret_cast<wchar_t*>(
                             ntdll_image.GetProcAddress("LdrGetDllHandle"));
   if (loader_get) {
-    GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+	  if (GetModuleHandleExPtr) {
+    GetModuleHandleExPtr(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
                           GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                       loader_get, &ntdll);
+	  }
   }
 
   INIT_GLOBAL_NT(AllocateVirtualMemory);

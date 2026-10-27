@@ -50,6 +50,10 @@
 #define MAPVK_VK_TO_VSC_EX (4)
 #endif
 
+#ifndef WM_UNICHAR
+#define WM_UNICHAR                      0x0109
+#endif
+
 namespace mozilla {
 namespace widget {
 

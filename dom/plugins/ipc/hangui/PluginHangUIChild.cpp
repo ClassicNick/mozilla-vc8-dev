@@ -16,6 +16,23 @@
 #include <sstream>
 #include <vector>
 
+#ifndef ICC_STANDARD_CLASSES
+#define ICC_STANDARD_CLASSES   0x00004000
+#endif
+#ifndef BCM_FIRST
+#define BCM_FIRST               0x1600      // Button control messages
+#endif
+#ifndef BCM_GETIDEALSIZE
+#define BCM_GETIDEALSIZE        (BCM_FIRST + 0x0001)
+#define Button_GetIdealSize(hwnd, psize)\
+    (BOOL)SNDMSG((hwnd), BCM_GETIDEALSIZE, 0, (LPARAM)(psize))
+#endif
+#ifndef BCM_GETTEXTMARGIN
+#define BCM_GETTEXTMARGIN       (BCM_FIRST + 0x0005)
+#define Button_GetTextMargin(hwnd, pmargin)\
+    (BOOL)SNDMSG((hwnd), BCM_GETTEXTMARGIN, 0, (LPARAM)(pmargin))
+#endif
+
 namespace mozilla {
 namespace plugins {
 

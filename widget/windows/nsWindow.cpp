@@ -183,6 +183,13 @@
 #define SM_CONVERTIBLESLATEMODE 0x2003
 #endif
 
+#ifndef CS_DROPSHADOW
+#define CS_DROPSHADOW       0x00020000
+#endif
+#ifndef WS_EX_COMPOSITED
+#define WS_EX_COMPOSITED        0x02000000L
+#endif
+
 using namespace mozilla;
 using namespace mozilla::dom;
 using namespace mozilla::gfx;

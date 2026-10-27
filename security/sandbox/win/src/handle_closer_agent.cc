@@ -75,12 +75,20 @@ void HandleCloserAgent::InitializeHandlesToClose() {
   g_handles_to_close = NULL;
 }
 
+typedef BOOL (WINAPI* GetProcessHandleCountFunc) (
+  HANDLE hProcess,
+  PDWORD pdwHandleCount
+);
+
+static GetProcessHandleCountFunc GetProcessHandleCountPtr;
+
 bool HandleCloserAgent::CloseHandles() {
   DWORD handle_count = UINT_MAX;
   const int kInvalidHandleThreshold = 100;
   const size_t kHandleOffset = sizeof(HANDLE);
 
-  if (!::GetProcessHandleCount(::GetCurrentProcess(), &handle_count))
+GetProcessHandleCountPtr = (GetProcessHandleCountFunc) GetProcAddress(GetModuleHandle(L"kernel32.dll"), "GetProcessHandleCount");
+  if (!GetProcessHandleCountPtr(::GetCurrentProcess(), &handle_count))
     return false;
 
   // Set up buffers for the type info and the name.

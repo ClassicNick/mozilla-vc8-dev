@@ -18,6 +18,21 @@
 #include "third_party/tcmalloc/chromium/src/gperftools/profiler.h"
 #endif
 
+#ifndef GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
+#define GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS 0x00000004
+#endif
+#ifndef GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT
+#define GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT 0x00000002
+#endif
+
+typedef BOOL (WINAPI* GetModuleHandleExFunc) (
+    DWORD dwFlags,
+    LPCTSTR lpModuleName,
+    HMODULE *phModule
+);
+
+static GetModuleHandleExFunc GetModuleHandleExPtr;
+
 namespace base {
 namespace debug {
 
@@ -153,12 +168,14 @@ bool FindResolutionFunctionInImports(
   // find the module this import was resolved to by the loader.
   const wchar_t* function_in_module =
       reinterpret_cast<const wchar_t*>(import_address_table->u1.Function);
+	  
+GetModuleHandleExPtr = (GetModuleHandleExFunc) GetProcAddress(GetModuleHandle(L"kernel32.dll"), "GetModuleHandleEx");
 
   // Retrieve the module by a function in the module.
   const DWORD kFlags = GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
                        GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT;
   HMODULE module = NULL;
-  if (!::GetModuleHandleEx(kFlags, function_in_module, &module)) {
+  if (!GetModuleHandleExPtr(kFlags, function_in_module, &module)) {
     // This can happen if someone IAT patches us to a thunk.
     return true;
   }

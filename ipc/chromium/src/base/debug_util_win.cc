@@ -13,6 +13,17 @@
 #include "base/logging.h"
 #include "base/singleton.h"
 
+#ifndef RtlCaptureStackBackTrace
+typedef USHORT (WINAPI*
+RtlCaptureStackBackTraceFunc) (
+    DWORD FramesToSkip,
+    DWORD FramesToCapture,
+    PVOID *BackTrace,
+    PDWORD BackTraceHash
+   );
+static RtlCaptureStackBackTraceFunc RtlCaptureStackBackTracePtr;
+#endif
+
 namespace {
 
 // Minimalist key reader.
@@ -257,10 +268,12 @@ StackTrace::StackTrace() {
   // the sum of FramesToSkip and FramesToCapture must be less than 63,
   // so set it to 62.
   const int kMaxCallers = 62;
+  
+  RtlCaptureStackBackTracePtr = (RtlCaptureStackBackTraceFunc) GetProcAddress(GetModuleHandle(L"ntdll.dll"), "RtlCaptureStackBackTrace");
 
   void* callers[kMaxCallers];
   // TODO(ajwong): Migrate this to StackWalk64.
-  int count = CaptureStackBackTrace(0, kMaxCallers, callers, NULL);
+  int count = RtlCaptureStackBackTracePtr(0, kMaxCallers, callers, NULL);
   if (count > 0) {
     trace_.resize(count);
     memcpy(&trace_[0], callers, sizeof(callers[0]) * count);

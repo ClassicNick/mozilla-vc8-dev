@@ -452,8 +452,23 @@ VOID CALLBACK BrokerServicesBase::RemovePeer(PVOID parameter, BOOLEAN timeout) {
 }
 
 ResultCode BrokerServicesBase::AddTargetPeer(HANDLE peer_process) {
+#if !defined(_MSC_VER) || _MSC_VER <= 1500
+// Dynamically get a pointer to GetProcessId().
+  typedef DWORD (WINAPI *GetProcessIdFunction)(HANDLE);
+  static GetProcessIdFunction GetProcessIdPtr = NULL;
+  static bool initialize_get_process_id = true;
+  if (initialize_get_process_id) {
+    initialize_get_process_id = false;
+    HMODULE kernel32_handle = GetModuleHandle(L"kernel32.dll");
+    GetProcessIdPtr = (GetProcessIdFunction) (GetProcAddress(
+        kernel32_handle, "GetProcessId"));
+  }
+  scoped_ptr<PeerTracker> peer(new PeerTracker(GetProcessIdPtr(peer_process),
+                                               job_port_));
+#else
   scoped_ptr<PeerTracker> peer(new PeerTracker(::GetProcessId(peer_process),
                                                job_port_));
+#endif
   if (!peer->id)
     return SBOX_ERROR_GENERIC;
 
