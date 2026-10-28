@@ -178,7 +178,7 @@ public:
     // viewport data on a document may have changed. If it didn't
     // change, this function doesn't do anything.  However, it should
     // not be called all the time as it is fairly expensive.
-    bool HandlePossibleViewportChange();
+    bool HandlePossibleViewportChange(const ScreenIntSize& aOldScreenSize);
     virtual bool DoUpdateZoomConstraints(const uint32_t& aPresShellId,
                                          const mozilla::layers::FrameMetrics::ViewID& aViewId,
                                          const bool& aIsRoot,
@@ -500,6 +500,8 @@ protected:
                                                   bool* /* aAllowed */) MOZ_OVERRIDE;
 
     virtual bool DeallocPIndexedDBChild(PIndexedDBChild* aActor) MOZ_OVERRIDE;
+
+    virtual bool RecvRequestNotifyAfterRemotePaint();
 
 private:
     /**
