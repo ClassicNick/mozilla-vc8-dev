@@ -33,7 +33,7 @@
  *************************************************************************************
  */
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 #include <time.h>
 #include <cstdio>
 #include <cstring>

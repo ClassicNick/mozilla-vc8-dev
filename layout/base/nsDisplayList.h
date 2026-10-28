@@ -533,6 +533,10 @@ public:
     void SetDirtyRect(const nsRect& aRect) {
       mBuilder->mDirtyRect = aRect;
     }
+    void SetReferenceFrameAndCurrentOffset(const nsIFrame* aFrame, const nsPoint& aOffset) {
+      mBuilder->mCurrentReferenceFrame = aFrame;
+      mBuilder->mCurrentOffsetToReferenceFrame = aOffset;
+    }
     ~AutoBuildingDisplayList() {
       mBuilder->mCurrentFrame = mPrevFrame;
       mBuilder->mCurrentReferenceFrame = mPrevReferenceFrame;
@@ -2597,6 +2601,8 @@ public:
     mHasZIndexOverride = true;
     mOverrideZIndex = aZIndex;
   }
+
+  void SetVisibleRect(const nsRect& aRect);
 
   /**
    * This creates a copy of this item, but wrapping aItem instead of

@@ -11,7 +11,6 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Casting.h"
-#include "mozilla/DebugOnly.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Move.h"
 #include "mozilla/NullPtr.h"
@@ -748,7 +747,7 @@ class HashTable : private AllocPolicy
         void nonNull() {}
 
         Entry *entry_;
-#ifdef DEBUG
+#ifdef JS_DEBUG
         const HashTable *table_;
         uint32_t generation;
 #endif
@@ -756,7 +755,7 @@ class HashTable : private AllocPolicy
       protected:
         Ptr(Entry &entry, const HashTable &tableArg)
           : entry_(&entry)
-#ifdef DEBUG
+#ifdef JS_DEBUG
           , table_(&tableArg)
           , generation(tableArg.generation())
 #endif
@@ -771,7 +770,9 @@ class HashTable : private AllocPolicy
         }
 
         bool found() const {
+#ifdef JS_DEBUG
             MOZ_ASSERT(generation == table_->generation());
+#endif
             return entry_->isLive();
         }
 
@@ -785,17 +786,23 @@ class HashTable : private AllocPolicy
         }
 
         bool operator!=(const Ptr &rhs) const {
+#ifdef JS_DEBUG
             MOZ_ASSERT(generation == table_->generation());
+#endif
             return !(*this == rhs);
         }
 
         T &operator*() const {
+#ifdef JS_DEBUG
             MOZ_ASSERT(generation == table_->generation());
+#endif
             return entry_->get();
         }
 
         T *operator->() const {
+#ifdef JS_DEBUG
             MOZ_ASSERT(generation == table_->generation());
+#endif
             return &entry_->get();
         }
     };
@@ -805,14 +812,14 @@ class HashTable : private AllocPolicy
     {
         friend class HashTable;
         HashNumber keyHash;
-#ifdef DEBUG
+#ifdef JS_DEBUG
         uint64_t mutationCount;
 #endif
 
         AddPtr(Entry &entry, const HashTable &tableArg, HashNumber hn)
           : Ptr(entry, tableArg)
           , keyHash(hn)
-#ifdef DEBUG
+#ifdef JS_DEBUG
           , mutationCount(tableArg.mutationCount)
 #endif
         {}
@@ -834,7 +841,7 @@ class HashTable : private AllocPolicy
         Range(const HashTable &tableArg, Entry *c, Entry *e)
           : cur(c)
           , end(e)
-#ifdef DEBUG
+#ifdef JS_DEBUG
           , table_(&tableArg)
           , mutationCount(tableArg.mutationCount)
           , generation(tableArg.generation())
@@ -846,7 +853,7 @@ class HashTable : private AllocPolicy
         }
 
         Entry *cur, *end;
-#ifdef DEBUG
+#ifdef JS_DEBUG
         const HashTable *table_;
         uint64_t mutationCount;
         uint32_t generation;
@@ -857,7 +864,7 @@ class HashTable : private AllocPolicy
         Range()
           : cur(nullptr)
           , end(nullptr)
-#ifdef DEBUG
+#ifdef JS_DEBUG
           , table_(nullptr)
           , mutationCount(0)
           , generation(0)
@@ -866,26 +873,32 @@ class HashTable : private AllocPolicy
         {}
 
         bool empty() const {
+#ifdef JS_DEBUG
             MOZ_ASSERT(generation == table_->generation());
             MOZ_ASSERT(mutationCount == table_->mutationCount);
+#endif
             return cur == end;
         }
 
         T &front() const {
-            MOZ_ASSERT(validEntry);
             MOZ_ASSERT(!empty());
+#ifdef JS_DEBUG
+            MOZ_ASSERT(validEntry);
             MOZ_ASSERT(generation == table_->generation());
             MOZ_ASSERT(mutationCount == table_->mutationCount);
+#endif
             return cur->get();
         }
 
         void popFront() {
             MOZ_ASSERT(!empty());
+#ifdef JS_DEBUG
             MOZ_ASSERT(generation == table_->generation());
             MOZ_ASSERT(mutationCount == table_->mutationCount);
+#endif
             while (++cur < end && !cur->isLive())
                 continue;
-#ifdef DEBUG
+#ifdef JS_DEBUG
             validEntry = true;
 #endif
         }
@@ -922,7 +935,7 @@ class HashTable : private AllocPolicy
         void removeFront() {
             table_.remove(*this->cur);
             removed = true;
-#ifdef DEBUG
+#ifdef JS_DEBUG
             this->validEntry = false;
             this->mutationCount = table_.mutationCount;
 #endif
@@ -935,7 +948,7 @@ class HashTable : private AllocPolicy
             Ptr p(*this->cur, table_);
             table_.rekeyWithoutRehash(p, l, k);
             rekeyed = true;
-#ifdef DEBUG
+#ifdef JS_DEBUG
             this->validEntry = false;
             this->mutationCount = table_.mutationCount;
 #endif
@@ -987,8 +1000,8 @@ class HashTable : private AllocPolicy
     uint32_t    hashShift:8;            // multiplicative hash shift
 
 #ifdef JS_DEBUG
-    mozilla::DebugOnly<uint64_t>     mutationCount;
-    mutable mozilla::DebugOnly<bool> mEntered;
+    uint64_t     mutationCount;
+    mutable bool mEntered;
     mutable struct Stats
     {
         uint32_t        searches;       // total number of table searches
@@ -1052,7 +1065,7 @@ class HashTable : private AllocPolicy
                       "newly-calloc'd tables have to be considered empty");
         static_assert(sMaxCapacity <= SIZE_MAX / sizeof(Entry),
                       "would overflow allocating max number of entries");
-        return static_cast<Entry*>(alloc.calloc_(capacity * sizeof(Entry)));
+        return alloc.template pod_calloc<Entry>(capacity);
     }
 
     static void destroyTable(AllocPolicy &alloc, Entry *oldTable, uint32_t capacity)
@@ -1070,7 +1083,7 @@ class HashTable : private AllocPolicy
       , entryCount(0)
       , removedCount(0)
       , hashShift(sHashBits)
-#ifdef DEBUG
+#ifdef JS_DEBUG
       , mutationCount(0)
       , mEntered(false)
 #endif
@@ -1360,7 +1373,7 @@ class HashTable : private AllocPolicy
             e.clearLive();
         }
         entryCount--;
-#ifdef DEBUG
+#ifdef JS_DEBUG
         mutationCount++;
 #endif
     }
@@ -1445,15 +1458,16 @@ class HashTable : private AllocPolicy
         }
         removedCount = 0;
         entryCount = 0;
-#ifdef DEBUG
+#ifdef JS_DEBUG
         mutationCount++;
 #endif
     }
 
     void finish()
     {
+#ifdef JS_DEBUG
         MOZ_ASSERT(!mEntered);
-
+#endif
         if (!table)
             return;
 
@@ -1462,7 +1476,7 @@ class HashTable : private AllocPolicy
         gen++;
         entryCount = 0;
         removedCount = 0;
-#ifdef DEBUG
+#ifdef JS_DEBUG
         mutationCount++;
 #endif
     }
@@ -1554,7 +1568,7 @@ class HashTable : private AllocPolicy
 
         p.entry_->setLive(p.keyHash, rhs);
         entryCount++;
-#ifdef DEBUG
+#ifdef JS_DEBUG
         mutationCount++;
         p.generation = generation();
         p.mutationCount = mutationCount;
@@ -1578,7 +1592,7 @@ class HashTable : private AllocPolicy
 
         entry->setLive(keyHash, u);
         entryCount++;
-#ifdef DEBUG
+#ifdef JS_DEBUG
         mutationCount++;
 #endif
     }
@@ -1596,7 +1610,7 @@ class HashTable : private AllocPolicy
     template <class U>
     bool relookupOrAdd(AddPtr& p, const Lookup &l, const U &u)
     {
-#ifdef DEBUG
+#ifdef JS_DEBUG
         p.generation = generation();
         p.mutationCount = mutationCount;
 #endif

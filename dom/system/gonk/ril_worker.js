@@ -5564,7 +5564,7 @@ RilObject.prototype[REQUEST_DIAL] = function REQUEST_DIAL(length, options) {
   }
 };
 RilObject.prototype[REQUEST_DIAL_EMERGENCY_CALL] = function REQUEST_DIAL_EMERGENCY_CALL(length, options) {
-  RilObject.prototype[REQUEST_DIAL](length, options);
+  RilObject.prototype[REQUEST_DIAL].call(this, length, options);
 };
 RilObject.prototype[REQUEST_GET_IMSI] = function REQUEST_GET_IMSI(length, options) {
   if (options.rilRequestError) {
@@ -6013,6 +6013,7 @@ RilObject.prototype[REQUEST_GET_IMEI] = function REQUEST_GET_IMEI(length, option
     return;
   }
 
+  options.mmiServiceCode = MMI_KS_SC_IMEI;
   options.success = (options.rilRequestError === 0);
   options.errorMsg = RIL_ERROR_TO_GECKO_ERROR[options.rilRequestError];
   if ((!options.success || this.IMEI == null) && !options.errorMsg) {
