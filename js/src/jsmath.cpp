@@ -95,7 +95,7 @@ const Class js::MathClass = {
 };
 
 bool
-js_math_abs_handle(JSContext *cx, js::HandleValue v, js::MutableHandleValue r)
+js::math_abs_handle(JSContext *cx, js::HandleValue v, js::MutableHandleValue r)
 {
     double x;
     if (!ToNumber(cx, v, &x))
@@ -108,7 +108,7 @@ js_math_abs_handle(JSContext *cx, js::HandleValue v, js::MutableHandleValue r)
 }
 
 bool
-js_math_abs(JSContext *cx, unsigned argc, Value *vp)
+js::math_abs(JSContext *cx, unsigned argc, Value *vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
 
@@ -117,7 +117,7 @@ js_math_abs(JSContext *cx, unsigned argc, Value *vp)
         return true;
     }
 
-    return js_math_abs_handle(cx, args[0], args.rval());
+    return math_abs_handle(cx, args[0], args.rval());
 }
 
 #if defined(SOLARIS) && defined(__GNUC__)
@@ -581,7 +581,7 @@ max_double(double x, double y)
 }
 
 bool
-js_math_max(JSContext *cx, unsigned argc, Value *vp)
+js::math_max(JSContext *cx, unsigned argc, Value *vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
 
@@ -606,7 +606,7 @@ min_double(double x, double y)
 }
 
 bool
-js_math_min(JSContext *cx, unsigned argc, Value *vp)
+js::math_min(JSContext *cx, unsigned argc, Value *vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
 
@@ -622,7 +622,7 @@ js_math_min(JSContext *cx, unsigned argc, Value *vp)
 }
 
 bool
-js_minmax_impl(JSContext *cx, bool max, HandleValue a, HandleValue b, MutableHandleValue res)
+js::minmax_impl(JSContext *cx, bool max, HandleValue a, HandleValue b, MutableHandleValue res)
 {
     double x, y;
 
@@ -721,7 +721,7 @@ js::ecmaPow(double x, double y)
 # pragma optimize("g", off)
 #endif
 bool
-js_math_pow_handle(JSContext *cx, HandleValue base, HandleValue power, MutableHandleValue result)
+js::math_pow_handle(JSContext *cx, HandleValue base, HandleValue power, MutableHandleValue result)
 {
     double x;
     if (!ToNumber(cx, base, &x))
@@ -737,11 +737,11 @@ js_math_pow_handle(JSContext *cx, HandleValue base, HandleValue power, MutableHa
 }
 
 bool
-js_math_pow(JSContext *cx, unsigned argc, Value *vp)
+js::math_pow(JSContext *cx, unsigned argc, Value *vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
 
-    return js_math_pow_handle(cx, args.get(0), args.get(1), args.rval());
+    return math_pow_handle(cx, args.get(0), args.get(1), args.rval());
 }
 #if defined(_MSC_VER)
 # pragma optimize("", on)
@@ -914,14 +914,14 @@ random_nextDouble(JSContext *cx)
 }
 
 double
-math_random_no_outparam(JSContext *cx)
+js::math_random_no_outparam(JSContext *cx)
 {
     /* Calculate random without memory traffic, for use in the JITs. */
     return random_nextDouble(cx);
 }
 
 bool
-js_math_random(JSContext *cx, unsigned argc, Value *vp)
+js::math_random(JSContext *cx, unsigned argc, Value *vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
     double z = random_nextDouble(cx);
@@ -979,7 +979,7 @@ js::math_round(JSContext *cx, unsigned argc, Value *vp)
         return true;
     }
 
-    return js::math_round_handle(cx, args[0], args.rval());
+    return math_round_handle(cx, args[0], args.rval());
 }
 
 double
@@ -1034,7 +1034,7 @@ js::math_sqrt_handle(JSContext *cx, HandleValue number, MutableHandleValue resul
 }
 
 bool
-js_math_sqrt(JSContext *cx, unsigned argc, Value *vp)
+js::math_sqrt(JSContext *cx, unsigned argc, Value *vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
 
@@ -1620,7 +1620,7 @@ static const JSFunctionSpec math_static_methods[] = {
 #if JS_HAS_TOSOURCE
     JS_FN(js_toSource_str,  math_toSource,        0, 0),
 #endif
-    JS_FN("abs",            js_math_abs,          1, 0),
+    JS_FN("abs",            math_abs,             1, 0),
     JS_FN("acos",           math_acos,            1, 0),
     JS_FN("asin",           math_asin,            1, 0),
     JS_FN("atan",           math_atan,            1, 0),
@@ -1633,13 +1633,13 @@ static const JSFunctionSpec math_static_methods[] = {
     JS_FN("imul",           math_imul,            2, 0),
     JS_FN("fround",         math_fround,          1, 0),
     JS_FN("log",            math_log,             1, 0),
-    JS_FN("max",            js_math_max,          2, 0),
-    JS_FN("min",            js_math_min,          2, 0),
-    JS_FN("pow",            js_math_pow,          2, 0),
-    JS_FN("random",         js_math_random,       0, 0),
+    JS_FN("max",            math_max,             2, 0),
+    JS_FN("min",            math_min,             2, 0),
+    JS_FN("pow",            math_pow,             2, 0),
+    JS_FN("random",         math_random,          0, 0),
     JS_FN("round",          math_round,           1, 0),
     JS_FN("sin",            math_sin,             1, 0),
-    JS_FN("sqrt",           js_math_sqrt,         1, 0),
+    JS_FN("sqrt",           math_sqrt,            1, 0),
     JS_FN("tan",            math_tan,             1, 0),
     JS_FN("log10",          math_log10,           1, 0),
     JS_FN("log2",           math_log2,            1, 0),

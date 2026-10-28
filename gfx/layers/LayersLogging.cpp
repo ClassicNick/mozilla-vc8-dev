@@ -6,8 +6,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "LayersLogging.h"
-#include "mozilla/StandardInteger.h"    // for uint8_t
-#include "gfx3DMatrix.h"                // for gfx3DMatrix
+#include "mozilla/StandardInteger.h"                     // for uint8_t
 #include "gfxColor.h"                   // for gfxRGBA
 #include "mozilla/gfx/Matrix.h"         // for Matrix4x4, Matrix
 #include "nsDebug.h"                    // for NS_ERROR

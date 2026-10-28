@@ -342,17 +342,17 @@ nsUXThemeData::UpdateNativeThemeInfo()
   sIsDefaultWindowsTheme = false;
   sThemeId = LookAndFeel::eWindowsTheme_Generic;
 
-  if (!IsAppThemed() || !getCurrentThemeName) {
-    sThemeId = LookAndFeel::eWindowsTheme_Classic;
-    return;
-  }
-
   HIGHCONTRAST highContrastInfo;
   highContrastInfo.cbSize = sizeof(HIGHCONTRAST);
   if (SystemParametersInfo(SPI_GETHIGHCONTRAST, 0, &highContrastInfo, 0)) {
     sIsHighContrastOn = ((highContrastInfo.dwFlags & HCF_HIGHCONTRASTON) != 0);
   } else {
     sIsHighContrastOn = false;
+  }
+
+  if (!IsAppThemed() || !getCurrentThemeName) {
+    sThemeId = LookAndFeel::eWindowsTheme_Classic;
+    return;
   }
 
   WCHAR themeFileName[MAX_PATH + 1];

@@ -8,6 +8,7 @@
 
 #include "GMPProcessParent.h"
 #include "GMPService.h"
+#include "GMPAudioDecoderParent.h"
 #include "GMPDecryptorParent.h"
 #include "GMPVideoDecoderParent.h"
 #include "GMPVideoEncoderParent.h"
@@ -62,6 +63,8 @@ public:
   nsresult Init(GeckoMediaPluginService *aService, nsIFile* aPluginDir);
   nsresult CloneFrom(const GMPParent* aOther);
 
+  void Crash();
+
   nsresult LoadProcess();
 
   // Called internally to close this if we don't need it
@@ -87,6 +90,9 @@ public:
 
   nsresult GetGMPDecryptor(GMPDecryptorParent** aGMPKS);
   void DecryptorDestroyed(GMPDecryptorParent* aSession);
+
+  nsresult GetGMPAudioDecoder(GMPAudioDecoderParent** aGMPAD);
+  void AudioDecoderDestroyed(GMPAudioDecoderParent* aDecoder);
 
   GMPState State() const;
 #ifdef DEBUG
@@ -144,6 +150,9 @@ private:
   virtual PGMPDecryptorParent* AllocPGMPDecryptorParent() MOZ_OVERRIDE;
   virtual bool DeallocPGMPDecryptorParent(PGMPDecryptorParent* aActor) MOZ_OVERRIDE;
 
+  virtual PGMPAudioDecoderParent* AllocPGMPAudioDecoderParent() MOZ_OVERRIDE;
+  virtual bool DeallocPGMPAudioDecoderParent(PGMPAudioDecoderParent* aActor) MOZ_OVERRIDE;
+
   GMPState mState;
   nsCOMPtr<nsIFile> mDirectory; // plugin directory on disk
   nsString mName; // base name of plugin on disk, UTF-16 because used for paths
@@ -158,6 +167,7 @@ private:
   nsTArray<nsRefPtr<GMPVideoDecoderParent>> mVideoDecoders;
   nsTArray<nsRefPtr<GMPVideoEncoderParent>> mVideoEncoders;
   nsTArray<nsRefPtr<GMPDecryptorParent>> mDecryptors;
+  nsTArray<nsRefPtr<GMPAudioDecoderParent>> mAudioDecoders;
 #ifdef DEBUG
   nsCOMPtr<nsIThread> mGMPThread;
 #endif
