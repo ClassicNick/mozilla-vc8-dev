@@ -93,7 +93,7 @@ public:
   Maybe() : mIsSome(false) { }
   ~Maybe() { reset(); }
 
-  Maybe(Nothing) : mIsSome(false) { }
+  explicit Maybe(Nothing) : mIsSome(false) { }
 
   Maybe(const Maybe& aOther)
     : mIsSome(false)
@@ -103,12 +103,12 @@ public:
     }
   }
 
-  Maybe(Maybe&& aOther)
-    : mIsSome(aOther.mIsSome)
+  Maybe(MoveRef<Maybe> aOther)
+    : mIsSome(aOther->mIsSome)
   {
-    if (aOther.mIsSome) {
-      ::new (mStorage.addr()) T(Move(*aOther));
-      aOther.reset();
+    if (aOther->mIsSome) {
+      ::new (mStorage.addr()) T(*aOther);
+      aOther->reset();
     }
   }
 
@@ -134,18 +134,17 @@ public:
     return *this;
   }
 
-  Maybe& operator=(Maybe&& aOther)
+  Maybe& operator=(MoveRef<Maybe> aOther)
   {
-    MOZ_ASSERT(this != &aOther, "Self-moves are prohibited");
 
-    if (aOther.mIsSome) {
+    if (aOther->mIsSome) {
       if (mIsSome) {
-        ref() = Move(aOther.ref());
+        ref() = OldMove(aOther->ref());
       } else {
         mIsSome = true;
-        ::new (mStorage.addr()) T(Move(*aOther));
+        ::new (mStorage.addr()) T(*aOther);
       }
-      aOther.reset();
+      aOther->reset();
     } else {
       reset();
     }
@@ -239,103 +238,103 @@ public:
   }
 
   template<typename T1>
-  void emplace(T1&& t1)
+  void emplace(const T1& t1)
   {
     MOZ_ASSERT(!mIsSome);
-    ::new (mStorage.addr()) T(Forward<T1>(t1));
+    ::new (mStorage.addr()) T(t1);
     mIsSome = true;
   }
 
   template<typename T1, typename T2>
-  void emplace(T1&& t1, T2&& t2)
+  void emplace(const T1& t1, const T2& t2)
   {
     MOZ_ASSERT(!mIsSome);
-    ::new (mStorage.addr()) T(Forward<T1>(t1), Forward<T2>(t2));
+    ::new (mStorage.addr()) T(t1, t2);
     mIsSome = true;
   }
 
   template<typename T1, typename T2, typename T3>
-  void emplace(T1&& t1, T2&& t2, T3&& t3)
+  void emplace(const T1& t1, const T2& t2, const T3& t3)
   {
     MOZ_ASSERT(!mIsSome);
-    ::new (mStorage.addr()) T(Forward<T1>(t1), Forward<T2>(t2), Forward<T3>(t3));
+    ::new (mStorage.addr()) T(t1, t2, t3);
     mIsSome = true;
   }
 
   template<typename T1, typename T2, typename T3, typename T4>
-  void emplace(T1&& t1, T2&& t2, T3&& t3, T4&& t4)
+  void emplace(const T1& t1, const T2& t2, const T3& t3, const T4& t4)
   {
     MOZ_ASSERT(!mIsSome);
-    ::new (mStorage.addr()) T(Forward<T1>(t1), Forward<T2>(t2), Forward<T3>(t3),
-                              Forward<T4>(t4));
+    ::new (mStorage.addr()) T(t1, t2, t3,
+                              t4);
     mIsSome = true;
   }
 
   template<typename T1, typename T2, typename T3, typename T4, typename T5>
-  void emplace(T1&& t1, T2&& t2, T3&& t3, T4&& t4, T5&& t5)
+  void emplace(const T1& t1, const T2& t2, const T3& t3, const T4& t4, const T5& t5)
   {
     MOZ_ASSERT(!mIsSome);
-    ::new (mStorage.addr()) T(Forward<T1>(t1), Forward<T2>(t2), Forward<T3>(t3),
-                              Forward<T4>(t4), Forward<T5>(t5));
+    ::new (mStorage.addr()) T(t1, t2, t3,
+                              t4, t5);
     mIsSome = true;
   }
 
   template<typename T1, typename T2, typename T3, typename T4, typename T5,
            typename T6>
-  void emplace(T1&& t1, T2&& t2, T3&& t3, T4&& t4, T5&& t5, T6&& t6)
+  void emplace(const T1& t1, const T2& t2, const T3& t3, const T4& t4, const T5& t5, const T6& t6)
   {
     MOZ_ASSERT(!mIsSome);
-    ::new (mStorage.addr()) T(Forward<T1>(t1), Forward<T2>(t2), Forward<T3>(t3),
-                              Forward<T4>(t4), Forward<T5>(t5), Forward<T6>(t6));
+    ::new (mStorage.addr()) T(t1, t2, t3,
+                              t4, t5, t6);
     mIsSome = true;
   }
 
   template<typename T1, typename T2, typename T3, typename T4, typename T5,
            typename T6, typename T7>
-  void emplace(T1&& t1, T2&& t2, T3&& t3, T4&& t4, T5&& t5, T6&& t6,
-               T7&& t7)
+  void emplace(const T1& t1, const T2& t2, const T3& t3, const T4& t4, const T5& t5, const T6& t6,
+               const T7& t7)
   {
     MOZ_ASSERT(!mIsSome);
-    ::new (mStorage.addr()) T(Forward<T1>(t1), Forward<T2>(t2), Forward<T3>(t3),
-                              Forward<T4>(t4), Forward<T5>(t5), Forward<T6>(t6),
-                              Forward<T7>(t7));
+    ::new (mStorage.addr()) T(t1, t2, t3,
+                              t4, t5, t6,
+                              t7);
     mIsSome = true;
   }
 
   template<typename T1, typename T2, typename T3, typename T4, typename T5,
            typename T6, typename T7, typename T8>
-  void emplace(T1&& t1, T2&& t2, T3&& t3, T4&& t4, T5&& t5, T6&& t6,
-               T7&& t7, T8&& t8)
+  void emplace(const T1& t1, const T2& t2, const T3& t3, const T4& t4, const T5& t5, const T6& t6,
+               const T7& t7, const T8& t8)
   {
     MOZ_ASSERT(!mIsSome);
-    ::new (mStorage.addr()) T(Forward<T1>(t1), Forward<T2>(t2), Forward<T3>(t3),
-                              Forward<T4>(t4), Forward<T5>(t5), Forward<T6>(t6),
-                              Forward<T7>(t7), Forward<T8>(t8));
+    ::new (mStorage.addr()) T(t1, t2, t3,
+                              t4, t5, t6,
+                              t7, t8);
     mIsSome = true;
   }
 
   template<typename T1, typename T2, typename T3, typename T4, typename T5,
            typename T6, typename T7, typename T8, typename T9>
-  void emplace(T1&& t1, T2&& t2, T3&& t3, T4&& t4, T5&& t5, T6&& t6,
-               T7&& t7, T8&& t8, T9&& t9)
+  void emplace(const T1& t1, const T2& t2, const T3& t3, const T4& t4, const T5& t5, const T6& t6,
+               const T7& t7, const T8& t8, const T9& t9)
   {
     MOZ_ASSERT(!mIsSome);
-    ::new (mStorage.addr()) T(Forward<T1>(t1), Forward<T2>(t2), Forward<T3>(t3),
-                              Forward<T4>(t4), Forward<T5>(t5), Forward<T6>(t6),
-                              Forward<T7>(t7), Forward<T8>(t8), Forward<T9>(t9));
+    ::new (mStorage.addr()) T(t1, t2, t3,
+                              t4, t5, t6,
+                              t7, t8, t9);
     mIsSome = true;
   }
 
   template<typename T1, typename T2, typename T3, typename T4, typename T5,
            typename T6, typename T7, typename T8, typename T9, typename T10>
-  void emplace(T1&& t1, T2&& t2, T3&& t3, T4&& t4, T5&& t5, T6&& t6,
-               T7&& t7, T8&& t8, T9&& t9, T10&& t10)
+  void emplace(const T1& t1, const T2& t2, const T3& t3, const T4& t4, const T5& t5, const T6& t6,
+               const T7& t7, const T8& t8, const T9& t9, const T10& t10)
   {
     MOZ_ASSERT(!mIsSome);
-    ::new (mStorage.addr()) T(Forward<T1>(t1), Forward<T2>(t2), Forward<T3>(t3),
-                              Forward<T4>(t4), Forward<T5>(t5), Forward<T6>(t6),
-                              Forward<T7>(t7), Forward<T8>(t8), Forward<T9>(t9),
-                              Forward<T1>(t10));
+    ::new (mStorage.addr()) T(t1, t2, t3,
+                              t4, t5, t6,
+                              t7, t8, t9,
+                              t10);
     mIsSome = true;
   }
 };
@@ -352,11 +351,11 @@ public:
  */
 template<typename T>
 Maybe<typename RemoveCV<typename RemoveReference<T>::Type>::Type>
-Some(T&& aValue)
+Some(const T& aValue)
 {
   typedef typename RemoveCV<typename RemoveReference<T>::Type>::Type U;
   Maybe<U> value;
-  value.emplace(Forward<T>(aValue));
+  value.emplace(aValue);
   return value;
 }
 

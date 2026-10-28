@@ -135,7 +135,7 @@ public:
     MOZ_ASSERT(observers);
 
     // Inform observers
-    for (auto i = observers->begin(), e = observers->end(); i != e; ++i) {
+    for (std::vector<IOInterposeObserver*>::iterator i = observers->begin(), e = observers->end(); i != e; ++i) {
       (*i)->Observe(aObservation);
     }
     mIsHandlingObservation = false;
@@ -350,6 +350,7 @@ public:
                                        "IOInterposer", false)
   {
     mStart = TimeStamp::Now();
+    mEnd = mStart;
   }
 };
 

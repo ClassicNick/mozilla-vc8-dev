@@ -152,7 +152,7 @@ MainThreadIOLoggerImpl::IOThreadFunc()
       IOInterposer::MonitorAutoUnlock unlock(mMonitor);
 
       // Now write the events.
-      for (auto i = observationsToWrite.begin(), e = observationsToWrite.end();
+      for (std::vector<ObservationWithStack>::iterator i = observationsToWrite.begin(), e = observationsToWrite.end();
            i != e; ++i) {
         if (i->mObservation.ObservedOperation() == OpNextStage) {
           PR_fprintf(fd, "%f,NEXT-STAGE\n",

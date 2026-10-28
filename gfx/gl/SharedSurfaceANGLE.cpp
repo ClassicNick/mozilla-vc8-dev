@@ -11,25 +11,6 @@
 namespace mozilla {
 namespace gl {
 
-#ifdef MOZ_ENABLE_D3D10_LAYER
-SurfaceFactory_ANGLEShareHandle*
-SurfaceFactory_ANGLEShareHandle::Create(GLContext* gl,
-                                        const SurfaceCaps& caps)
-{
-    GLLibraryEGL* egl = &sEGLLibrary;
-    if (!egl)
-        return nullptr;
-
-    if (!egl->IsExtensionSupported(
-            GLLibraryEGL::ANGLE_surface_d3d_texture_2d_share_handle))
-    {
-        return nullptr;
-    }
-
-    return new SurfaceFactory_ANGLEShareHandle(gl, egl, caps);
-}
-#endif
-
 EGLDisplay
 SharedSurface_ANGLEShareHandle::Display()
 {
@@ -181,8 +162,7 @@ CreatePBufferSurface(GLLibraryEGL* egl,
     return surface;
 }
 
-#ifdef MOZ_ENABLE_D3D10_LAYER
-SharedSurface_ANGLEShareHandle*
+/*static*/ UniquePtr<SharedSurface_ANGLEShareHandle>
 SharedSurface_ANGLEShareHandle::Create(GLContext* gl,
                                        EGLContext context, EGLConfig config,
                                        const gfx::IntSize& size, bool hasAlpha)
@@ -193,12 +173,12 @@ SharedSurface_ANGLEShareHandle::Create(GLContext* gl,
                GLLibraryEGL::ANGLE_surface_d3d_texture_2d_share_handle));
 
     if (!context || !config)
-        return nullptr;
+        return (UniquePtr<SharedSurface_ANGLEShareHandle>) nullptr;
 
     EGLDisplay display = egl->Display();
     EGLSurface pbuffer = CreatePBufferSurface(egl, display, config, size);
     if (!pbuffer)
-        return nullptr;
+        return (UniquePtr<SharedSurface_ANGLEShareHandle>) nullptr;
 
     // Declare everything before 'goto's.
     HANDLE shareHandle = nullptr;
@@ -208,15 +188,33 @@ SharedSurface_ANGLEShareHandle::Create(GLContext* gl,
                                              &shareHandle);
     if (!ok) {
         egl->fDestroySurface(egl->Display(), pbuffer);
-        return nullptr;
+        return (UniquePtr<SharedSurface_ANGLEShareHandle>) nullptr;
     }
 
-    return new SharedSurface_ANGLEShareHandle(gl, egl,
-                                              size, hasAlpha,
-                                              context, pbuffer,
-                                              shareHandle);
+    typedef SharedSurface_ANGLEShareHandle ptrT;
+    UniquePtr<ptrT> ret( new ptrT(gl, egl, size, hasAlpha, context,
+                                  pbuffer, shareHandle) );
+    return ret;
 }
 
+/*static*/ UniquePtr<SurfaceFactory_ANGLEShareHandle>
+SurfaceFactory_ANGLEShareHandle::Create(GLContext* gl,
+                                        const SurfaceCaps& caps)
+{
+    GLLibraryEGL* egl = &sEGLLibrary;
+    if (!egl)
+        return (UniquePtr<SurfaceFactory_ANGLEShareHandle>) nullptr;
+
+    GLLibraryEGL::EGLExtensions ext = GLLibraryEGL::ANGLE_surface_d3d_texture_2d_share_handle;
+    if (!egl->IsExtensionSupported(ext))
+    {
+        return (UniquePtr<SurfaceFactory_ANGLEShareHandle>) nullptr;
+    }
+
+    typedef SurfaceFactory_ANGLEShareHandle ptrT;
+    UniquePtr<ptrT> ret( new ptrT(gl, egl, caps) );
+    return ret;
+}
 
 SurfaceFactory_ANGLEShareHandle::SurfaceFactory_ANGLEShareHandle(GLContext* gl,
                                                                  GLLibraryEGL* egl,
@@ -229,7 +227,6 @@ SurfaceFactory_ANGLEShareHandle::SurfaceFactory_ANGLEShareHandle(GLContext* gl,
     mContext = GLContextEGL::Cast(mProdGL)->GetEGLContext();
     MOZ_ASSERT(mConfig && mContext);
 }
-#endif
 
 } /* namespace gl */
 } /* namespace mozilla */

@@ -326,7 +326,7 @@ JitcodeRegionEntry::ExpectedRunLength(const CodeGeneratorShared::NativeToBytecod
     uint32_t curNativeOffset = entry->nativeOffset.offset();
     uint32_t curBytecodeOffset = entry->tree->script()->pcToOffset(entry->pc);
 
-    for (auto nextEntry = entry + 1; nextEntry != end; nextEntry += 1) {
+    for (const CodeGeneratorShared::NativeToBytecode* nextEntry = entry + 1; nextEntry != end; nextEntry += 1) {
         // If the next run moves to a different inline site, stop the run.
         if (nextEntry->tree != entry->tree)
             break;
@@ -552,7 +552,7 @@ JitcodeIonTable::makeIonEntry(JSContext *cx, JitCode *code,
     }
 
     // Create SizedScriptList
-    void *mem = cx->malloc_(SizedScriptList::AllocSizeFor(numScripts));
+    void *mem = (void *)cx->pod_malloc<uint8_t>(SizedScriptList::AllocSizeFor(numScripts));
     if (!mem)
         return false;
     SizedScriptList *scriptList = new (mem) SizedScriptList(numScripts, scripts);

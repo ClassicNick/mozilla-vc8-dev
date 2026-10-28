@@ -20,10 +20,11 @@ class SharedSurface_ANGLEShareHandle
     : public SharedSurface
 {
 public:
-    static SharedSurface_ANGLEShareHandle* Create(GLContext* gl,
-                                                  EGLContext context, EGLConfig config,
-                                                  const gfx::IntSize& size,
-                                                  bool hasAlpha);
+    static UniquePtr<SharedSurface_ANGLEShareHandle> Create(GLContext* gl,
+                                                            EGLContext context,
+                                                            EGLConfig config,
+                                                            const gfx::IntSize& size,
+                                                            bool hasAlpha);
 
     static SharedSurface_ANGLEShareHandle* Cast(SharedSurface* surf) {
         MOZ_ASSERT(surf->mType == SharedSurfaceType::EGLSurfaceANGLE);
@@ -67,12 +68,10 @@ public:
     virtual bool WaitSync() MOZ_OVERRIDE { return true; } // Fence is glFinish.
     virtual bool PollSync() MOZ_OVERRIDE { return true; }
 
-#ifdef MOZ_ENABLE_D3D10_LAYER
     // Implementation-specific functions below:
     HANDLE GetShareHandle() {
         return mShareHandle;
     }
-#endif
 };
 
 
@@ -87,24 +86,20 @@ protected:
     EGLConfig mConfig;
 
 public:
-#ifdef MOZ_ENABLE_D3D10_LAYER
-    static SurfaceFactory_ANGLEShareHandle* Create(GLContext* gl,
-                                                   const SurfaceCaps& caps);
-#endif
+    static UniquePtr<SurfaceFactory_ANGLEShareHandle> Create(GLContext* gl,
+                                                             const SurfaceCaps& caps);
 
 protected:
-#ifdef MOZ_ENABLE_D3D10_LAYER
     SurfaceFactory_ANGLEShareHandle(GLContext* gl,
                                     GLLibraryEGL* egl,
                                     const SurfaceCaps& caps);
 
-    virtual SharedSurface* CreateShared(const gfx::IntSize& size) MOZ_OVERRIDE {
+    virtual UniquePtr<SharedSurface> CreateShared(const gfx::IntSize& size) MOZ_OVERRIDE {
         bool hasAlpha = mReadCaps.alpha;
         return SharedSurface_ANGLEShareHandle::Create(mProdGL,
                                                       mContext, mConfig,
                                                       size, hasAlpha);
     }
-#endif
 };
 
 } /* namespace gfx */
