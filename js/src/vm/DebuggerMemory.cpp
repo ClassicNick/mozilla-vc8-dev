@@ -27,7 +27,8 @@ using JS::ubi::Edge;
 using JS::ubi::Node;
 
 using mozilla::Maybe;
-using mozilla::Move;
+using mozilla::MoveRef;
+using mozilla::OldMove;
 
 /* static */ DebuggerMemory *
 DebuggerMemory::create(JSContext *cx, Debugger *dbg)
@@ -293,8 +294,8 @@ class Tally {
 
   public:
     Tally(Census &census) : counter(0) { }
-    Tally(Tally &&rhs) : counter(rhs.counter) { }
-    Tally &operator=(Tally &&rhs) { counter = rhs.counter; return *this; }
+    Tally(MoveRef<Tally> rhs) : counter(rhs->counter) { }
+    Tally &operator=(MoveRef<Tally> rhs) { counter = rhs->counter; return *this; }
 
     bool init(Census &census) { return true; }
 
@@ -339,16 +340,16 @@ class ByJSType {
         strings(census),
         other(census)
     { }
-    ByJSType(ByJSType &&rhs)
-      : objects(Move(rhs.objects)),
-        scripts(move(rhs.scripts)),
-        strings(move(rhs.strings)),
-        other(move(rhs.other))
+    ByJSType(MoveRef<ByJSType> rhs)
+      : objects(OldMove(rhs->objects)),
+        scripts(OldMove(rhs->scripts)),
+        strings(OldMove(rhs->strings)),
+        other(OldMove(rhs->other))
     { }
-    ByJSType &operator=(ByJSType &&rhs) {
+    ByJSType &operator=(MoveRef<ByJSType> rhs) {
         MOZ_ASSERT(&rhs != this);
         this->~ByJSType();
-        new (this) ByJSType(Move(rhs));
+        new (this) ByJSType(rhs);
         return *this;
     }
 
@@ -429,11 +430,11 @@ class ByObjectClass {
 
   public:
     ByObjectClass(Census &census) : other(census) { }
-    ByObjectClass(ByObjectClass &&rhs) : table(Move(rhs.table)), other(Move(rhs.other)) { }
-    ByObjectClass &operator=(ByObjectClass &&rhs) {
+    ByObjectClass(MoveRef<ByObjectClass> rhs) : table(OldMove(rhs->table)), other(OldMove(rhs->other)) { }
+    ByObjectClass &operator=(MoveRef<ByObjectClass> rhs) {
         MOZ_ASSERT(&rhs != this);
         this->~ByObjectClass();
-        new (this) ByObjectClass(Move(rhs));
+        new (this) ByObjectClass(rhs);
         return *this;
     }
 
@@ -509,11 +510,11 @@ class ByUbinodeType {
 
   public:
     ByUbinodeType(Census &census) { }
-    ByUbinodeType(ByUbinodeType &&rhs) : table(Move(rhs.table)) { }
-    ByUbinodeType &operator=(ByUbinodeType &&rhs) {
+    ByUbinodeType(MoveRef<ByUbinodeType> rhs) : table(OldMove(rhs->table)) { }
+    ByUbinodeType &operator=(MoveRef<ByUbinodeType> rhs) {
         MOZ_ASSERT(&rhs != this);
         this->~ByUbinodeType();
-        new (this) ByUbinodeType(Move(rhs));
+        new (this) ByUbinodeType(rhs);
         return *this;
     }
 

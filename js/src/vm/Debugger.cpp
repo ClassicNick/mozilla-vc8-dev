@@ -1491,7 +1491,7 @@ Debugger::appendAllocationSite(JSContext *cx, HandleSavedFrame frame)
     if (!cx->compartment()->wrap(cx, &wrapped))
         return false;
 
-    AllocationSite *allocSite = cx->new_<AllocationSite>(mozilla::OldMove(wrapped));
+    AllocationSite *allocSite = cx->new_<AllocationSite>(mozilla::OldMove((JS::HandleObject) wrapped));
     if (!allocSite)
         return false;
 
