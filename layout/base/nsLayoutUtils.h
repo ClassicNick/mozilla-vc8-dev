@@ -128,6 +128,7 @@ public:
   typedef mozilla::CSSPoint CSSPoint;
   typedef mozilla::CSSSize CSSSize;
   typedef mozilla::LayerMargin LayerMargin;
+  typedef mozilla::LayoutDeviceIntRect LayoutDeviceIntRect;
 
   /**
    * Finds previously assigned ViewID for the given content element, if any.
@@ -2152,6 +2153,15 @@ public:
   static void
   UpdateImageVisibilityForFrame(nsIFrame* aImageFrame);
 
+  /**
+   * Populate aOutRect with the bounds of the content viewer corresponding
+   * to the given prescontext. Return true if the bounds were set, false
+   * otherwise.
+   */
+  static bool
+  GetContentViewerBounds(nsPresContext* aPresContext,
+                         LayoutDeviceIntRect& aOutRect);
+
  /**
   * Calculate the compostion size for a frame. See FrameMetrics.h for
   * defintion of composition size (or bounds).
@@ -2196,6 +2206,12 @@ public:
    * Currently we don't support APZ for the parent process on B2G.
    */
   static bool WantSubAPZC();
+
+  /**
+   * Returns true if we're using asynchronous scrolling (either through
+   * APZ or the android frontend).
+   */
+  static bool UsesAsyncScrolling();
 
   /**
    * Log a key/value pair for APZ testing during a paint.

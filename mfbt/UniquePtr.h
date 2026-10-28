@@ -758,6 +758,10 @@ template<typename T, typename A1, typename A2, typename A3, typename A4>
 typename detail::UniqueSelector<T>::KnownBound
 MakeUnique(A1& a1, A2& a2, A3& a3, A4& a4) MOZ_DELETE;
 
+template<typename T, typename A1, typename A2, typename A3, typename A4, typename A5>
+typename detail::UniqueSelector<T>::KnownBound
+MakeUnique(A1& a1, A2& a2, A3& a3, A4& a4, A5& a5) MOZ_DELETE;
+
 template<typename T, typename A1>
 typename detail::UniqueSelector<T>::KnownBound
 MakeConstUnique(const A1& a1) MOZ_DELETE;
@@ -776,7 +780,7 @@ MakeConstUnique(const A1& a1, const A2& a2, const A3& a3, const A4& a4) MOZ_DELE
 
 template<typename T, typename A1, typename A2, typename A3, typename A4, typename A5>
 typename detail::UniqueSelector<T>::KnownBound
-MakeUnique(A1&& a1, A2&& a2, A3&& a3, A4&& a4, A5&& a5) MOZ_DELETE;
+MakeConstUnique(const A1& a1, const A2& a2, const A3& a3, const A4& a4, const A5& a5) MOZ_DELETE;
 
 } // namespace mozilla
 

@@ -195,8 +195,6 @@ public:
   PicoVoice(const nsAString& aLanguage)
     : mLanguage(aLanguage) {}
 
-  ~PicoVoice() {}
-
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(PicoVoice)
 
   // Voice language, in BCB-47 syntax
@@ -207,6 +205,9 @@ public:
 
   // Speaker resource file
   nsCString mSgFile;
+
+private:
+    ~PicoVoice() {}
 };
 
 class PicoCallbackRunnable : public nsRunnable,
@@ -226,8 +227,6 @@ public:
     , mVoice(aVoice)
     , mService(aService) { }
 
-  ~PicoCallbackRunnable() { }
-
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSISPEECHTASKCALLBACK
 
@@ -236,6 +235,8 @@ public:
   bool IsCurrentTask() { return mService->mCurrentTask == mTask; }
 
 private:
+  ~PicoCallbackRunnable() { }
+
   void DispatchSynthDataRunnable(already_AddRefed<SharedBuffer> aBuffer,
                                  size_t aBufferSize);
 
@@ -304,7 +305,11 @@ PicoCallbackRunnable::Run()
     } else {
       // If we already fed all the text to the engine, send a zero length buffer
       // and quit.
+<<<<<<< HEAD
       DispatchSynthDataRunnable(nullptr, 0);
+=======
+      DispatchSynthDataRunnable(already_AddRefed<SharedBuffer>(), 0);
+>>>>>>> 4e6c5e8
       break;
     }
 

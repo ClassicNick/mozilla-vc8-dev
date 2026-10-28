@@ -9,7 +9,7 @@
 
 #ifdef JS_ION
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 #include "jscntxt.h"
 #include "jsfun.h"

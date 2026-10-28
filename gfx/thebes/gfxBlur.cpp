@@ -38,20 +38,20 @@ gfxAlphaBoxBlur::Init(const gfxRect& aRect,
     IntSize blurRadius(aBlurRadius.width, aBlurRadius.height);
     UniquePtr<Rect> dirtyRect;
     if (aDirtyRect) {
-      dirtyRect = MakeUnique<Rect>(Float(aDirtyRect->x),
+      dirtyRect = MakeConstUnique<Rect>(Float(aDirtyRect->x),
                                    Float(aDirtyRect->y),
                                    Float(aDirtyRect->width),
                                    Float(aDirtyRect->height));
     }
     UniquePtr<Rect> skipRect;
     if (aSkipRect) {
-      skipRect = MakeUnique<Rect>(Float(aSkipRect->x),
+      skipRect = MakeConstUnique<Rect>(Float(aSkipRect->x),
                                   Float(aSkipRect->y),
                                   Float(aSkipRect->width),
                                   Float(aSkipRect->height));
     }
 
-    mBlur = MakeUnique<AlphaBoxBlur>(rect, spreadRadius, blurRadius, dirtyRect.get(), skipRect.get());
+    mBlur = MakeConstUnique<AlphaBoxBlur>(rect, spreadRadius, blurRadius, dirtyRect.get(), skipRect.get());
     int32_t blurDataSize = mBlur->GetSurfaceAllocationSize();
     if (blurDataSize <= 0)
         return nullptr;

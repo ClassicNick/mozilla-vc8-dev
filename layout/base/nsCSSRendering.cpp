@@ -1754,7 +1754,7 @@ nsCSSRendering::GetBackgroundClip(const nsStyleBackground::Layer& aLayer,
   }
 
   if (haveRoundedCorners) {
-    auto d2a = aForFrame->PresContext()->AppUnitsPerDevPixel();
+    int32_t d2a = aForFrame->PresContext()->AppUnitsPerDevPixel();
     nsCSSRendering::ComputePixelRadii(aClipState->mRadii, d2a, &aClipState->mClippedRadii);
     aClipState->mHasRoundedCorners = true;
   } else {
@@ -4646,10 +4646,23 @@ nsImageRenderer::Draw(nsPresContext*       aPresContext,
         return;
       }
 
+      gfxContext* ctx = aRenderingContext.ThebesContext();
+      gfxContext::GraphicsOperator op = ctx->CurrentOperator();
+      if (op != gfxContext::OPERATOR_OVER) {
+        ctx->PushGroup(gfxContentType::COLOR_ALPHA);
+        ctx->SetOperator(gfxContext::OPERATOR_OVER);
+      }
+
       nsCOMPtr<imgIContainer> image(ImageOps::CreateFromDrawable(drawable));
       nsLayoutUtils::DrawImage(&aRenderingContext, aPresContext, image,
                                filter, aDest, aFill, aAnchor, aDirtyRect,
                                ConvertImageRendererToDrawFlags(mFlags));
+
+      if (op != gfxContext::OPERATOR_OVER) {
+        ctx->PopGroupToSource();
+        ctx->Paint();
+      }
+
       return;
     }
     case eStyleImageType_Null:

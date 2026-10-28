@@ -6,7 +6,7 @@
 #include "ClientLayerManager.h"
 #include "CompositorChild.h"            // for CompositorChild
 #include "GeckoProfiler.h"              // for PROFILER_LABEL
-#include "gfxPrefs.h"                   // for gfxPrefs::LayersTileWidth/Height
+#include "gfxPrefs.h"                   // for gfxPrefs::LayersTile...
 #include "mozilla/Assertions.h"         // for MOZ_ASSERT, etc
 #include "mozilla/Hal.h"
 #include "mozilla/dom/ScreenOrientation.h"  // for ScreenOrientation
@@ -166,11 +166,9 @@ ClientLayerManager::BeginTransactionWithTarget(gfxContext* aTarget)
   }
 
   // If this is a new paint, increment the paint sequence number.
-  if (!mIsRepeatTransaction) {
+  if (!mIsRepeatTransaction && gfxPrefs::APZTestLoggingEnabled()) {
     ++mPaintSequenceNumber;
-    if (gfxPrefs::APZTestLoggingEnabled()) {
-      mApzTestData.StartNewPaint(mPaintSequenceNumber);
-    }
+    mApzTestData.StartNewPaint(mPaintSequenceNumber);
   }
 }
 
@@ -574,6 +572,8 @@ ClientLayerManager::GetTexturePool(SurfaceFormat aFormat)
   mTexturePools.AppendElement(
       new TextureClientPool(aFormat, IntSize(gfxPrefs::LayersTileWidth(),
                                              gfxPrefs::LayersTileHeight()),
+                            gfxPrefs::LayersTileMaxPoolSize(),
+                            gfxPrefs::LayersTileShrinkPoolTimeout(),
                             mForwarder));
 
   return mTexturePools.LastElement();
@@ -588,6 +588,8 @@ ClientLayerManager::GetSimpleTileTexturePool(SurfaceFormat aFormat)
   if (mSimpleTilePools[index].get() == nullptr) {
     mSimpleTilePools[index] = new SimpleTextureClientPool(aFormat, IntSize(gfxPrefs::LayersTileWidth(),
                                                                            gfxPrefs::LayersTileHeight()),
+                                                          gfxPrefs::LayersTileMaxPoolSize(),
+                                                          gfxPrefs::LayersTileShrinkPoolTimeout(),
                                                           mForwarder);
   }
 
