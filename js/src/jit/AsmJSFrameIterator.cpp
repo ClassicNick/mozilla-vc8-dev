@@ -655,7 +655,7 @@ AsmJSProfilingFrameIterator::label() const
         return BuiltinToName(AsmJSExit::ExtractBuiltinKind(exitReason_));
     }
 
-    auto codeRange = reinterpret_cast<const AsmJSModule::CodeRange*>(codeRange_);
+    const AsmJSModule::CodeRange* codeRange = reinterpret_cast<const AsmJSModule::CodeRange*>(codeRange_);
     switch (codeRange->kind()) {
       case AsmJSModule::CodeRange::Function:  return codeRange->functionProfilingLabel(*module_);
       case AsmJSModule::CodeRange::Entry:     return "entry trampoline (in asm.js)";

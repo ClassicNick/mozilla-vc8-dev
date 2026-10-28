@@ -4566,7 +4566,7 @@ UniquePtr<char[], JS::FreePolicy>
 js::DuplicateString(js::ThreadSafeContext *cx, const char *s)
 {
     size_t n = strlen(s) + 1;
-    auto ret = cx->make_pod_array<char>(n);
+    UniquePtr<char[], JS::FreePolicy> ret = cx->make_pod_array<char>(n);
     if (!ret)
         return ret;
     PodCopy(ret.get(), s, n);
