@@ -1213,7 +1213,7 @@ private:
 class DestinationInsertionPointList : public nsINodeList
 {
 public:
-  DestinationInsertionPointList(Element* aElement);
+  explicit DestinationInsertionPointList(Element* aElement);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS(DestinationInsertionPointList)

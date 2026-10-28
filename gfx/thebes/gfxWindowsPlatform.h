@@ -257,9 +257,11 @@ public:
     cairo_device_t *GetD2DDevice() { return mD2DDevice; }
     ID3D10Device1 *GetD3D10Device() { return mD2DDevice ? cairo_d2d_device_get_device(mD2DDevice) : nullptr; }
 #endif
+#ifdef MOZ_ENABLE_D3D10_LAYER
     ID3D11Device *GetD3D11Device();
 
     mozilla::layers::ReadbackManagerD3D11* GetReadbackManager();
+#endif
 
     static bool IsOptimus();
 

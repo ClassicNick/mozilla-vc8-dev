@@ -108,7 +108,7 @@ GMPAudioSamplesImpl::InitCrypto(const mp4_demuxer::CryptoSample& aCrypto)
 void
 GMPAudioSamplesImpl::RelinquishData(GMPAudioEncodedSampleData& aData)
 {
-  aData.mData() = Move(mBuffer);
+  aData.mData() = mBuffer;
   aData.mTimeStamp() = TimeStamp();
   if (mCrypto) {
     mCrypto->RelinquishData(aData.mDecryptionData());

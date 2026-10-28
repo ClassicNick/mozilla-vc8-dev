@@ -286,14 +286,7 @@ public:
       PR_NOT_REACHED("invalid mark");
       return Result::FATAL_ERROR_INVALID_ARGS;
     }
-<<<<<<< HEAD
-    item.type = type;
-    item.data = const_cast<uint8_t*>(mark.mark);
-    item.len = input - mark.mark;
-    return Success;
-=======
     return item.Init(mark.mark, static_cast<uint16_t>(input - mark.mark));
->>>>>>> 8b524c6
   }
 
 private:

@@ -27,6 +27,8 @@ using mozilla::dom::CrashReporterChild;
 #if defined(XP_WIN)
 #define TARGET_SANDBOX_EXPORTS
 #include "mozilla/sandboxTarget.h"
+#elif defined(XP_LINUX) && defined(MOZ_GMP_SANDBOX)
+#include "mozilla/Sandbox.h"
 #endif
 
 namespace mozilla {
@@ -99,6 +101,13 @@ GMPChild::LoadPluginLibrary(const std::string& aPluginPath)
 
   nsAutoCString nativePath;
   libFile->GetNativePath(nativePath);
+
+#if defined(XP_LINUX) && defined(MOZ_GMP_SANDBOX)
+  // Enable sandboxing here -- we know the plugin file's path, but
+  // this process's execution hasn't been affected by its content yet.
+  mozilla::SetMediaPluginSandbox(nativePath.get());
+#endif
+
   mLib = PR_LoadLibrary(nativePath.get());
   if (!mLib) {
     return false;
@@ -110,7 +119,7 @@ GMPChild::LoadPluginLibrary(const std::string& aPluginPath)
   }
 
   GMPPlatformAPI* platformAPI = new GMPPlatformAPI();
-  InitPlatformAPI(*platformAPI);
+  InitPlatformAPI(*platformAPI, this);
 
   if (initFunc(platformAPI) != GMPNoErr) {
     return false;
@@ -226,7 +235,7 @@ GMPChild::DeallocPGMPDecryptorChild(PGMPDecryptorChild* aActor)
 bool
 GMPChild::RecvPGMPAudioDecoderConstructor(PGMPAudioDecoderChild* aActor)
 {
-  auto vdc = static_cast<GMPAudioDecoderChild*>(aActor);
+  GMPAudioDecoderChild* vdc = static_cast<GMPAudioDecoderChild*>(aActor);
 
   void* vd = nullptr;
   GMPErr err = mGetAPIFunc("decode-audio", &vdc->Host(), &vd);
@@ -301,10 +310,37 @@ GMPChild::RecvPGMPDecryptorConstructor(PGMPDecryptorChild* aActor)
   return true;
 }
 
+PGMPTimerChild*
+GMPChild::AllocPGMPTimerChild()
+{
+  return new GMPTimerChild(this);
+}
+
+bool
+GMPChild::DeallocPGMPTimerChild(PGMPTimerChild* aActor)
+{
+  MOZ_ASSERT(mTimerChild == static_cast<GMPTimerChild*>(aActor));
+  mTimerChild = nullptr;
+  return true;
+}
+
+GMPTimerChild*
+GMPChild::GetGMPTimers()
+{
+  if (!mTimerChild) {
+    PGMPTimerChild* sc = SendPGMPTimerConstructor();
+    if (!sc) {
+      return nullptr;
+    }
+    mTimerChild = static_cast<GMPTimerChild*>(sc);
+  }
+  return mTimerChild;
+}
+
 bool
 GMPChild::RecvCrashPluginNow()
 {
-  abort();
+  MOZ_CRASH();
   return true;
 }
 
