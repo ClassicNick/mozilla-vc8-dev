@@ -71,6 +71,7 @@ EXPORTS.js += [
     '../public/CharacterEncoding.h',
     '../public/Class.h',
     '../public/Date.h',
+    '../public/DebugAPI.h',
     '../public/GCAPI.h',
     '../public/HashTable.h',
     '../public/HeapAPI.h',
@@ -167,6 +168,7 @@ UNIFIED_SOURCES += [
     'jit/IonMacroAssembler.cpp',
     'jit/IonOptimizationLevels.cpp',
     'jit/IonSpewer.cpp',
+    'jit/JitcodeMap.cpp',
     'jit/JitOptions.cpp',
     'jit/JSONSpewer.cpp',
     'jit/LICM.cpp',
@@ -377,10 +379,6 @@ if CONFIG['ENABLE_ION']:
     if CONFIG['JS_CODEGEN_X86'] or CONFIG['JS_CODEGEN_X64']:
         SOURCES += [
             'assembler/assembler/MacroAssemblerX86Common.cpp',
-        ]
-    elif CONFIG['JS_CODEGEN_ARM']:
-        SOURCES += [
-            'assembler/assembler/MacroAssemblerARM.cpp',
         ]
 
 if CONFIG['JS_HAS_CTYPES']:
