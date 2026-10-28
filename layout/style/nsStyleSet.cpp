@@ -1359,7 +1359,7 @@ nsStyleSet::RuleNodeWithReplacement(Element* aElement,
   }
 
   nsRuleWalker ruleWalker(mRuleTree, mAuthorStyleDisabled);
-  auto rulesIndex = rules.Length();
+  uint32_t rulesIndex = rules.Length();
 
   for (const CascadeLevel *level = gCascadeLevels,
                        *levelEnd = ArrayEnd(gCascadeLevels);
