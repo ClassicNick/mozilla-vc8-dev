@@ -712,6 +712,20 @@ public:
                nscoord aContainerWidth) {
     SetRect(aRect.GetPhysicalRect(aWritingMode, aContainerWidth));
   }
+
+  /**
+   * Set this frame's size from a logical size in its own writing direction
+   */
+  void SetSize(const mozilla::LogicalSize& aSize) {
+    SetSize(GetWritingMode(), aSize);
+  }
+  /*
+   * Set this frame's size from a logical size in a different writing direction
+   */
+  void SetSize(mozilla::WritingMode aWritingMode,
+               const mozilla::LogicalSize& aSize) {
+    SetSize(aSize.GetPhysicalSize(aWritingMode));
+  }
   void SetSize(const nsSize& aSize) {
     SetRect(nsRect(mRect.TopLeft(), aSize));
   }
@@ -1418,6 +1432,10 @@ public:
     return const_cast<nsIFrame*>(this);
   }
 
+  /**
+   * Note: "width" in the names and comments on the following methods
+   * means inline-size, which could be height in vertical layout
+   */
 
   /**
    * Mark any stored intrinsic width information as dirty (requiring
@@ -1894,6 +1912,12 @@ public:
    * aOther.
    */
   nsPoint GetOffsetToCrossDoc(const nsIFrame* aOther) const;
+
+  /**
+   * Like GetOffsetToCrossDoc, but the caller can specify which appunits
+   * to return the result in.
+   */
+  nsPoint GetOffsetToCrossDoc(const nsIFrame* aOther, const int32_t aAPD) const;
 
   /**
    * Get the screen rect of the frame in pixels.
@@ -3079,7 +3103,6 @@ private:
    * Returns true if any overflow changed.
    */
   bool SetOverflowAreas(const nsOverflowAreas& aOverflowAreas);
-  nsPoint GetOffsetToCrossDoc(const nsIFrame* aOther, const int32_t aAPD) const;
 
   // Helper-functions for SortFrameList():
   template<bool IsLessThanOrEqual(nsIFrame*, nsIFrame*)>

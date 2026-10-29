@@ -50,32 +50,14 @@ CodeGeneratorX86Shared::generatePrologue()
 }
 
 bool
-CodeGeneratorX86Shared::generateAsmJSPrologue(Label *stackOverflowLabel)
-{
-    JS_ASSERT(gen->compilingAsmJS());
-
-    // The asm.js over-recursed handler wants to be able to assume that SP
-    // points to the return address, so perform the check before pushing
-    // frameDepth.
-    if (!omitOverRecursedCheck()) {
-        masm.branchPtr(Assembler::AboveOrEqual,
-                       AsmJSAbsoluteAddress(AsmJSImm_StackLimit),
-                       StackPointer,
-                       stackOverflowLabel);
-    }
-
-    // Note that this automatically sets MacroAssembler::framePushed().
-    masm.reserveStack(frameSize());
-    return true;
-}
-
-bool
 CodeGeneratorX86Shared::generateEpilogue()
 {
+    JS_ASSERT(!gen->compilingAsmJS());
+
     masm.bind(&returnLabel_);
 
 #ifdef JS_TRACE_LOGGING
-    if (!gen->compilingAsmJS() && gen->info().executionMode() == SequentialExecution) {
+    if (gen->info().executionMode() == SequentialExecution) {
         if (!emitTracelogStopEvent(TraceLogger::IonMonkey))
             return false;
         if (!emitTracelogScriptStop())
@@ -2089,7 +2071,6 @@ CodeGeneratorX86Shared::visitForkJoinGetSlice(LForkJoinGetSlice *ins)
 JitCode *
 JitRuntime::generateForkJoinGetSliceStub(JSContext *cx)
 {
-#ifdef JS_THREADSAFE
     MacroAssembler masm(cx);
 
     // We need two fixed temps. We need to fix eax for cmpxchg, and edx for
@@ -2238,9 +2219,6 @@ JitRuntime::generateForkJoinGetSliceStub(JSContext *cx)
 #endif
 
     return code;
-#else
-    return nullptr;
-#endif // JS_THREADSAFE
 }
 
 } // namespace jit

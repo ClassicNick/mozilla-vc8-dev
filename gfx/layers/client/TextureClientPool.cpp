@@ -55,9 +55,9 @@ TextureClientPool::GetTextureClient()
   // No unused clients in the pool, create one
   if (gfxPrefs::ForceShmemTiles()) {
     // gfx::BackendType::NONE means use the content backend
-    textureClient = TextureClient::CreateBufferTextureClient(mSurfaceAllocator,
-      mFormat, TextureFlags::IMMEDIATE_UPLOAD, gfx::BackendType::NONE);
-    textureClient->AllocateForSurface(mSize, ALLOC_DEFAULT);
+    textureClient = TextureClient::CreateForRawBufferAccess(mSurfaceAllocator,
+      mFormat, mSize, gfx::BackendType::NONE,
+      TextureFlags::IMMEDIATE_UPLOAD, ALLOC_DEFAULT);
   } else {
     textureClient = TextureClient::CreateForDrawing(mSurfaceAllocator,
       mFormat, mSize, gfx::BackendType::NONE, TextureFlags::IMMEDIATE_UPLOAD);
@@ -133,8 +133,15 @@ void
 TextureClientPool::ReturnDeferredClients()
 {
   while (!mTextureClientsDeferred.empty()) {
-    ReturnTextureClient(mTextureClientsDeferred.top());
+    mTextureClients.push(mTextureClientsDeferred.top());
     mTextureClientsDeferred.pop();
+  }
+  ShrinkToMinimumSize();
+  // Kick off the pool shrinking timer if there are still more unused texture
+  // clients than our desired minimum cache size.
+  if (mTextureClients.size() > sMinCacheSize) {
+    mTimer->InitWithFuncCallback(ShrinkCallback, this, sShrinkTimeout,
+                                 nsITimer::TYPE_ONE_SHOT);
   }
 }
 

@@ -23,6 +23,7 @@
 #include "nsThemeConstants.h"
 #include <algorithm>
 
+using namespace mozilla;
 using namespace mozilla::dom;
 
 nsIFrame*
@@ -118,11 +119,8 @@ nsProgressFrame::Reflow(nsPresContext*           aPresContext,
 
   ReflowBarFrame(barFrame, aPresContext, aReflowState, aStatus);
 
-  aDesiredSize.Width() = aReflowState.ComputedWidth() +
-                       aReflowState.ComputedPhysicalBorderPadding().LeftRight();
-  aDesiredSize.Height() = aReflowState.ComputedHeight() +
-                        aReflowState.ComputedPhysicalBorderPadding().TopBottom();
-
+  aDesiredSize.SetSize(aReflowState.GetWritingMode(),
+                       aReflowState.ComputedSizeWithBorderPadding());
   aDesiredSize.SetOverflowAreasToDesiredBounds();
   ConsiderChildOverflow(aDesiredSize.mOverflowAreas, barFrame);
   FinishAndStoreOverflow(&aDesiredSize);
@@ -139,9 +137,11 @@ nsProgressFrame::ReflowBarFrame(nsIFrame*                aBarFrame,
                                 nsReflowStatus&          aStatus)
 {
   bool vertical = StyleDisplay()->mOrient == NS_STYLE_ORIENT_VERTICAL;
-  nsHTMLReflowState reflowState(aPresContext, aReflowState, aBarFrame,
-                                nsSize(aReflowState.ComputedWidth(),
-                                       NS_UNCONSTRAINEDSIZE));
+  WritingMode wm = aBarFrame->GetWritingMode();
+  LogicalSize availSize = aReflowState.ComputedSize(wm);
+  availSize.BSize(wm) = NS_UNCONSTRAINEDSIZE;
+  nsHTMLReflowState reflowState(aPresContext, aReflowState,
+                                aBarFrame, availSize);
   nscoord size = vertical ? aReflowState.ComputedHeight()
                           : aReflowState.ComputedWidth();
   nscoord xoffset = aReflowState.ComputedPhysicalBorderPadding().left;

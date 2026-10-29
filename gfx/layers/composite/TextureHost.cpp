@@ -579,7 +579,7 @@ ShmemTextureHost::ShmemTextureHost(const ipc::Shmem& aShmem,
                                    ISurfaceAllocator* aDeallocator,
                                    TextureFlags aFlags)
 : BufferTextureHost(aFormat, aFlags)
-, mShmem(new ipc::Shmem(aShmem))
+, mShmem(MakeUnique<ipc::Shmem>(aShmem))
 , mDeallocator(aDeallocator)
 {
   MOZ_COUNT_CTOR(ShmemTextureHost);
@@ -588,7 +588,6 @@ ShmemTextureHost::ShmemTextureHost(const ipc::Shmem& aShmem,
 ShmemTextureHost::~ShmemTextureHost()
 {
   DeallocateDeviceData();
-  delete mShmem;
   MOZ_COUNT_DTOR(ShmemTextureHost);
 }
 
@@ -599,7 +598,6 @@ ShmemTextureHost::DeallocateSharedData()
     MOZ_ASSERT(mDeallocator,
                "Shared memory would leak without a ISurfaceAllocator");
     mDeallocator->DeallocShmem(*mShmem);
-    delete mShmem;
     mShmem = nullptr;
   }
 }
@@ -608,7 +606,6 @@ void
 ShmemTextureHost::ForgetSharedData()
 {
   if (mShmem) {
-    delete mShmem;
     mShmem = nullptr;
   }
 }
@@ -616,7 +613,6 @@ ShmemTextureHost::ForgetSharedData()
 void
 ShmemTextureHost::OnShutdown()
 {
-  delete mShmem;
   mShmem = nullptr;
 }
 

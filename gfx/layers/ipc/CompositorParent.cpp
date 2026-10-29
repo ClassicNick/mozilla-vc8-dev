@@ -19,6 +19,9 @@
 #include "base/tracked.h"               // for FROM_HERE
 #include "gfxContext.h"                 // for gfxContext
 #include "gfxPlatform.h"                // for gfxPlatform
+#ifdef MOZ_WIDGET_GTK
+#include "gfxPlatformGtk.h"             // for gfxPlatform
+#endif
 #include "gfxPrefs.h"                   // for gfxPrefs
 #include "ipc/ShadowLayersManager.h"    // for ShadowLayersManager
 #include "mozilla/AutoRestore.h"        // for AutoRestore
@@ -36,6 +39,9 @@
 #include "mozilla/layers/LayersTypes.h"
 #include "mozilla/layers/PLayerTransactionParent.h"
 #include "mozilla/mozalloc.h"           // for operator new, etc
+#ifdef MOZ_WIDGET_GTK
+#include "basic/X11BasicCompositor.h" // for X11BasicCompositor
+#endif
 #include "nsCOMPtr.h"                   // for already_AddRefed
 #include "nsDebug.h"                    // for NS_ABORT_IF_FALSE, etc
 #include "nsISupportsImpl.h"            // for MOZ_COUNT_CTOR, etc
@@ -546,9 +552,11 @@ CompositorParent::ScheduleTask(CancelableTask* task, int time)
 
 void
 CompositorParent::NotifyShadowTreeTransaction(uint64_t aId, bool aIsFirstPaint,
-    bool aScheduleComposite, uint32_t aPaintSequenceNumber)
+    bool aScheduleComposite, uint32_t aPaintSequenceNumber,
+    bool aIsRepeatTransaction)
 {
   if (mApzcTreeManager &&
+      !aIsRepeatTransaction &&
       mLayerManager &&
       mLayerManager->GetRoot()) {
     AutoResolveRefLayers resolve(mCompositionManager);
@@ -782,7 +790,8 @@ CompositorParent::ShadowLayersUpdated(LayerTransactionParent* aLayerTree,
                                       const TargetConfig& aTargetConfig,
                                       bool aIsFirstPaint,
                                       bool aScheduleComposite,
-                                      uint32_t aPaintSequenceNumber)
+                                      uint32_t aPaintSequenceNumber,
+                                      bool aIsRepeatTransaction)
 {
   ScheduleRotationOnCompositorThread(aTargetConfig, aIsFirstPaint);
 
@@ -796,7 +805,7 @@ CompositorParent::ShadowLayersUpdated(LayerTransactionParent* aLayerTree,
   Layer* root = aLayerTree->GetRoot();
   mLayerManager->SetRoot(root);
 
-  if (mApzcTreeManager) {
+  if (mApzcTreeManager && !aIsRepeatTransaction) {
     AutoResolveRefLayers resolve(mCompositionManager);
     mApzcTreeManager->UpdatePanZoomControllerTree(this, root, aIsFirstPaint,
         mRootLayerTreeID, aPaintSequenceNumber);
@@ -900,7 +909,14 @@ CompositorParent::InitializeLayerManager(const nsTArray<LayersBackend>& aBackend
                                      mEGLSurfaceSize.height,
                                      mUseExternalSurfaceSize);
     } else if (aBackendHints[i] == LayersBackend::LAYERS_BASIC) {
-      compositor = new BasicCompositor(mWidget);
+#ifdef MOZ_WIDGET_GTK
+      if (gfxPlatformGtk::GetPlatform()->UseXRender()) {
+        compositor = new X11BasicCompositor(mWidget);
+      } else
+#endif
+      {
+        compositor = new BasicCompositor(mWidget);
+      }
 #if defined XP_WIN && MOZ_ENABLE_D3D10_LAYER
     } else if (aBackendHints[i] == LayersBackend::LAYERS_D3D11) {
       compositor = new CompositorD3D11(mWidget);
@@ -1153,7 +1169,8 @@ public:
                                    const TargetConfig& aTargetConfig,
                                    bool aIsFirstPaint,
                                    bool aScheduleComposite,
-                                   uint32_t aPaintSequenceNumber) MOZ_OVERRIDE;
+                                   uint32_t aPaintSequenceNumber,
+                                   bool aIsRepeatTransaction) MOZ_OVERRIDE;
   virtual void ForceComposite(LayerTransactionParent* aLayerTree) MOZ_OVERRIDE;
   virtual bool SetTestSampleTime(LayerTransactionParent* aLayerTree,
                                  const TimeStamp& aTime) MOZ_OVERRIDE;
@@ -1344,7 +1361,8 @@ CrossProcessCompositorParent::ShadowLayersUpdated(
   const TargetConfig& aTargetConfig,
   bool aIsFirstPaint,
   bool aScheduleComposite,
-  uint32_t aPaintSequenceNumber)
+  uint32_t aPaintSequenceNumber,
+  bool aIsRepeatTransaction)
 {
   uint64_t id = aLayerTree->GetId();
 
@@ -1364,7 +1382,7 @@ CrossProcessCompositorParent::ShadowLayersUpdated(
   UpdateIndirectTree(id, shadowRoot, aTargetConfig);
 
   state->mParent->NotifyShadowTreeTransaction(id, aIsFirstPaint, aScheduleComposite,
-      aPaintSequenceNumber);
+      aPaintSequenceNumber, aIsRepeatTransaction);
   aLayerTree->SetPendingTransactionId(aTransactionId);
 }
 
