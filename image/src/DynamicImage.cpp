@@ -148,7 +148,7 @@ DynamicImage::GetURI()
 
 // Methods inherited from XPCOM interfaces.
 
-NS_IMPL_ISUPPORTS(DynamicImage, imgIContainer)
+NS_IMPL_ISUPPORTS1(DynamicImage, imgIContainer)
 
 NS_IMETHODIMP
 DynamicImage::GetWidth(int32_t* aWidth)

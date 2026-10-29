@@ -9,7 +9,7 @@
 
 #include "mozilla/Alignment.h"
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 #include "js/Utility.h"
 

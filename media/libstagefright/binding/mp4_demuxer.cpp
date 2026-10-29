@@ -101,13 +101,13 @@ MP4Demuxer::Init()
       mPrivate->mAudio = e->getTrack(i);
       mPrivate->mAudio->start();
       mAudioConfig.Update(metaData, mimeType);
-      auto index = mPrivate->mAudio->exportIndex();
+      stagefright::Vector<stagefright::MediaSource::Indice> index = mPrivate->mAudio->exportIndex();
       mPrivate->mAudioIndex.Init(index);
     } else if (!mPrivate->mVideo.get() && !strncmp(mimeType, "video/", 6)) {
       mPrivate->mVideo = e->getTrack(i);
       mPrivate->mVideo->start();
       mVideoConfig.Update(metaData, mimeType);
-      auto index = mPrivate->mVideo->exportIndex();
+      stagefright::Vector<stagefright::MediaSource::Indice> index = mPrivate->mVideo->exportIndex();
       mPrivate->mVideoIndex.Init(index);
     }
   }

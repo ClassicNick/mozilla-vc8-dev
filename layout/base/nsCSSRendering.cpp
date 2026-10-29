@@ -1754,7 +1754,7 @@ nsCSSRendering::GetBackgroundClip(const nsStyleBackground::Layer& aLayer,
   }
 
   if (haveRoundedCorners) {
-    auto d2a = aForFrame->PresContext()->AppUnitsPerDevPixel();
+    int32_t d2a = aForFrame->PresContext()->AppUnitsPerDevPixel();
     nsCSSRendering::ComputePixelRadii(aClipState->mRadii, d2a, &aClipState->mClippedRadii);
     aClipState->mHasRoundedCorners = true;
   } else {

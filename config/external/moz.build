@@ -43,6 +43,7 @@ external_dirs += [
     'media/libtheora',
     'media/libspeex_resampler',
     'media/libsoundtouch',
+	'media/libstagefright',
 ]
 
 PARALLEL_DIRS += ['../../' + i for i in external_dirs]

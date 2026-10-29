@@ -96,7 +96,7 @@ CryptoFile::DoUpdate(sp<MetaData>& aMetaData)
     if (!reader.CanReadType<uint32_t>()) {
       return false;
     }
-    auto length = reader.ReadType<uint32_t>();
+    uint32_t length = reader.ReadType<uint32_t>();
 
     if (!reader.ReadArray(psshInfo.data, length)) {
       return false;
@@ -216,8 +216,6 @@ MP4Sample::Update()
 void
 MP4Sample::Pad(size_t aPaddingBytes)
 {
-  MOZ_ASSERT(data == mMediaBuffer->data());
-
   size_t newSize = size + aPaddingBytes;
 
   // If the existing MediaBuffer has enough space then we just recycle it. If

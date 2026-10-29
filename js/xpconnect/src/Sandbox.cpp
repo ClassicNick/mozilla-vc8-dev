@@ -255,37 +255,6 @@ SandboxExportFunction(JSContext *cx, unsigned argc, jsval *vp)
     return ExportFunction(cx, args[0], args[1], options, args.rval());
 }
 
-/*
- * Expected type of the arguments:
- * value evalInWindow(string script,
- *                    object window)
- */
-static bool
-SandboxEvalInWindow(JSContext *cx, unsigned argc, jsval *vp)
-{
-    CallArgs args = CallArgsFromVp(argc, vp);
-    if (args.length() < 2) {
-        JS_ReportError(cx, "Function requires two arguments");
-        return false;
-    }
-
-    if (!args[0].isString() || !args[1].isObject()) {
-        JS_ReportError(cx, "Invalid arguments");
-        return false;
-    }
-
-    RootedString srcString(cx, args[0].toString());
-    RootedObject targetScope(cx, &args[1].toObject());
-
-    nsAutoJSString srcAutoString;
-    if (!srcAutoString.init(cx, srcString)) {
-        JS_ReportError(cx, "Source string is invalid");
-        return false;
-    }
-
-    return EvalInWindow(cx, srcAutoString, targetScope, args.rval());
-}
-
 static bool
 SandboxCreateObjectIn(JSContext *cx, unsigned argc, jsval *vp)
 {
@@ -749,7 +718,6 @@ xpc::GlobalProperties::Parse(JSContext *cx, JS::HandleObject obj)
     uint32_t length;
     bool ok = JS_GetArrayLength(cx, obj, &length);
     NS_ENSURE_TRUE(ok, false);
-    bool promise = Promise;
     for (uint32_t i = 0; i < length; i++) {
         RootedValue nameValue(cx);
         ok = JS_GetElement(cx, obj, i, &nameValue);
@@ -760,7 +728,7 @@ xpc::GlobalProperties::Parse(JSContext *cx, JS::HandleObject obj)
         }
         JSAutoByteString name(cx, nameValue.toString());
         NS_ENSURE_TRUE(name, false);
-        if (promise && !strcmp(name.ptr(), "-Promise")) {
+        if (Promise && !strcmp(name.ptr(), "-Promise")) {
             Promise = false;
         } else if (!strcmp(name.ptr(), "CSS")) {
             CSS = true;
@@ -950,7 +918,6 @@ xpc::CreateSandboxObject(JSContext *cx, MutableHandleValue vp, nsISupports *prin
 
         if (options.wantExportHelpers &&
             (!JS_DefineFunction(cx, sandbox, "exportFunction", SandboxExportFunction, 3, 0) ||
-             !JS_DefineFunction(cx, sandbox, "evalInWindow", SandboxEvalInWindow, 2, 0) ||
              !JS_DefineFunction(cx, sandbox, "createObjectIn", SandboxCreateObjectIn, 2, 0) ||
              !JS_DefineFunction(cx, sandbox, "cloneInto", SandboxCloneInto, 3, 0) ||
              !JS_DefineFunction(cx, sandbox, "isProxy", SandboxIsProxy, 1, 0)))

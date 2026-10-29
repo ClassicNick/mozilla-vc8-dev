@@ -17,21 +17,21 @@ nsLeafFrame::~nsLeafFrame()
 NS_IMPL_FRAMEARENA_HELPERS(nsLeafFrame)
 
 /* virtual */ nscoord
-nsLeafFrame::GetMinWidth(nsRenderingContext *aRenderingContext)
+nsLeafFrame::GetMinISize(nsRenderingContext *aRenderingContext)
 {
   nscoord result;
   DISPLAY_MIN_WIDTH(this, result);
 
-  result = GetIntrinsicWidth();
+  result = GetIntrinsicISize();
   return result;
 }
 
 /* virtual */ nscoord
-nsLeafFrame::GetPrefWidth(nsRenderingContext *aRenderingContext)
+nsLeafFrame::GetPrefISize(nsRenderingContext *aRenderingContext)
 {
   nscoord result;
   DISPLAY_PREF_WIDTH(this, result);
-  result = GetIntrinsicWidth();
+  result = GetIntrinsicISize();
   return result;
 }
 
@@ -41,7 +41,7 @@ nsLeafFrame::ComputeAutoSize(nsRenderingContext *aRenderingContext,
                              nsSize aMargin, nsSize aBorder,
                              nsSize aPadding, bool aShrinkWrap)
 {
-  return nsSize(GetIntrinsicWidth(), GetIntrinsicHeight());
+  return nsSize(GetIntrinsicISize(), GetIntrinsicBSize());
 }
 
 void
@@ -94,7 +94,7 @@ nsLeafFrame::DoReflow(nsPresContext* aPresContext,
 }
 
 nscoord
-nsLeafFrame::GetIntrinsicHeight()
+nsLeafFrame::GetIntrinsicBSize()
 {
   NS_NOTREACHED("Someone didn't override Reflow or ComputeAutoSize");
   return 0;

@@ -1332,7 +1332,7 @@ nsFlexContainerFrame::
       nsRefPtr<nsRenderingContext> rctx =
         aPresContext->PresShell()->CreateReferenceRenderingContext();
       if (minSizeNeedsToMeasureContent) {
-        resolvedMinSize = std::min(resolvedMinSize, aFlexItem.Frame()->GetMinWidth(rctx));
+        resolvedMinSize = std::min(resolvedMinSize, aFlexItem.Frame()->GetMinISize(rctx));
       }
       NS_ASSERTION(!flexBasisNeedsToMeasureContent,
                    "flex-basis:auto should have been resolved in the "
@@ -3781,7 +3781,7 @@ nsFlexContainerFrame::DoFlexLayout(nsPresContext*           aPresContext,
 }
 
 /* virtual */ nscoord
-nsFlexContainerFrame::GetMinWidth(nsRenderingContext* aRenderingContext)
+nsFlexContainerFrame::GetMinISize(nsRenderingContext* aRenderingContext)
 {
   nscoord minWidth = 0;
   DISPLAY_MIN_WIDTH(this, minWidth);
@@ -3791,7 +3791,7 @@ nsFlexContainerFrame::GetMinWidth(nsRenderingContext* aRenderingContext)
   for (nsFrameList::Enumerator e(mFrames); !e.AtEnd(); e.Next()) {
     nscoord childMinWidth =
       nsLayoutUtils::IntrinsicForContainer(aRenderingContext, e.get(),
-                                           nsLayoutUtils::MIN_WIDTH);
+                                           nsLayoutUtils::MIN_ISIZE);
     // For a horizontal single-line flex container, the intrinsic min width is
     // the sum of its items' min widths.
     // For a vertical flex container, or for a multi-line horizontal flex
@@ -3807,7 +3807,7 @@ nsFlexContainerFrame::GetMinWidth(nsRenderingContext* aRenderingContext)
 }
 
 /* virtual */ nscoord
-nsFlexContainerFrame::GetPrefWidth(nsRenderingContext* aRenderingContext)
+nsFlexContainerFrame::GetPrefISize(nsRenderingContext* aRenderingContext)
 {
   nscoord prefWidth = 0;
   DISPLAY_PREF_WIDTH(this, prefWidth);
@@ -3815,14 +3815,14 @@ nsFlexContainerFrame::GetPrefWidth(nsRenderingContext* aRenderingContext)
   // XXXdholbert Optimization: We could cache our intrinsic widths like
   // nsBlockFrame does (and return it early from this function if it's set).
   // Whenever anything happens that might change it, set it to
-  // NS_INTRINSIC_WIDTH_UNKNOWN (like nsBlockFrame::MarkIntrinsicWidthsDirty
+  // NS_INTRINSIC_WIDTH_UNKNOWN (like nsBlockFrame::MarkIntrinsicISizesDirty
   // does)
   FlexboxAxisTracker axisTracker(this);
 
   for (nsFrameList::Enumerator e(mFrames); !e.AtEnd(); e.Next()) {
     nscoord childPrefWidth =
       nsLayoutUtils::IntrinsicForContainer(aRenderingContext, e.get(),
-                                           nsLayoutUtils::PREF_WIDTH);
+                                           nsLayoutUtils::PREF_ISIZE);
     if (IsAxisHorizontal(axisTracker.GetMainAxis())) {
       prefWidth += childPrefWidth;
     } else {

@@ -77,7 +77,7 @@ public:
 
   template <typename T> T ReadType()
   {
-    auto ptr = Read(sizeof(T));
+    const uint8_t* ptr = Read(sizeof(T));
     if (!ptr) {
       MOZ_ASSERT(false);
       return 0;
@@ -88,7 +88,7 @@ public:
   template <typename T>
   bool ReadArray(nsTArray<T>& aDest, size_t aLength)
   {
-    auto ptr = Read(aLength * sizeof(T));
+    const uint8_t* ptr = Read(aLength * sizeof(T));
     if (!ptr) {
       return false;
     }

@@ -627,7 +627,7 @@ RemoveFirstLine(nsLineList& aFromLines, nsFrameList& aFromFrames,
 // Reflow methods
 
 /* virtual */ void
-nsBlockFrame::MarkIntrinsicWidthsDirty()
+nsBlockFrame::MarkIntrinsicISizesDirty()
 {
   nsBlockFrame* dirtyBlock = static_cast<nsBlockFrame*>(FirstContinuation());
   dirtyBlock->mMinWidth = NS_INTRINSIC_WIDTH_UNKNOWN;
@@ -639,7 +639,7 @@ nsBlockFrame::MarkIntrinsicWidthsDirty()
     }
   }
 
-  nsBlockFrameSuper::MarkIntrinsicWidthsDirty();
+  nsBlockFrameSuper::MarkIntrinsicISizesDirty();
 }
 
 void
@@ -664,11 +664,11 @@ nsBlockFrame::CheckIntrinsicCacheAgainstShrinkWrapState()
 }
 
 /* virtual */ nscoord
-nsBlockFrame::GetMinWidth(nsRenderingContext *aRenderingContext)
+nsBlockFrame::GetMinISize(nsRenderingContext *aRenderingContext)
 {
   nsIFrame* firstInFlow = FirstContinuation();
   if (firstInFlow != this)
-    return firstInFlow->GetMinWidth(aRenderingContext);
+    return firstInFlow->GetMinISize(aRenderingContext);
 
   DISPLAY_MIN_WIDTH(this, mMinWidth);
 
@@ -681,7 +681,7 @@ nsBlockFrame::GetMinWidth(nsRenderingContext *aRenderingContext)
   if (gNoisyIntrinsic) {
     IndentBy(stdout, gNoiseIndent);
     ListTag(stdout);
-    printf(": GetMinWidth\n");
+    printf(": GetMinISize\n");
   }
   AutoNoisyIndenter indenter(gNoisyIntrinsic);
 #endif
@@ -693,7 +693,7 @@ nsBlockFrame::GetMinWidth(nsRenderingContext *aRenderingContext)
 
   if (GetStateBits() & NS_BLOCK_NEEDS_BIDI_RESOLUTION)
     ResolveBidi();
-  InlineMinWidthData data;
+  InlineMinISizeData data;
   for (nsBlockFrame* curFrame = this; curFrame;
        curFrame = static_cast<nsBlockFrame*>(curFrame->GetNextContinuation())) {
     for (line_iterator line = curFrame->begin_lines(), line_end = curFrame->end_lines();
@@ -711,7 +711,7 @@ nsBlockFrame::GetMinWidth(nsRenderingContext *aRenderingContext)
       if (line->IsBlock()) {
         data.ForceBreak(aRenderingContext);
         data.currentLine = nsLayoutUtils::IntrinsicForContainer(aRenderingContext,
-                        line->mFirstChild, nsLayoutUtils::MIN_WIDTH);
+                        line->mFirstChild, nsLayoutUtils::MIN_ISIZE);
         data.ForceBreak(aRenderingContext);
       } else {
         if (!curFrame->GetPrevContinuation() &&
@@ -730,7 +730,7 @@ nsBlockFrame::GetMinWidth(nsRenderingContext *aRenderingContext)
         nsIFrame *kid = line->mFirstChild;
         for (int32_t i = 0, i_end = line->GetChildCount(); i != i_end;
              ++i, kid = kid->GetNextSibling()) {
-          kid->AddInlineMinWidth(aRenderingContext, &data);
+          kid->AddInlineMinISize(aRenderingContext, &data);
         }
       }
 #ifdef DEBUG
@@ -749,11 +749,11 @@ nsBlockFrame::GetMinWidth(nsRenderingContext *aRenderingContext)
 }
 
 /* virtual */ nscoord
-nsBlockFrame::GetPrefWidth(nsRenderingContext *aRenderingContext)
+nsBlockFrame::GetPrefISize(nsRenderingContext *aRenderingContext)
 {
   nsIFrame* firstInFlow = FirstContinuation();
   if (firstInFlow != this)
-    return firstInFlow->GetPrefWidth(aRenderingContext);
+    return firstInFlow->GetPrefISize(aRenderingContext);
 
   DISPLAY_PREF_WIDTH(this, mPrefWidth);
 
@@ -766,7 +766,7 @@ nsBlockFrame::GetPrefWidth(nsRenderingContext *aRenderingContext)
   if (gNoisyIntrinsic) {
     IndentBy(stdout, gNoiseIndent);
     ListTag(stdout);
-    printf(": GetPrefWidth\n");
+    printf(": GetPrefISize\n");
   }
   AutoNoisyIndenter indenter(gNoisyIntrinsic);
 #endif
@@ -778,7 +778,7 @@ nsBlockFrame::GetPrefWidth(nsRenderingContext *aRenderingContext)
 
   if (GetStateBits() & NS_BLOCK_NEEDS_BIDI_RESOLUTION)
     ResolveBidi();
-  InlinePrefWidthData data;
+  InlinePrefISizeData data;
   for (nsBlockFrame* curFrame = this; curFrame;
        curFrame = static_cast<nsBlockFrame*>(curFrame->GetNextContinuation())) {
     for (line_iterator line = curFrame->begin_lines(), line_end = curFrame->end_lines();
@@ -796,7 +796,7 @@ nsBlockFrame::GetPrefWidth(nsRenderingContext *aRenderingContext)
       if (line->IsBlock()) {
         data.ForceBreak(aRenderingContext);
         data.currentLine = nsLayoutUtils::IntrinsicForContainer(aRenderingContext,
-                        line->mFirstChild, nsLayoutUtils::PREF_WIDTH);
+                        line->mFirstChild, nsLayoutUtils::PREF_ISIZE);
         data.ForceBreak(aRenderingContext);
       } else {
         if (!curFrame->GetPrevContinuation() &&
@@ -815,7 +815,7 @@ nsBlockFrame::GetPrefWidth(nsRenderingContext *aRenderingContext)
         nsIFrame *kid = line->mFirstChild;
         for (int32_t i = 0, i_end = line->GetChildCount(); i != i_end;
              ++i, kid = kid->GetNextSibling()) {
-          kid->AddInlinePrefWidth(aRenderingContext, &data);
+          kid->AddInlinePrefISize(aRenderingContext, &data);
         }
       }
 #ifdef DEBUG
@@ -857,7 +857,7 @@ nsBlockFrame::GetPrefWidthTightBounds(nsRenderingContext* aRenderingContext,
   *aXMost = 0;
 
   nsresult rv;
-  InlinePrefWidthData data;
+  InlinePrefISizeData data;
   for (nsBlockFrame* curFrame = this; curFrame;
        curFrame = static_cast<nsBlockFrame*>(curFrame->GetNextContinuation())) {
     for (line_iterator line = curFrame->begin_lines(), line_end = curFrame->end_lines();
@@ -894,7 +894,7 @@ nsBlockFrame::GetPrefWidthTightBounds(nsRenderingContext* aRenderingContext,
           NS_ENSURE_SUCCESS(rv, rv);
           *aX = std::min(*aX, data.currentLine + childX);
           *aXMost = std::max(*aXMost, data.currentLine + childXMost);
-          kid->AddInlinePrefWidth(aRenderingContext, &data);
+          kid->AddInlinePrefISize(aRenderingContext, &data);
         }
       }
     }
