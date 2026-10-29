@@ -18,13 +18,13 @@ using namespace js::jit;
 static bool
 LoopContainsPossibleCall(MIRGraph &graph, MBasicBlock *header, MBasicBlock *backedge)
 {
-    for (auto i(graph.rpoBegin(header)); ; ++i) {
+    for (ReversePostorderIterator i(graph.rpoBegin(header)); ; ++i) {
         MOZ_ASSERT(i != graph.rpoEnd(), "Reached end of graph searching for blocks in loop");
         MBasicBlock *block = *i;
         if (!block->isMarked())
             continue;
 
-        for (auto insIter(block->begin()), insEnd(block->end()); insIter != insEnd; ++insIter) {
+        for (MInstructionIterator insIter(block->begin()), insEnd(block->end()); insIter != insEnd; ++insIter) {
             MInstruction *ins = *insIter;
             if (ins->possiblyCalls()) {
                 IonSpew(IonSpew_LICM, "    Possile call found at %s%u", ins->opName(), ins->id());
@@ -162,7 +162,7 @@ MoveDeferredOperands(MInstruction *ins, MInstruction *hoistPoint, bool hasCalls)
 static void
 VisitLoopBlock(MBasicBlock *block, MBasicBlock *header, MInstruction *hoistPoint, bool hasCalls)
 {
-    for (auto insIter(block->begin()), insEnd(block->end()); insIter != insEnd; ) {
+    for (MInstructionIterator insIter(block->begin()), insEnd(block->end()); insIter != insEnd; ) {
         MInstruction *ins = *insIter++;
 
         if (!IsHoistable(ins, header, hasCalls)) {
@@ -211,7 +211,7 @@ VisitLoop(MIRGraph &graph, MBasicBlock *header)
     // hoisting.
     bool hasCalls = LoopContainsPossibleCall(graph, header, backedge);
 
-    for (auto i(graph.rpoBegin(header)); ; ++i) {
+    for (ReversePostorderIterator i(graph.rpoBegin(header)); ; ++i) {
         MOZ_ASSERT(i != graph.rpoEnd(), "Reached end of graph searching for blocks in loop");
         MBasicBlock *block = *i;
         if (!block->isMarked())
@@ -231,7 +231,7 @@ jit::LICM(MIRGenerator *mir, MIRGraph &graph)
 
     // Iterate in RPO to visit outer loops before inner loops. We'd hoist the
     // same things either way, but outer first means we do a little less work.
-    for (auto i(graph.rpoBegin()), e(graph.rpoEnd()); i != e; ++i) {
+    for (ReversePostorderIterator i(graph.rpoBegin()), e(graph.rpoEnd()); i != e; ++i) {
         MBasicBlock *header = *i;
         if (!header->isLoopHeader())
             continue;

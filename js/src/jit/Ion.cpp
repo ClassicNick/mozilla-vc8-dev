@@ -531,7 +531,7 @@ JitCompartment::notifyOfActiveParallelEntryScript(JSContext *cx, HandleScript sc
 
     script->parallelIonScript()->setIsParallelEntryScript();
     ScriptSet::AddPtr p = activeParallelEntryScripts_->lookupForAdd(script);
-    return p || activeParallelEntryScripts_->add(p, (HandleScript) script);
+    return p || activeParallelEntryScripts_->add(p, (const js::PreBarrieredScript) script);
 }
 
 bool

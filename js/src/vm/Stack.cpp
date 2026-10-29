@@ -1637,7 +1637,7 @@ jit::JitActivation::getRematerializedFrame(ThreadSafeContext *cx, const T &iter,
     RematerializedFrameTable::AddPtr p = rematerializedFrames_->lookupForAdd(top);
     if (!p) {
         RematerializedFrameVector empty(cx);
-        if (!rematerializedFrames_->add(p, top, Move(empty)))
+        if (!rematerializedFrames_->add(p, top, mozilla::OldMove(empty)))
             return nullptr;
 
         // The unit of rematerialization is an uninlined frame and its inlined
