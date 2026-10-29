@@ -837,10 +837,10 @@ class AssemblerShared
         CallSite callsite(desc, currentOffset, framePushed + sizeof(AsmJSFrame));
         enoughMemory_ &= callsites_.append(callsite);
     }
-    CallSiteVector &&extractCallSites() { return Move(callsites_); }
+    mozilla::MoveRef<CallSiteVector> extractCallSites() { return mozilla::OldMove(callsites_); }
 
     void append(AsmJSHeapAccess access) { enoughMemory_ &= asmJSHeapAccesses_.append(access); }
-    AsmJSHeapAccessVector &&extractAsmJSHeapAccesses() { return Move(asmJSHeapAccesses_); }
+    mozilla::MoveRef<AsmJSHeapAccessVector> extractAsmJSHeapAccesses() { return mozilla::OldMove(asmJSHeapAccesses_); }
 
     void append(AsmJSGlobalAccess access) { enoughMemory_ &= asmJSGlobalAccesses_.append(access); }
     size_t numAsmJSGlobalAccesses() const { return asmJSGlobalAccesses_.length(); }

@@ -67,14 +67,14 @@ struct DebugModeOSREntry
 #endif
     }
 
-    DebugModeOSREntry(DebugModeOSREntry &&other)
-      : script(other.script),
-        oldBaselineScript(other.oldBaselineScript),
-        oldStub(other.oldStub),
-        newStub(other.newStub),
-        recompInfo(other.recompInfo ? other.takeRecompInfo() : nullptr),
-        pcOffset(other.pcOffset),
-        frameKind(other.frameKind)
+    DebugModeOSREntry(mozilla::MoveRef<DebugModeOSREntry> other)
+      : script(other->script),
+        oldBaselineScript(other->oldBaselineScript),
+        oldStub(other->oldStub),
+        newStub(other->newStub),
+        recompInfo(other->recompInfo ? other->takeRecompInfo() : nullptr),
+        pcOffset(other->pcOffset),
+        frameKind(other->frameKind)
     { }
 
     ~DebugModeOSREntry() {
