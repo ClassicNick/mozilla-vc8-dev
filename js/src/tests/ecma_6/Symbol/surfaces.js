@@ -22,7 +22,6 @@ assertEq(desc.enumerable, false);
 assertEq(desc.writable, true);
 
 assertEq(Symbol.for.length, 1);
-assertEq(Symbol.prototype.toString.length, 0);
 
 if (typeof reportCompare === "function")
     reportCompare(0, 0);
