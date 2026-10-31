@@ -149,7 +149,7 @@ nsHTMLCSSStyleSheet::MediumFeaturesChanged(nsPresContext* aPresContext)
 }
 
 size_t
-SizeOfCachedStyleAttrsEntryExcludingThis(nsStringHashKey::KeyType& aKey,
+SizeOfCachedStyleAttrsEntryExcludingThis(nsStringHashKey::KeyType aKey,
                                          MiscContainer* const& aData,
                                          mozilla::MallocSizeOf aMallocSizeOf,
                                          void* userArg)

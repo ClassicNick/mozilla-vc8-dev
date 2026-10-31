@@ -717,9 +717,10 @@ public:
 
     static mozilla::gfx::UserDataKey sDontUseAsSourceKey;
 
-private:
+public:
     ~gfxContext();
 
+private:
   friend class GeneralPattern;
   friend struct GlyphBufferAzure;
 

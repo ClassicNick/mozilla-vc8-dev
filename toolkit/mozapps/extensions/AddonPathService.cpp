@@ -49,7 +49,7 @@ AddonPathService::~AddonPathService()
   sInstance = nullptr;
 }
 
-NS_IMPL_ISUPPORTS(AddonPathService, amIAddonPathService)
+NS_IMPL_ISUPPORTS1(AddonPathService, amIAddonPathService)
 
 AddonPathService *AddonPathService::sInstance;
 
