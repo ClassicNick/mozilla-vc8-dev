@@ -392,8 +392,6 @@ ValTypeToString(JSValueType type)
         return "double";
       case JSVAL_TYPE_STRING:
         return "string";
-      case JSVAL_TYPE_SYMBOL:
-        return "symbol";
       case JSVAL_TYPE_BOOLEAN:
         return "boolean";
       case JSVAL_TYPE_OBJECT:
