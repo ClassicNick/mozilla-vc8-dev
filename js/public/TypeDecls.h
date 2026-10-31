@@ -37,7 +37,6 @@ namespace JS {
 
 typedef unsigned char Latin1Char;
 
-class Symbol;
 class Value;
 template <typename T> class Handle;
 template <typename T> class MutableHandle;
