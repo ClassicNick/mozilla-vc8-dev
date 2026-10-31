@@ -336,7 +336,7 @@ protected:
      * An array of style sheets, that will be added (preserving order) to the
      * document after all of them are loaded (in DoneWalking).
      */
-    nsTArray<nsRefPtr<CSSStyleSheet>> mOverlaySheets;
+    nsTArray<nsRefPtr<CSSStyleSheet> > mOverlaySheets;
 
     nsCOMPtr<nsIDOMXULCommandDispatcher>     mCommandDispatcher; // [OWNER] of the focus tracker
 

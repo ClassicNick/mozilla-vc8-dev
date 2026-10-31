@@ -47,7 +47,7 @@ class CSSStyleSheet;
 
 class nsCSSRuleProcessor: public nsIStyleRuleProcessor {
 public:
-  typedef nsTArray<nsRefPtr<mozilla::CSSStyleSheet>> sheet_array_type;
+  typedef nsTArray<nsRefPtr<mozilla::CSSStyleSheet> > sheet_array_type;
 
   // aScopeElement must be non-null iff aSheetType is
   // nsStyleSet::eScopedDocSheet.

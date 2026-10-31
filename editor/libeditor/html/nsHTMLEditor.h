@@ -775,7 +775,7 @@ protected:
 
   // Maintain a list of associated style sheets and their urls.
   nsTArray<nsString> mStyleSheetURLs;
-  nsTArray<nsRefPtr<mozilla::CSSStyleSheet>> mStyleSheets;
+  nsTArray<nsRefPtr<mozilla::CSSStyleSheet> > mStyleSheets;
   
   // an array for holding default style settings
   nsTArray<PropItem*> mDefaultStyles;

@@ -410,7 +410,7 @@ nsStyleSet::GatherRuleProcessors(sheetType aType)
         scope->SetIsScopedStyleRoot();
 
         // Create a rule processor for the scope.
-        nsTArray<nsRefPtr<CSSStyleSheet>> sheetsForScope;
+        nsTArray<nsRefPtr<CSSStyleSheet> > sheetsForScope;
         sheetsForScope.AppendElements(sheets.Elements() + start, end - start);
         mScopedDocSheetRuleProcessors.AppendElement
           (new nsCSSRuleProcessor(sheetsForScope, uint8_t(aType), scope));
@@ -428,7 +428,7 @@ nsStyleSet::GatherRuleProcessors(sheetType aType)
       case eOverrideSheet: {
         // levels containing CSS stylesheets (apart from eScopedDocSheet)
         nsCOMArray<nsIStyleSheet>& sheets = mSheets[aType];
-        nsTArray<nsRefPtr<CSSStyleSheet>> cssSheets(sheets.Count());
+        nsTArray<nsRefPtr<CSSStyleSheet> > cssSheets(sheets.Count());
         for (int32_t i = 0, i_end = sheets.Count(); i < i_end; ++i) {
           nsRefPtr<CSSStyleSheet> cssSheet = do_QueryObject(sheets[i]);
           NS_ASSERTION(cssSheet, "not a CSS sheet");

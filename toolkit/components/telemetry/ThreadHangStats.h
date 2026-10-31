@@ -58,9 +58,9 @@ private:
 public:
   HangStack() { }
 
-  HangStack(HangStack&& aOther)
-    : Base(mozilla::Move(aOther))
-    , mBuffer(mozilla::Move(aOther.mBuffer))
+  HangStack(mozilla::MoveRef<HangStack> aOther)
+    : Base((const mozilla::MallocAllocPolicy&) aOther)
+    , mBuffer(mozilla::OldMove(aOther->mBuffer))
   {
   }
 
