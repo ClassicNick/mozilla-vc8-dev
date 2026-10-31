@@ -1563,7 +1563,7 @@ js::NonObjectToNumberSlow(ThreadSafeContext *cx, Value v, double *out)
         return true;
     }
 
-    JS_ASSERT(v.isUndefined() || v.isSymbol());
+    JS_ASSERT(v.isUndefined());
     *out = GenericNaN();
     return true;
 }

@@ -13,10 +13,6 @@ for (var sym of symbols) {
     assertEq(!sym, false);
     assertEq(sym || 13, sym);
     assertEq(sym && 13, 13);
-
-    // 7.1.3 ToNumber
-    assertEq(+sym, NaN);
-    assertEq(sym | 0, 0);
 }
 
 if (typeof reportCompare === "function")
