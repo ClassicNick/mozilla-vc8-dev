@@ -38,7 +38,6 @@
 
 #include "builtin/Eval.h"
 #include "builtin/Object.h"
-#include "builtin/SymbolObject.h"
 #include "frontend/BytecodeCompiler.h"
 #include "gc/Marking.h"
 #include "jit/AsmJSModule.h"
@@ -244,8 +243,6 @@ js::InformalValueTypeName(const Value &v)
         return v.toObject().getClass()->name;
     if (v.isString())
         return "string";
-    if (v.isSymbol())
-        return "symbol";
     if (v.isNumber())
         return "number";
     if (v.isBoolean())
@@ -5645,13 +5642,12 @@ js::PrimitiveToObject(JSContext *cx, const Value &v)
     }
     if (v.isNumber())
         return NumberObject::create(cx, v.toNumber());
-    if (v.isBoolean())
-        return BooleanObject::create(cx, v.toBoolean());
-    JS_ASSERT(v.isSymbol());
-    return SymbolObject::create(cx, v.toSymbol());
+
+    JS_ASSERT(v.isBoolean());
+    return BooleanObject::create(cx, v.toBoolean());
 }
 
-/* Callers must handle the already-object case. */
+/* Callers must handle the already-object case . */
 JSObject *
 js::ToObjectSlow(JSContext *cx, HandleValue val, bool reportScanStack)
 {
