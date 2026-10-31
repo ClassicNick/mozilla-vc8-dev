@@ -24,6 +24,10 @@ struct JSCompartment;
 class JSFlatString;
 class JSLinearString;
 
+namespace JS {
+class Symbol;
+} /* namespace JS */
+
 namespace js {
 
 class ArgumentsObject;
@@ -120,6 +124,7 @@ MapAllocToTraceKind(AllocKind kind)
         JSTRACE_STRING,     /* FINALIZE_FAT_INLINE_STRING */
         JSTRACE_STRING,     /* FINALIZE_STRING */
         JSTRACE_STRING,     /* FINALIZE_EXTERNAL_STRING */
+        JSTRACE_SYMBOL,     /* FINALIZE_SYMBOL */
         JSTRACE_JITCODE,    /* FINALIZE_JITCODE */
     };
     JS_STATIC_ASSERT(JS_ARRAY_LENGTH(map) == FINALIZE_LIMIT);
@@ -147,6 +152,7 @@ template <> struct MapTypeToTraceKind<JSAtom>           { static const JSGCTrace
 template <> struct MapTypeToTraceKind<JSString>         { static const JSGCTraceKind kind = JSTRACE_STRING; };
 template <> struct MapTypeToTraceKind<JSFlatString>     { static const JSGCTraceKind kind = JSTRACE_STRING; };
 template <> struct MapTypeToTraceKind<JSLinearString>   { static const JSGCTraceKind kind = JSTRACE_STRING; };
+template <> struct MapTypeToTraceKind<JS::Symbol>       { static const JSGCTraceKind kind = JSTRACE_SYMBOL; }; 
 template <> struct MapTypeToTraceKind<PropertyName>     { static const JSGCTraceKind kind = JSTRACE_STRING; };
 template <> struct MapTypeToTraceKind<jit::JitCode>     { static const JSGCTraceKind kind = JSTRACE_JITCODE; };
 
@@ -164,6 +170,7 @@ template <> struct MapTypeToFinalizeKind<types::TypeObject> { static const Alloc
 template <> struct MapTypeToFinalizeKind<JSFatInlineString> { static const AllocKind kind = FINALIZE_FAT_INLINE_STRING; };
 template <> struct MapTypeToFinalizeKind<JSString>          { static const AllocKind kind = FINALIZE_STRING; };
 template <> struct MapTypeToFinalizeKind<JSExternalString>  { static const AllocKind kind = FINALIZE_EXTERNAL_STRING; };
+template <> struct MapTypeToFinalizeKind<JS::Symbol>        { static const AllocKind kind = FINALIZE_SYMBOL; };
 template <> struct MapTypeToFinalizeKind<jit::JitCode>      { static const AllocKind kind = FINALIZE_JITCODE; };
 
 #if defined(JSGC_GENERATIONAL) || defined(DEBUG)
@@ -192,6 +199,7 @@ IsNurseryAllocable(AllocKind kind)
         false,     /* FINALIZE_FAT_INLINE_STRING */
         false,     /* FINALIZE_STRING */
         false,     /* FINALIZE_EXTERNAL_STRING */
+        false,     /* FINALIZE_SYMBOL */
         false,     /* FINALIZE_JITCODE */
     };
     JS_STATIC_ASSERT(JS_ARRAY_LENGTH(map) == FINALIZE_LIMIT);
@@ -228,6 +236,7 @@ IsFJNurseryAllocable(AllocKind kind)
         false,     /* FINALIZE_FAT_INLINE_STRING */
         false,     /* FINALIZE_STRING */
         false,     /* FINALIZE_EXTERNAL_STRING */
+        false,     /* FINALIZE_SYMBOL */
         false,     /* FINALIZE_JITCODE */
     };
     JS_STATIC_ASSERT(JS_ARRAY_LENGTH(map) == FINALIZE_LIMIT);
@@ -260,6 +269,7 @@ IsBackgroundFinalized(AllocKind kind)
         true,      /* FINALIZE_FAT_INLINE_STRING */
         true,      /* FINALIZE_STRING */
         false,     /* FINALIZE_EXTERNAL_STRING */
+        true,      /* FINALIZE_SYMBOL */
         false,     /* FINALIZE_JITCODE */
     };
     JS_STATIC_ASSERT(JS_ARRAY_LENGTH(map) == FINALIZE_LIMIT);
@@ -795,7 +805,7 @@ class ArenaLists
     }
 
     void queueObjectsForSweep(FreeOp *fop);
-    void queueStringsForSweep(FreeOp *fop);
+    void queueStringsAndSymbolsForSweep(FreeOp *fop);
     void queueShapesForSweep(FreeOp *fop);
     void queueScriptsForSweep(FreeOp *fop);
     void queueJitCodeForSweep(FreeOp *fop);

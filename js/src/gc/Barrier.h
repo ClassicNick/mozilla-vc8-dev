@@ -272,6 +272,13 @@ ShadowZoneOfStringFromAnyThread(JSString *str)
         reinterpret_cast<const js::gc::Cell *>(str)->tenuredZoneFromAnyThread());
 }
 
+static inline JS::shadow::Zone *
+ShadowZoneOfSymbolFromAnyThread(JS::Symbol *sym)
+{
+    return JS::shadow::Zone::asShadowZone(
+        reinterpret_cast<const js::gc::Cell *>(sym)->tenuredZoneFromAnyThread());
+}
+
 MOZ_ALWAYS_INLINE JS::Zone *
 ZoneOfValueFromAnyThread(const JS::Value &value)
 {
@@ -601,6 +608,8 @@ class ImmutableTenuredPtr
         JS_ASSERT(ptr->isTenured());
         value = ptr;
     }
+
+    const T * address() { return &value; }
 };
 
 /*
@@ -819,6 +828,7 @@ typedef RelocatablePtr<jsid> RelocatableId;
 typedef HeapPtr<jsid> HeapId;
 
 typedef ImmutableTenuredPtr<PropertyName*> ImmutablePropertyNamePtr;
+typedef ImmutableTenuredPtr<JS::Symbol*> ImmutableSymbolPtr;
 
 typedef ReadBarriered<DebugScopeObject*> ReadBarrieredDebugScopeObject;
 typedef ReadBarriered<GlobalObject*> ReadBarrieredGlobalObject;
