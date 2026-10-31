@@ -31,6 +31,10 @@ namespace jit {
     _(Div)                                      \
     _(Mod)                                      \
     _(Concat)                                   \
+    _(Floor)                                    \
+    _(Round)                                    \
+    _(Pow)                                      \
+    _(PowHalf)                                  \
     _(NewObject)                                \
     _(NewDerivedTypedObject)
 
@@ -263,6 +267,54 @@ class RConcat MOZ_FINAL : public RInstruction
 
     virtual uint32_t numOperands() const {
         return 2;
+    }
+
+    bool recover(JSContext *cx, SnapshotIterator &iter) const;
+};
+
+class RFloor MOZ_FINAL : public RInstruction
+{
+  public:
+    RINSTRUCTION_HEADER_(Floor)
+
+    virtual uint32_t numOperands() const {
+        return 1;
+    }
+
+    bool recover(JSContext *cx, SnapshotIterator &iter) const;
+};
+
+class RRound MOZ_FINAL : public RInstruction
+{
+  public:
+    RINSTRUCTION_HEADER_(Round)
+
+    virtual uint32_t numOperands() const {
+        return 1;
+    }
+
+    bool recover(JSContext *cx, SnapshotIterator &iter) const;
+};
+
+class RPow MOZ_FINAL : public RInstruction
+{
+  public:
+    RINSTRUCTION_HEADER_(Pow)
+
+    virtual uint32_t numOperands() const {
+        return 2;
+    }
+
+    bool recover(JSContext *cx, SnapshotIterator &iter) const;
+};
+
+class RPowHalf MOZ_FINAL : public RInstruction
+{
+  public:
+    RINSTRUCTION_HEADER_(PowHalf)
+
+    virtual uint32_t numOperands() const {
+        return 1;
     }
 
     bool recover(JSContext *cx, SnapshotIterator &iter) const;

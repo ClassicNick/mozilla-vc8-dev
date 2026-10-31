@@ -484,6 +484,7 @@ public:
         IDX_REALFRAMEELEMENT        ,
         IDX_LENGTH                  ,
         IDX_NAME                    ,
+        IDX_UNDEFINED               ,
         IDX_TOTAL_COUNT // just a count of the above
     };
 
@@ -1025,6 +1026,8 @@ public:
         mGlobalJSObject.trace(trc, "XPCWrappedNativeScope::mGlobalJSObject");
         if (mContentXBLScope)
             mContentXBLScope.trace(trc, "XPCWrappedNativeScope::mXBLScope");
+        for (size_t i = 0; i < mAddonScopes.Length(); i++)
+            mAddonScopes[i].trace(trc, "XPCWrappedNativeScope::mAddonScopes");
         if (mXrayExpandos.initialized())
             mXrayExpandos.trace(trc);
     }
@@ -1102,6 +1105,8 @@ public:
     // object is wrapped into the compartment of the global.
     JSObject *EnsureContentXBLScope(JSContext *cx);
 
+    JSObject *EnsureAddonScope(JSContext *cx, JSAddonId *addonId);
+
     XPCWrappedNativeScope(JSContext *cx, JS::HandleObject aGlobal);
 
     nsAutoPtr<JSObject2JSObjectMap> mWaiverWrapperMap;
@@ -1109,6 +1114,8 @@ public:
     bool IsContentXBLScope() { return mIsContentXBLScope; }
     bool AllowContentXBLScope();
     bool UseContentXBLScope() { return mUseContentXBLScope; }
+
+    bool IsAddonScope() { return mIsAddonScope; }
 
 protected:
     virtual ~XPCWrappedNativeScope();
@@ -1137,11 +1144,15 @@ private:
     // This reference is wrapped into the compartment of mGlobalJSObject.
     JS::ObjectPtr                    mContentXBLScope;
 
+    // Lazily created sandboxes for addon code.
+    nsTArray<JS::ObjectPtr>          mAddonScopes;
+
     nsAutoPtr<DOMExpandoSet> mDOMExpandoSet;
 
     JS::WeakMapPtr<JSObject*, JSObject*> mXrayExpandos;
 
     bool mIsContentXBLScope;
+    bool mIsAddonScope;
 
     // For remote XUL domains, we run all XBL in the content scope for compat
     // reasons (though we sometimes pref this off for automation). We separately
@@ -3323,6 +3334,7 @@ protected:
     bool ParseValue(const char *name, JS::MutableHandleValue prop, bool *found = nullptr);
     bool ParseBoolean(const char *name, bool *prop);
     bool ParseObject(const char *name, JS::MutableHandleObject prop);
+    bool ParseJSString(const char *name, JS::MutableHandleString prop);
     bool ParseString(const char *name, nsCString &prop);
     bool ParseString(const char *name, nsString &prop);
     bool ParseId(const char* name, JS::MutableHandleId id);
@@ -3340,6 +3352,8 @@ public:
         , wantComponents(true)
         , wantExportHelpers(false)
         , proto(cx)
+        , addonId(cx)
+        , writeToGlobalPrototype(false)
         , sameZoneAs(cx)
         , invisibleToDebugger(false)
         , discardSource(false)
@@ -3354,6 +3368,8 @@ public:
     bool wantExportHelpers;
     JS::RootedObject proto;
     nsCString sandboxName;
+    JS::RootedString addonId;
+    bool writeToGlobalPrototype;
     JS::RootedObject sameZoneAs;
     bool invisibleToDebugger;
     bool discardSource;
@@ -3428,6 +3444,10 @@ EvalInSandbox(JSContext *cx, JS::HandleObject sandbox, const nsAString& source,
               JSVersion jsVersion, bool returnStringOnly,
               JS::MutableHandleValue rval);
 
+nsresult
+GetSandboxAddonId(JSContext *cx, JS::HandleObject sandboxArg,
+                  JS::MutableHandleValue rval);
+
 // Helper for retrieving metadata stored in a reserved slot. The metadata
 // is set during the sandbox creation using the "metadata" option.
 nsresult
@@ -3478,6 +3498,8 @@ public:
 
     CompartmentPrivate(JSCompartment *c)
         : wantXrays(false)
+        , writeToGlobalPrototype(false)
+        , skipWriteToGlobalPrototype(false)
         , universalXPConnectEnabled(false)
         , adoptedNode(false)
         , donatedNode(false)
@@ -3490,6 +3512,17 @@ public:
     ~CompartmentPrivate();
 
     bool wantXrays;
+
+    // This flag is intended for a very specific use, internal to Gecko. It may
+    // go away or change behavior at any time. It should not be added to any
+    // documentation and it should not be used without consulting the XPConnect
+    // module owner.
+    bool writeToGlobalPrototype;
+
+    // When writeToGlobalPrototype is true, we use this flag to temporarily
+    // disable the writeToGlobalPrototype behavior (when resolving standard
+    // classes, for example).
+    bool skipWriteToGlobalPrototype;
 
     // This is only ever set during mochitest runs when enablePrivilege is called.
     // It's intended as a temporary stopgap measure until we can finish ripping out

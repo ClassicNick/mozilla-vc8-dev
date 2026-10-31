@@ -171,6 +171,9 @@ class JitRuntime
     // Generic bailout table; used if the bailout table overflows.
     JitCode *bailoutHandler_;
 
+    // Bailout handler for parallel execution.
+    JitCode *parallelBailoutHandler_;
+
     // Argument-rectifying thunk, in the case of insufficient arguments passed
     // to a function call site.
     JitCode *argumentsRectifier_;
@@ -237,7 +240,7 @@ class JitRuntime
     JitCode *generateEnterJIT(JSContext *cx, EnterJitType type);
     JitCode *generateArgumentsRectifier(JSContext *cx, ExecutionMode mode, void **returnAddrOut);
     JitCode *generateBailoutTable(JSContext *cx, uint32_t frameClass);
-    JitCode *generateBailoutHandler(JSContext *cx);
+    JitCode *generateBailoutHandler(JSContext *cx, ExecutionMode mode);
     JitCode *generateInvalidator(JSContext *cx);
     JitCode *generatePreBarrier(JSContext *cx, MIRType type);
     JitCode *generateMallocStub(JSContext *cx);
@@ -304,8 +307,12 @@ class JitRuntime
     JitCode *getBaselineDebugModeOSRHandler(JSContext *cx);
     void *getBaselineDebugModeOSRHandlerAddress(JSContext *cx, bool popFrameReg);
 
-    JitCode *getGenericBailoutHandler() const {
-        return bailoutHandler_;
+    JitCode *getGenericBailoutHandler(ExecutionMode mode) const {
+        switch (mode) {
+          case SequentialExecution: return bailoutHandler_;
+          case ParallelExecution:   return parallelBailoutHandler_;
+          default:                  MOZ_ASSUME_UNREACHABLE("No such execution mode");
+        }
     }
 
     JitCode *getExceptionTail() const {
@@ -414,8 +421,7 @@ class JitCompartment
     // Set of JSScripts invoked by ForkJoin (i.e. the entry script). These
     // scripts are marked if their respective parallel IonScripts' age is less
     // than a certain amount. See IonScript::parallelAge_.
-    typedef HashSet<PreBarrieredScript, DefaultHasher<PreBarrieredScript>, SystemAllocPolicy>
-        ScriptSet;
+    typedef HashSet<PreBarrieredScript> ScriptSet;
     ScriptSet *activeParallelEntryScripts_;
 
     JitCode *generateStringConcatStub(JSContext *cx, ExecutionMode mode);

@@ -2330,7 +2330,6 @@ CanvasRenderingContext2D::SetFont(const nsAString& font,
                      fontStyle->mFont.sizeAdjust,
                      fontStyle->mFont.systemFont,
                      printerFont,
-                     fontStyle->mFont.variant == NS_STYLE_FONT_VARIANT_SMALL_CAPS,
                      fontStyle->mFont.synthesis & NS_FONT_SYNTHESIS_WEIGHT,
                      fontStyle->mFont.synthesis & NS_FONT_SYNTHESIS_STYLE,
                      fontStyle->mFont.languageOverride);

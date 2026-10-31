@@ -226,9 +226,16 @@ JitRuntime::initialize(JSContext *cx)
         }
 
         IonSpew(IonSpew_Codegen, "# Emitting bailout handler");
-        bailoutHandler_ = generateBailoutHandler(cx);
+        bailoutHandler_ = generateBailoutHandler(cx, SequentialExecution);
         if (!bailoutHandler_)
             return false;
+
+#ifdef JS_THREADSAFE
+        IonSpew(IonSpew_Codegen, "# Emitting parallel bailout handler");
+        parallelBailoutHandler_ = generateBailoutHandler(cx, ParallelExecution);
+        if (!parallelBailoutHandler_)
+            return false;
+#endif
 
         IonSpew(IonSpew_Codegen, "# Emitting invalidator");
         invalidator_ = generateInvalidator(cx);
@@ -524,17 +531,14 @@ JitCompartment::notifyOfActiveParallelEntryScript(JSContext *cx, HandleScript sc
     }
 
     if (!activeParallelEntryScripts_) {
-        ScriptSet *scripts = js_new<ScriptSet>();
-        if (!scripts || !scripts->init()) {
-            js_delete(scripts);
-            js_ReportOutOfMemory(cx);
+        activeParallelEntryScripts_ = cx->new_<ScriptSet>(cx);
+        if (!activeParallelEntryScripts_ || !activeParallelEntryScripts_->init())
             return false;
-        }
-        activeParallelEntryScripts_ = scripts;
     }
 
     script->parallelIonScript()->setIsParallelEntryScript();
-    return activeParallelEntryScripts_->put(script);
+    ScriptSet::AddPtr p = activeParallelEntryScripts_->lookupForAdd(script);
+    return p || activeParallelEntryScripts_->add(p, script);
 }
 
 void
