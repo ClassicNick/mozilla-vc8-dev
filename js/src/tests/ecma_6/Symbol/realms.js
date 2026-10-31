@@ -20,10 +20,6 @@ if (typeof newGlobal === "function") {
     var smith = Symbol("smith");
     g.smith = smith;  // put smith into the realm
     assertEq(g.smith, smith);  // pull it back out
-
-    // Symbol.for functions share a symbol registry across all realms.
-    assertEq(g.Symbol.for("ponies"), Symbol.for("ponies"));
-    assertEq(g.eval("Symbol.for('rainbows')"), Symbol.for("rainbows"));
 }
 
 if (typeof reportCompare === "function")

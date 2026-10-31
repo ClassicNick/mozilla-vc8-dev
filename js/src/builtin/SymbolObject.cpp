@@ -44,7 +44,6 @@ const JSFunctionSpec SymbolObject::methods[] = {
 };
 
 const JSFunctionSpec SymbolObject::staticMethods[] = {
-    JS_FN("for", for_, 1, 0),
     JS_FS_END
 };
 
@@ -96,26 +95,7 @@ SymbolObject::construct(JSContext *cx, unsigned argc, Value *vp)
     }
 
     // step 4
-    RootedSymbol symbol(cx, JS::Symbol::new_(cx, false, desc));
-    if (!symbol)
-        return false;
-    args.rval().setSymbol(symbol);
-    return true;
-}
-
-// ES6 rev 24 (2014 Apr 27) 19.4.2.2
-bool
-SymbolObject::for_(JSContext *cx, unsigned argc, Value *vp)
-{
-    CallArgs args = CallArgsFromVp(argc, vp);
-
-    // steps 1-2
-    RootedString stringKey(cx, ToString(cx, args.get(0)));
-    if (!stringKey)
-        return false;
-
-    // steps 3-7
-    JS::Symbol *symbol = JS::Symbol::for_(cx, stringKey);
+    RootedSymbol symbol(cx, JS::Symbol::new_(cx, desc));
     if (!symbol)
         return false;
     args.rval().setSymbol(symbol);

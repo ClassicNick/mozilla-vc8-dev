@@ -5638,17 +5638,7 @@ JS::NewSymbol(JSContext *cx, HandleString description)
     if (description)
         assertSameCompartment(cx, description);
 
-    return Symbol::new_(cx, false, description);
-}
-
-JS_PUBLIC_API(JS::Symbol *)
-JS::GetSymbolFor(JSContext *cx, HandleString key)
-{
-    AssertHeapIsIdle(cx);
-    CHECK_REQUEST(cx);
-    assertSameCompartment(cx, key);
-
-    return Symbol::for_(cx, key);
+    return Symbol::new_(cx, description);
 }
 
 JS_PUBLIC_API(JSString *)

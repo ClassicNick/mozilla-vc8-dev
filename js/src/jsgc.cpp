@@ -4080,14 +4080,8 @@ GCRuntime::beginSweepingZoneGroup()
     }
 
     if (sweepingAtoms) {
-        {
-            gcstats::AutoPhase ap(stats, gcstats::PHASE_SWEEP_ATOMS);
-            rt->sweepAtoms();
-        }
-        {
-            gcstats::AutoPhase ap(stats, gcstats::PHASE_SWEEP_SYMBOL_REGISTRY);
-            rt->symbolRegistry().sweep();
-        }
+        gcstats::AutoPhase ap(stats, gcstats::PHASE_SWEEP_ATOMS);
+        rt->sweepAtoms();
     }
 
     /* Prune out dead views from ArrayBuffer's view lists. */
@@ -5009,15 +5003,12 @@ GCRuntime::collect(bool incremental, int64_t budget, JSGCInvocationKind gckind,
                    JS::gcreason::Reason reason)
 {
     /* GC shouldn't be running in parallel execution mode */
-    MOZ_ASSERT(!InParallelSection());
+    JS_ASSERT(!InParallelSection());
 
     JS_AbortIfWrongThread(rt);
 
     /* If we attempt to invoke the GC while we are running in the GC, assert. */
-    MOZ_ASSERT(!rt->isHeapBusy());
-
-    /* The engine never locks across anything that could GC. */
-    MOZ_ASSERT(!rt->currentThreadHasExclusiveAccess());
+    JS_ASSERT(!rt->isHeapBusy());
 
     if (rt->mainThread.suppressGC)
         return;
