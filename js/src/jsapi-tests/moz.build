@@ -68,7 +68,6 @@ UNIFIED_SOURCES += [
     'testSourcePolicy.cpp',
     'testStringBuffer.cpp',
     'testStructuredClone.cpp',
-    'testSymbol.cpp',
     'testToIntWidth.cpp',
     'testTrap.cpp',
     'testTypedArrays.cpp',

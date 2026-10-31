@@ -197,7 +197,6 @@ UNIFIED_SOURCES += [
     'vm/String.cpp',
     'vm/StringBuffer.cpp',
     'vm/StructuredClone.cpp',
-    'vm/Symbol.cpp',
     'vm/ThreadPool.cpp',
     'vm/TypedArrayObject.cpp',
     'vm/UbiNode.cpp',

@@ -18,7 +18,6 @@
 #include "vm/HelperThreads.h"
 #include "vm/Interpreter.h"
 #include "vm/ProxyObject.h"
-#include "vm/Symbol.h"
 
 #include "gc/ForkJoinNursery-inl.h"
 

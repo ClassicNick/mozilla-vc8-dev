@@ -813,10 +813,8 @@ js::TypeOfValue(const Value &v)
         return JSTYPE_VOID;
     if (v.isObject())
         return TypeOfObject(&v.toObject());
-    if (v.isBoolean())
-        return JSTYPE_BOOLEAN;
-    JS_ASSERT(v.isSymbol());
-    return JSTYPE_SYMBOL;
+    JS_ASSERT(v.isBoolean());
+    return JSTYPE_BOOLEAN;
 }
 
 /*
