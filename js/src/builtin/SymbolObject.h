@@ -42,8 +42,6 @@ class SymbolObject : public JSObject
 
     static bool construct(JSContext *cx, unsigned argc, Value *vp);
 
-    static bool convert(JSContext *cx, HandleObject obj, JSType type, MutableHandleValue vp);
-
     // Static methods.
     static bool for_(JSContext *cx, unsigned argc, Value *vp);
 
