@@ -508,7 +508,7 @@ ResponseData(der::Input& input, Context& context,
   if (der::OptionalVersion(input, version) != der::Success) {
     return der::Failure;
   }
-  if (version != der::Version::v1) {
+  if (version != der::v1) {
     // TODO: more specific error code for bad version?
     return der::Fail(SEC_ERROR_BAD_DER);
   }

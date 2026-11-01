@@ -664,7 +664,7 @@ AudioDestinationNode::InputMuted(bool aMuted)
   int32_t state = 0;
   mAudioChannelAgent->StartPlaying(&state);
   mAudioChannelAgentPlaying =
-    state == AudioChannelState::AUDIO_CHANNEL_STATE_NORMAL;
+    state == AUDIO_CHANNEL_STATE_NORMAL;
   SetCanPlay(mAudioChannelAgentPlaying);
 }
 

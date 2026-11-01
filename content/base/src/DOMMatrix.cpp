@@ -18,6 +18,10 @@
 #include "nsAutoPtr.h"
 #include <math.h>
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 namespace mozilla {
 namespace dom {
 
@@ -286,7 +290,7 @@ DOMMatrixReadOnly::ToFloat64Array(JSContext* aCx, JS::MutableHandle<JSObject*> a
   aResult.set(&value.toObject());
 }
 
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(DOMMatrix, mParent)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_1(DOMMatrix, mParent)
 
 NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(DOMMatrix, AddRef)
 NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(DOMMatrix, Release)

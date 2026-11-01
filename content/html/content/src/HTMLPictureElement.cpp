@@ -13,7 +13,7 @@ static const char *kPrefPictureEnabled = "dom.image.picture.enabled";
 
 // Expand NS_IMPL_NS_NEW_HTML_ELEMENT(Picture) to add pref check.
 nsGenericHTMLElement*
-NS_NewHTMLPictureElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
+NS_NewHTMLPictureElement(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo,
                          mozilla::dom::FromParser aFromParser)
 {
   if (!mozilla::dom::HTMLPictureElement::IsPictureEnabled()) {
@@ -26,7 +26,7 @@ NS_NewHTMLPictureElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
 namespace mozilla {
 namespace dom {
 
-HTMLPictureElement::HTMLPictureElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
+HTMLPictureElement::HTMLPictureElement(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
   : nsGenericHTMLElement(aNodeInfo)
 {
 }
@@ -35,8 +35,8 @@ HTMLPictureElement::~HTMLPictureElement()
 {
 }
 
-NS_IMPL_ISUPPORTS_INHERITED(HTMLPictureElement, nsGenericHTMLElement,
-                            nsIDOMHTMLPictureElement)
+NS_IMPL_ISUPPORTS_INHERITED1(HTMLPictureElement, nsGenericHTMLElement,
+                             nsIDOMHTMLPictureElement)
 
 NS_IMPL_ELEMENT_CLONE(HTMLPictureElement)
 

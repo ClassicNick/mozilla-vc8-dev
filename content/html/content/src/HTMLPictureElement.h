@@ -20,7 +20,7 @@ class HTMLPictureElement MOZ_FINAL : public nsGenericHTMLElement,
                                     public nsIDOMHTMLPictureElement
 {
 public:
-  HTMLPictureElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+  HTMLPictureElement(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
   virtual ~HTMLPictureElement();
 
   // nsISupports

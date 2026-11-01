@@ -638,7 +638,7 @@ OptionalVersion(Input& input, /*out*/ Version& version)
 {
   static const uint8_t TAG = CONTEXT_SPECIFIC | CONSTRUCTED | 0;
   if (!input.Peek(TAG)) {
-    version = Version::v1;
+    version = v1;
     return Success;
   }
   Input value;
@@ -653,8 +653,8 @@ OptionalVersion(Input& input, /*out*/ Version& version)
     return Failure;
   }
   switch (integerValue) {
-    case static_cast<uint8_t>(Version::v3): version = Version::v3; break;
-    case static_cast<uint8_t>(Version::v2): version = Version::v2; break;
+    case static_cast<uint8_t>(v3): version = v3; break;
+    case static_cast<uint8_t>(v2): version = v2; break;
     default:
       return Fail(SEC_ERROR_BAD_DER);
   }

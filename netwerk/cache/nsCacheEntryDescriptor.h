@@ -95,13 +95,13 @@ private:
          {
              NS_ADDREF(mDescriptor);
          }
-
-     private:
-         virtual ~nsInputStreamWrapper()
+		 
+		 virtual ~nsInputStreamWrapper()
          {
              NS_IF_RELEASE(mDescriptor);
          }
 
+     private:
          nsresult LazyInit();
          nsresult EnsureInit();
 		 void CloseInternal();
@@ -169,9 +169,8 @@ private:
          {
              NS_ADDREF(mDescriptor); // owning ref
          }
-
-     private:
-         virtual ~nsOutputStreamWrapper()
+		 
+		 virtual ~nsOutputStreamWrapper()
          {
              Close();
 
@@ -179,6 +178,7 @@ private:
              NS_ASSERTION(!mDescriptor, "Bad state");
          }
 
+     private:
          nsresult LazyInit();
          nsresult EnsureInit();
          nsresult OnWrite(uint32_t count);

@@ -12,17 +12,17 @@ namespace mozilla {
 
 #ifdef PR_LOGGING
 extern PRLogModuleInfo* gMediaDecoderLog;
-#define SINK_LOG(msg, ...) \
-  PR_LOG(gMediaDecoderLog, PR_LOG_DEBUG, ("AudioSink=%p " msg, this, ##__VA_ARGS__))
-#define SINK_LOG_V(msg, ...)                      \
+#define SINK_LOG(msg, a) \
+  PR_LOG(gMediaDecoderLog, PR_LOG_DEBUG, ("AudioSink=%p " msg, this, a))
+#define SINK_LOG_V(msg, a)                      \
   PR_BEGIN_MACRO                                  \
     if (!PR_GetEnv("MOZ_QUIET")) {                \
-      SINK_LOG(msg, ##__VA_ARGS__); \
+      SINK_LOG(msg, a); \
     }                                             \
   PR_END_MACRO
 #else
-#define SINK_LOG(msg, ...)
-#define SINK_LOG_V(msg, ...)
+#define SINK_LOG(msg, a)
+#define SINK_LOG_V(msg, a)
 #endif
 
 AudioSink::AudioSink(MediaDecoderStateMachine* aStateMachine,

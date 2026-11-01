@@ -1451,15 +1451,11 @@ nsAttrValue::ParseSpecialIntValue(const nsAString& aString)
     return false;
   }
 
-<<<<<<< HEAD
-  int32_t val = NS_MAX(originalVal, 0);
-=======
   bool isPercent = result & nsContentUtils::eParseHTMLInteger_IsPercent;
-  int32_t val = std::max(originalVal, 0);
+  int32_t val = NS_MAX(originalVal, 0);
   bool nonStrict = val != originalVal ||
                    (result & nsContentUtils::eParseHTMLInteger_NonStandard) ||
                    (result & nsContentUtils::eParseHTMLInteger_DidNotConsumeAllInput);
->>>>>>> ebb9a03
 
   // % (percent)
   if (isPercent || tmp.RFindChar('%') >= 0) {
@@ -1485,21 +1481,14 @@ nsAttrValue::ParseIntWithBounds(const nsAString& aString,
     return false;
   }
 
-<<<<<<< HEAD
   int32_t val = NS_MAX(originalVal, aMin);
   val = NS_MIN(val, aMax);
-  strict = strict && (originalVal == val);
-  SetIntValueAndType(val, eInteger, strict ? nullptr : &aString);
-=======
-  int32_t val = std::max(originalVal, aMin);
-  val = std::min(val, aMax);
   bool nonStrict = (val != originalVal) ||
                    (result & nsContentUtils::eParseHTMLInteger_IsPercent) ||
                    (result & nsContentUtils::eParseHTMLInteger_NonStandard) ||
                    (result & nsContentUtils::eParseHTMLInteger_DidNotConsumeAllInput);
 
   SetIntValueAndType(val, eInteger, nonStrict ? &aString : nullptr);
->>>>>>> ebb9a03
 
   return true;
 }

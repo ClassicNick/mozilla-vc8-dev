@@ -53,13 +53,13 @@ BackCert::Init(const SECItem& certDER)
   }
 
   if (nssCert->version.len == 1 &&
-      nssCert->version.data[0] == static_cast<uint8_t>(der::Version::v3)) {
-    version = der::Version::v3;
+      nssCert->version.data[0] == static_cast<uint8_t>(der::v3)) {
+    version = der::v3;
   } else if (nssCert->version.len == 1 &&
-             nssCert->version.data[0] == static_cast<uint8_t>(der::Version::v2)) {
-    version = der::Version::v2;
+             nssCert->version.data[0] == static_cast<uint8_t>(der::v2)) {
+    version = der::v2;
   } else if (nssCert->version.len == 0) {
-    version = der::Version::v1;
+    version = der::v1;
   } else {
     // Explicit encoding of v1 is not allowed. We do not support any other
     // version except v3.
@@ -76,7 +76,7 @@ BackCert::Init(const SECItem& certDER)
   // whether to treat a certificate as a CA certificate, and we don't want to
   // allow v1 or v2 intermediate CA certificates; this check is part of that
   // enforcement as well.
-  if (version != mozilla::pkix::der::Version::v3) {
+  if (version != mozilla::pkix::der::v3) {
     return Fail(RecoverableError, SEC_ERROR_EXTENSION_VALUE_INVALID);
   }
 
