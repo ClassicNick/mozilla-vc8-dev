@@ -1113,7 +1113,7 @@ bool
 js::ReadPropertyDescriptors(JSContext *cx, HandleObject props, bool checkAccessors,
                             AutoIdVector *ids, AutoPropDescVector *descs)
 {
-    if (!GetPropertyNames(cx, props, JSITER_OWNONLY | JSITER_SYMBOLS, ids))
+    if (!GetPropertyNames(cx, props, JSITER_OWNONLY, ids))
         return false;
 
     RootedId id(cx);
@@ -1212,7 +1212,7 @@ JSObject::sealOrFreeze(JSContext *cx, HandleObject obj, ImmutabilityType it)
         return false;
 
     AutoIdVector props(cx);
-    if (!GetPropertyNames(cx, obj, JSITER_HIDDEN | JSITER_OWNONLY | JSITER_SYMBOLS, &props))
+    if (!GetPropertyNames(cx, obj, JSITER_HIDDEN | JSITER_OWNONLY, &props))
         return false;
 
     /* preventExtensions must sparsify dense objects, so we can assign to holes without checks. */
@@ -1318,7 +1318,7 @@ JSObject::isSealedOrFrozen(JSContext *cx, HandleObject obj, ImmutabilityType it,
     }
 
     AutoIdVector props(cx);
-    if (!GetPropertyNames(cx, obj, JSITER_HIDDEN | JSITER_OWNONLY | JSITER_SYMBOLS, &props))
+    if (!GetPropertyNames(cx, obj, JSITER_HIDDEN | JSITER_OWNONLY, &props))
         return false;
 
     RootedId id(cx);
@@ -1855,7 +1855,7 @@ JS_CopyPropertiesFrom(JSContext *cx, HandleObject target, HandleObject obj)
     JSAutoCompartment ac(cx, obj);
 
     AutoIdVector props(cx);
-    if (!GetPropertyNames(cx, obj, JSITER_OWNONLY | JSITER_HIDDEN | JSITER_SYMBOLS, &props))
+    if (!GetPropertyNames(cx, obj, JSITER_OWNONLY | JSITER_HIDDEN, &props))
         return false;
 
     for (size_t i = 0; i < props.length(); ++i) {
