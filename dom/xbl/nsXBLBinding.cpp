@@ -1128,7 +1128,9 @@ nsXBLBinding::LookupMember(JSContext* aCx, JS::Handle<jsid> aId,
   {
     JSAutoCompartment ac(aCx, xblScope);
     JS::Rooted<jsid> id(aCx, aId);
-    if (!LookupMemberInternal(aCx, name, id, aDesc, xblScope)) {
+    if (!JS_WrapId(aCx, &id) ||
+        !LookupMemberInternal(aCx, name, id, aDesc, xblScope))
+    {
       return false;
     }
   }

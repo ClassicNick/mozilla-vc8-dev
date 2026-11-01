@@ -264,6 +264,12 @@ JS_WrapPropertyDescriptor(JSContext *cx, JS::MutableHandle<js::PropertyDescripto
     return cx->compartment()->wrap(cx, desc);
 }
 
+JS_FRIEND_API(bool)
+JS_WrapAutoIdVector(JSContext *cx, js::AutoIdVector &props)
+{
+    return cx->compartment()->wrap(cx, props);
+}
+
 JS_FRIEND_API(void)
 JS_TraceShapeCycleCollectorChildren(JSTracer *trc, void *shape)
 {
