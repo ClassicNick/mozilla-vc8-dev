@@ -66,6 +66,10 @@ XPathEvaluator::XPathEvaluator(nsIDocument* aDocument)
 {
 }
 
+XPathEvaluator::~XPathEvaluator()
+{
+}
+
 NS_IMETHODIMP
 XPathEvaluator::CreateNSResolver(nsIDOMNode *aNodeResolver,
                                  nsIDOMXPathNSResolver **aResult)

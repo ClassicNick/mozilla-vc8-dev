@@ -146,12 +146,6 @@ public:
   {
   }
 
-  virtual ~nsAutoScrollTimer()
-  {
-   if (mTimer)
-       mTimer->Cancel();
-  }
-
   // aPoint is relative to aPresContext's root frame
   nsresult Start(nsPresContext *aPresContext, nsPoint &aPoint)
   {
@@ -221,6 +215,15 @@ public:
     }
     return NS_OK;
   }
+
+protected:
+  virtual ~nsAutoScrollTimer()
+  {
+   if (mTimer) {
+     mTimer->Cancel();
+   }
+  }
+
 private:
   nsFrameSelection *mFrameSelection;
   Selection* mSelection;

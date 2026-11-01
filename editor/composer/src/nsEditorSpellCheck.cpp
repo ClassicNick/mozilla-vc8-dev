@@ -144,6 +144,8 @@ public:
   nsString mDictionary;
 
 private:
+  ~DictionaryFetcher() {}
+
   nsRefPtr<nsEditorSpellCheck> mSpellCheck;
 };
 NS_IMPL_ISUPPORTS1(DictionaryFetcher, nsIContentPrefCallback2)

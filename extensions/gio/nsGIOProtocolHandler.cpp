@@ -136,6 +136,8 @@ static void mount_operation_ask_password (GMountOperation   *mount_op,
 
 class nsGIOInputStream MOZ_FINAL : public nsIInputStream
 {
+   ~nsGIOInputStream() { Close(); }
+
   public:
     NS_DECL_THREADSAFE_ISUPPORTS
     NS_DECL_NSIINPUTSTREAM
@@ -152,8 +154,6 @@ class nsGIOInputStream MOZ_FINAL : public nsIInputStream
       , mDirBufCursor(0)
       , mDirOpen(false)
       , mMonitorMountInProgress("GIOInputStream::MountFinished") { }
-
-   ~nsGIOInputStream() { Close(); }
 
     void SetChannel(nsIChannel *channel)
     {
@@ -891,6 +891,8 @@ class nsGIOProtocolHandler MOZ_FINAL : public nsIProtocolHandler
     nsresult Init();
 
   private:
+    ~nsGIOProtocolHandler() {}
+
     void InitSupportedProtocolsPref(nsIPrefBranch *prefs);
     bool IsSupportedProtocol(const nsCString &spec);
 
