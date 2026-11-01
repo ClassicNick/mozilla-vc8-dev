@@ -72,6 +72,7 @@
 #include "vm/NumericConversions.h"
 #include "vm/RegExpStatics.h"
 #include "vm/Runtime.h"
+#include "vm/SavedStacks.h"
 #include "vm/Shape.h"
 #include "vm/SharedArrayObject.h"
 #include "vm/StopIterationObject.h"
@@ -4283,7 +4284,7 @@ struct AutoLastFrameCheck
 # define fast_getc getc
 #endif
 
-typedef js::Vector<char, 8, TempAllocPolicy> FileContents;
+typedef Vector<char, 8, TempAllocPolicy> FileContents;
 
 static bool
 ReadCompleteFile(JSContext *cx, FILE *fp, FileContents &buffer)
@@ -6543,3 +6544,14 @@ JS::SetOutOfMemoryCallback(JSRuntime *rt, OutOfMemoryCallback cb, void *data)
     rt->oomCallbackData = data;
 }
 
+JS_PUBLIC_API(bool)
+JS::CaptureCurrentStack(JSContext *cx, JS::MutableHandleObject stackp)
+{
+    JSCompartment *compartment = cx->compartment();
+    JS_ASSERT(compartment);
+    Rooted<SavedFrame *> frame(cx);
+    if (!compartment->savedStacks().saveCurrentStack(cx, &frame))
+        return false;
+    stackp.set(frame.get());
+    return true;
+}
