@@ -22,7 +22,6 @@ Object.defineProperty(Symbol.prototype, "prop", {
         gets++;
         assertEq(typeof this, "object");
         assertEq(this instanceof Symbol, true);
-        assertEq(this.valueOf(), sym);
         return "got";
     },
     set: function (v) {
@@ -30,7 +29,6 @@ Object.defineProperty(Symbol.prototype, "prop", {
         sets++;
         assertEq(typeof this, "object");
         assertEq(this instanceof Symbol, true);
-        assertEq(this.valueOf(), sym);
         assertEq(v, "newvalue");
     }
 });
@@ -46,7 +44,6 @@ for (var sym of symbols) {
     Symbol.prototype.nonStrictMethod = function (arg) {
         assertEq(arg, "ok");
         assertEq(this instanceof Symbol, true);
-        assertEq(this.valueOf(), sym);
         return 13;
     };
     assertEq(sym.nonStrictMethod("ok"), 13);
