@@ -1075,9 +1075,9 @@ JS_WrapId(JSContext *cx, JS::MutableHandleId idp)
   jsid id = idp.get();
   if (JSID_IS_STRING(id))
       JS::ExposeGCThingToActiveJS(JSID_TO_STRING(id), JSTRACE_STRING);
-  else if (JSID_IS_SYMBOL(id))
-      JS::ExposeGCThingToActiveJS(JSID_TO_STRING(id), JSTRACE_STRING);
-  return true;
+  else if (JSID_IS_OBJECT(id))
+      JS::ExposeGCThingToActiveJS(JSID_TO_OBJECT(id), JSTRACE_OBJECT);
+  return cx->compartment()->wrapId(cx, idp.address());
 }
 
 /*

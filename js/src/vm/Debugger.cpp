@@ -5305,8 +5305,12 @@ DebuggerObject_getOwnPropertyNames(JSContext *cx, unsigned argc, Value *vp)
              vals[i].setString(str);
          } else if (JSID_IS_ATOM(id)) {
              vals[i].setString(JSID_TO_STRING(id));
+             if (!cx->compartment()->wrap(cx, vals[i]))
+                 return false;
          } else {
-             MOZ_ASSERT_UNREACHABLE("GetPropertyNames must return only string and int jsids");
+             vals[i].setObject(*JSID_TO_OBJECT(id));
+             if (!dbg->wrapDebuggeeValue(cx, vals[i]))
+                 return false;
          }
     }
 
