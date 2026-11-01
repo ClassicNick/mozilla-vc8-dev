@@ -36,7 +36,6 @@ class nsSyncLoader : public nsIStreamListener,
 {
 public:
     nsSyncLoader() : mLoading(false) {}
-    virtual ~nsSyncLoader();
 
     NS_DECL_ISUPPORTS
 
@@ -52,6 +51,8 @@ public:
     NS_DECL_NSIINTERFACEREQUESTOR
 
 private:
+    virtual ~nsSyncLoader();
+
     nsresult PushAsyncStream(nsIStreamListener* aListener);
     nsresult PushSyncStream(nsIStreamListener* aListener);
 
@@ -63,9 +64,10 @@ private:
 
 class nsForceXMLListener : public nsIStreamListener
 {
+    virtual ~nsForceXMLListener();
+
 public:
     nsForceXMLListener(nsIStreamListener* aListener);
-    virtual ~nsForceXMLListener();
 
     NS_DECL_ISUPPORTS
     NS_FORWARD_NSISTREAMLISTENER(mListener->)

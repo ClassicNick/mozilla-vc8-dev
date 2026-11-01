@@ -109,6 +109,7 @@ public:
       (void) rv;
     }
 
+private:
   virtual ~DataChannelShutdown()
     {
       nsCOMPtr<nsIObserverService> observerService =
@@ -117,6 +118,7 @@ public:
         observerService->RemoveObserver(this, "profile-change-net-teardown");
     }
 
+public:
   NS_IMETHODIMP Observe(nsISupports* aSubject, const char* aTopic,
                         const char16_t* aData) {
     if (strcmp(aTopic, "profile-change-net-teardown") == 0) {

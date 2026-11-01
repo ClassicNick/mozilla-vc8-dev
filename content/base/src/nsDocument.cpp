@@ -5559,7 +5559,8 @@ namespace {
 
 class ProcessStackRunner MOZ_FINAL : public nsIRunnable
 {
-  public:
+  ~ProcessStackRunner() {}
+public:
   ProcessStackRunner(bool aIsBaseQueue = false)
     : mIsBaseQueue(aIsBaseQueue)
   {
@@ -9329,6 +9330,7 @@ namespace {
  * the CSSLoader's style cache
  */
 class StubCSSLoaderObserver MOZ_FINAL : public nsICSSLoaderObserver {
+  ~StubCSSLoaderObserver() {}
 public:
   NS_IMETHOD
   StyleSheetLoaded(CSSStyleSheet*, bool, nsresult)

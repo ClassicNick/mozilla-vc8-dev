@@ -78,6 +78,8 @@ public:
   }
 
 private:
+  ~nsChildContentList() {}
+
   // The node whose children make up the list (weak reference)
   nsINode* mNode;
 };
@@ -117,8 +119,6 @@ public:
   {
   }
 
-  ~nsNodeWeakReference();
-
   // nsISupports
   NS_DECL_ISUPPORTS
 
@@ -132,6 +132,8 @@ public:
   }
 
 private:
+  ~nsNodeWeakReference();
+
   nsINode* mNode;
 };
 
@@ -155,6 +157,8 @@ public:
   NS_DECL_CYCLE_COLLECTION_CLASS(nsNodeSupportsWeakRefTearoff)
 
 private:
+  ~nsNodeSupportsWeakRefTearoff() {}
+
   nsCOMPtr<nsINode> mNode;
 };
 
@@ -172,7 +176,6 @@ class FragmentOrElement : public nsIContent
 {
 public:
   FragmentOrElement(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
-  virtual ~FragmentOrElement();
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
 
@@ -292,6 +295,8 @@ public:
                                   void* aData);
 
 protected:
+  virtual ~FragmentOrElement();
+
   /**
    * Copy attributes and state to another element
    * @param aDest the object to copy to

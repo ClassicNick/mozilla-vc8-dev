@@ -251,6 +251,8 @@ class HTMLInputElementState MOZ_FINAL : public nsISupports
     {};
 
   protected:
+    ~HTMLInputElementState() {}
+
     nsString mValue;
     nsTArray<nsCOMPtr<nsIDOMFile> > mFiles;
     bool mChecked;
@@ -329,6 +331,8 @@ namespace {
 class DirPickerRecursiveFileEnumerator MOZ_FINAL
   : public nsISimpleEnumerator
 {
+  ~DirPickerRecursiveFileEnumerator() {}
+
 public:
   NS_DECL_ISUPPORTS
 
@@ -705,6 +709,8 @@ NS_IMPL_ISUPPORTS1(HTMLInputElement::nsFilePickerShownCallback,
 class nsColorPickerShownCallback MOZ_FINAL
   : public nsIColorPickerShownCallback
 {
+  ~nsColorPickerShownCallback() {}
+
 public:
   nsColorPickerShownCallback(HTMLInputElement* aInput,
                              nsIColorPicker* aColorPicker)

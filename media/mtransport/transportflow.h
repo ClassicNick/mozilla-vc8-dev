@@ -138,5 +138,13 @@ class TransportFlow : public sigslot::has_slots<> {
   nsCOMPtr<nsIEventTarget> target_;
 };
 
+// Temporary whitelist for dangerous public destructors of reference-counted
+// classes. See Bug 1029478 for this occurrence.
+template<>
+struct HasDangerousPublicDestructor<TransportFlow>
+{
+  static const bool value = true;
+};
+
 }  // close namespace
 #endif
