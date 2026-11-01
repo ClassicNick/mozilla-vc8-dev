@@ -286,7 +286,7 @@ RValueAllocation::readPayload(CompactBufferReader &reader, PayloadType type,
         p->gpr = Register::FromCode(reader.readByte());
         break;
       case PAYLOAD_FPU:
-        p->fpu = FloatRegister::FromCode(reader.readByte());
+        p->fpu.data = reader.readByte();
         break;
       case PAYLOAD_PACKED_TAG:
         p->type = JSValueType(*mode & 0x07);

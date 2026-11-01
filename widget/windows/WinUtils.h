@@ -406,7 +406,6 @@ public:
 
 private:
   nsAutoString mIconPath;
-  nsAutoCString mMimeTypeOfInputData;
   nsAutoArrayPtr<uint8_t> mBuffer;
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
   HMODULE sDwmDLL;

@@ -1889,6 +1889,9 @@ pref("layout.css.DOMPoint.enabled", true);
 // Is support for DOMQuad enabled?
 pref("layout.css.DOMQuad.enabled", true);
 
+// Is support for DOMMatrix enabled?
+pref("layout.css.DOMMatrix.enabled", true);
+
 // Is support for GeometryUtils.getBoxQuads enabled?
 #ifdef RELEASE_BUILD
 pref("layout.css.getBoxQuads.enabled", false);
@@ -3926,6 +3929,9 @@ pref("dom.battery.enabled", true);
 
 // Image srcset
 pref("dom.image.srcset.enabled", false);
+
+// <picture> element and sizes
+pref("dom.image.picture.enabled", false);
 
 // WebSMS
 pref("dom.sms.enabled", false);
