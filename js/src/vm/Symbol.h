@@ -9,8 +9,6 @@
 
 #include "mozilla/Attributes.h"
 
-#include <stdio.h>
-
 #include "jsalloc.h"
 #include "jsapi.h"
 
@@ -53,10 +51,6 @@ class Symbol : public js::gc::BarrieredCell<Symbol>
     static inline js::ThingRootKind rootKind() { return js::THING_ROOT_SYMBOL; }
     inline void markChildren(JSTracer *trc);
     inline void finalize(js::FreeOp *) {}
-
-#ifdef DEBUG
-    void dump(FILE *fp = stderr);
-#endif
 };
 
 } /* namespace JS */

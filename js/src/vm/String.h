@@ -487,7 +487,7 @@ class JSString : public js::gc::BarrieredCell<JSString>
 
 #ifdef DEBUG
     void dump();
-    static void dumpChars(const jschar *s, size_t len, FILE *fp=stderr);
+    static void dumpChars(const jschar *s, size_t len);
     bool equals(const char *s);
 #endif
 
