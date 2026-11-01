@@ -1132,9 +1132,6 @@ public:
 bool
 js_SuppressDeletedProperty(JSContext *cx, HandleObject obj, jsid id)
 {
-    if (JSID_IS_SYMBOL(id))
-        return true;
-
     Rooted<JSFlatString*> str(cx, IdToString(cx, id));
     if (!str)
         return false;
