@@ -155,7 +155,7 @@ File(JSContext *cx, unsigned argc, Value *vp)
     }
 
     nsCOMPtr<nsISupports> native;
-    nsresult rv = nsDOMMultipartFile::NewFile(getter_AddRefs(native));
+    nsresult rv = DOMMultipartFileImpl::NewFile(getter_AddRefs(native));
     if (NS_FAILED(rv)) {
         XPCThrower::Throw(rv, cx);
         return false;
@@ -190,7 +190,7 @@ Blob(JSContext *cx, unsigned argc, Value *vp)
     CallArgs args = CallArgsFromVp(argc, vp);
 
     nsCOMPtr<nsISupports> native;
-    nsresult rv = nsDOMMultipartFile::NewBlob(getter_AddRefs(native));
+    nsresult rv = DOMMultipartFileImpl::NewBlob(getter_AddRefs(native));
     if (NS_FAILED(rv)) {
         XPCThrower::Throw(rv, cx);
         return false;
