@@ -5334,7 +5334,6 @@ DebuggerObject_defineProperty(JSContext *cx, unsigned argc, Value *vp)
     Rooted<PropDesc> desc(cx);
     if (!desc.initialize(cx, args[1], false))
         return false;
-    desc.clearDescriptorObject();
 
     if (!dbg->unwrapPropDescInto(cx, obj, desc, &desc))
         return false;
@@ -5347,8 +5346,6 @@ DebuggerObject_defineProperty(JSContext *cx, unsigned argc, Value *vp)
         if (!cx->compartment()->wrapId(cx, id.address()))
             return false;
         if (!cx->compartment()->wrap(cx, &desc))
-            return false;
-        if (!desc.makeObject(cx))
             return false;
 
         ErrorCopier ec(ac, dbg->toJSObject());
@@ -5392,8 +5389,6 @@ DebuggerObject_defineProperties(JSContext *cx, unsigned argc, Value *vp)
             if (!cx->compartment()->wrapId(cx, ids[i].address()))
                 return false;
             if (!cx->compartment()->wrap(cx, descs[i]))
-                return false;
-            if (descs[i].descriptorValue().isUndefined() && !descs[i].makeObject(cx))
                 return false;
         }
 

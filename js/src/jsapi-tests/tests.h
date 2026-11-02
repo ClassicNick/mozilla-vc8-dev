@@ -7,6 +7,8 @@
 #ifndef jsapi_tests_tests_h
 #define jsapi_tests_tests_h
 
+#include "mozilla/TypeTraits.h"
+
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -158,7 +160,12 @@ class JSAPITest
     template<typename T>
     bool checkEqual(const T &actual, const T &expected,
                     const char *actualExpr, const char *expectedExpr,
-                    const char *filename, int lineno) {
+                    const char *filename, int lineno)
+    {
+        static_assert(mozilla::IsSigned<T>::value == mozilla::IsSigned<U>::value,
+                      "using CHECK_EQUAL with different-signed inputs triggers compiler warnings");
+        static_assert(mozilla::IsUnsigned<T>::value == mozilla::IsUnsigned<U>::value,
+                      "using CHECK_EQUAL with different-signed inputs triggers compiler warnings");
         return (actual == expected) ||
             fail(JSAPITestString("CHECK_EQUAL failed: expected (") +
                  expectedExpr + ") = " + toSource(expected) +
