@@ -1616,6 +1616,12 @@ RasterImage::SetLoopCount(int32_t aLoopCount)
   }
 }
 
+NS_IMETHODIMP_(nsIntRect)
+RasterImage::GetImageSpaceInvalidationRect(const nsIntRect& aRect)
+{
+  return aRect;
+}
+
 nsresult
 RasterImage::AddSourceData(const char *aBuffer, uint32_t aCount)
 {
@@ -3178,8 +3184,15 @@ RasterImage::FinishedSomeDecoding(eShutdownIntent aIntent /* = eShutdownIntent_D
   return RequestDecodeIfNeeded(rv, aIntent, done, wasSize);
 }
 
+already_AddRefed<imgIContainer>
+RasterImage::Unwrap()
+{
+  nsCOMPtr<imgIContainer> self(this);
+  return self.forget();
+}
+
 NS_IMPL_ISUPPORTS1(RasterImage::DecodePool,
-                              nsIObserver)
+                   nsIObserver)
 
 /* static */ RasterImage::DecodePool*
 RasterImage::DecodePool::Singleton()
