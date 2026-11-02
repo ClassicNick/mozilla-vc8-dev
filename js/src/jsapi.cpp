@@ -1206,9 +1206,6 @@ JS_InitStandardClasses(JSContext *cx, HandleObject obj)
 
 #define EAGER_ATOM(name)            NAME_OFFSET(name)
 
-static js::Class DummyClass;
-static js::Class SentinelClass;
-
 typedef struct JSStdName {
     size_t      atomOffset;     /* offset of atom pointer in JSAtomState */
     JSProtoKey  key;

@@ -44,11 +44,14 @@ VideoChunk::~VideoChunk()
 {}
 
 void
-VideoSegment::AppendFrame(already_AddRefed<Image> aImage, TrackTicks aDuration,
-                          const IntSize& aIntrinsicSize)
+VideoSegment::AppendFrame(already_AddRefed<Image> aImage,
+                          TrackTicks aDuration,
+                          const IntSize& aIntrinsicSize,
+                          bool aForceBlack)
 {
   VideoChunk* chunk = AppendChunk(aDuration);
   VideoFrame frame(aImage, ThebesIntSize(aIntrinsicSize));
+  frame.SetForceBlack(aForceBlack);
   chunk->mFrame.TakeFrom(&frame);
 }
 
