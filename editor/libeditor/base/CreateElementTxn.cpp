@@ -31,10 +31,21 @@ CreateElementTxn::CreateElementTxn()
 {
 }
 
+<<<<<<< HEAD
 NS_IMPL_CYCLE_COLLECTION_INHERITED_3(CreateElementTxn, EditTxn,
                                      mParent,
                                      mNewNode,
                                      mRefNode)
+=======
+CreateElementTxn::~CreateElementTxn()
+{
+}
+
+NS_IMPL_CYCLE_COLLECTION_INHERITED(CreateElementTxn, EditTxn,
+                                   mParent,
+                                   mNewNode,
+                                   mRefNode)
+>>>>>>> b23ed87
 
 NS_IMPL_ADDREF_INHERITED(CreateElementTxn, EditTxn)
 NS_IMPL_RELEASE_INHERITED(CreateElementTxn, EditTxn)

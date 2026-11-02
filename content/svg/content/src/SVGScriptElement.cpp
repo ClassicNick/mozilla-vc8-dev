@@ -46,6 +46,10 @@ SVGScriptElement::SVGScriptElement(already_AddRefed<mozilla::dom::NodeInfo> aNod
   AddMutationObserver(this);
 }
 
+SVGScriptElement::~SVGScriptElement()
+{
+}
+
 //----------------------------------------------------------------------
 // nsIDOMNode methods
 

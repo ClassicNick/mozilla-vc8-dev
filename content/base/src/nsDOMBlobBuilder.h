@@ -107,6 +107,8 @@ public:
   virtual nsresult GetMozFullPathInternal(nsAString& aFullPath) MOZ_OVERRIDE;
 
 protected:
+  virtual ~DOMMultipartFileImpl() {}
+
   nsresult ParseBlobArrayArgument(JSContext* aCx, JS::Value& aValue,
                                   bool aNativeEOL, UnwrapFuncPtr aUnwrapFunc);
 

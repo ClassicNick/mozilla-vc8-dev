@@ -4220,22 +4220,34 @@ nsDocument::LoadAdditionalStyleSheet(additionalSheetType aType, nsIURI* aSheetUR
     true, getter_AddRefs(sheet));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  mAdditionalSheets[aType].AppendObject(sheet);
   sheet->SetOwningDocument(this);
   MOZ_ASSERT(sheet->IsApplicable());
+
+  return AddAdditionalStyleSheet(aType, sheet);
+}
+
+nsresult
+nsDocument::AddAdditionalStyleSheet(additionalSheetType aType, nsIStyleSheet* aSheet)
+{
+  if (mAdditionalSheets[aType].Contains(aSheet))
+    return NS_ERROR_INVALID_ARG;
+
+  if (!aSheet->IsApplicable())
+    return NS_ERROR_INVALID_ARG;
+
+  mAdditionalSheets[aType].AppendObject(aSheet);
 
   BeginUpdate(UPDATE_STYLE);
   nsCOMPtr<nsIPresShell> shell = GetShell();
   if (shell) {
     nsStyleSet::sheetType type = ConvertAdditionalSheetType(aType);
-    shell->StyleSet()->AppendStyleSheet(type, sheet);
+    shell->StyleSet()->AppendStyleSheet(type, aSheet);
   }
 
   // Passing false, so documet.styleSheets.length will not be affected by
   // these additional sheets.
-  NotifyStyleSheetAdded(sheet, false);
+  NotifyStyleSheetAdded(aSheet, false);
   EndUpdate(UPDATE_STYLE);
-
   return NS_OK;
 }
 
@@ -11324,8 +11336,6 @@ public:
     mDocument(do_GetWeakReference(aElement->OwnerDoc())),
     mUserInputOrChromeCaller(aUserInputOrChromeCaller) {}
 
-  virtual ~nsPointerLockPermissionRequest() {}
-
   NS_DECL_ISUPPORTS
   NS_DECL_NSICONTENTPERMISSIONREQUEST
 
@@ -11385,6 +11395,9 @@ public:
   nsWeakPtr mElement;
   nsWeakPtr mDocument;
   bool mUserInputOrChromeCaller;
+
+protected:
+  virtual ~nsPointerLockPermissionRequest() {}
 };
 
 NS_IMPL_ISUPPORTS_INHERITED1(nsPointerLockPermissionRequest,
@@ -11872,6 +11885,10 @@ SizeOfStyleSheetsElementIncludingThis(nsIStyleSheet* aStyleSheet,
                                       MallocSizeOf aMallocSizeOf,
                                       void* aData)
 {
+  if (!aStyleSheet->GetOwningDocument()) {
+    // Avoid over-reporting shared sheets.
+    return 0;
+  }
   return aStyleSheet->SizeOfIncludingThis(aMallocSizeOf);
 }
 

@@ -348,7 +348,7 @@ HTMLTrackElement::SetReadyState(uint16_t aReadyState)
   if (mTrack) {
     switch (aReadyState) {
       case Loaded:
-        DispatchTrackRunnable(NS_LITERAL_STRING("loaded"));
+        DispatchTrackRunnable(NS_LITERAL_STRING("load"));
         break;
       case FailedToLoad:
         DispatchTrackRunnable(NS_LITERAL_STRING("error"));

@@ -496,6 +496,9 @@ PropertyStringList::PropertyStringList(HTMLPropertiesCollection* aCollection)
   , mCollection(aCollection)
 { }
 
+PropertyStringList::~PropertyStringList()
+{ }
+
 NS_IMPL_CYCLE_COLLECTION_INHERITED_1(PropertyStringList, DOMStringList,
                                      mCollection)
 
