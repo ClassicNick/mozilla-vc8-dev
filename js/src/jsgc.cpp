@@ -201,6 +201,7 @@
 
 #include "gc/FindSCCs.h"
 #include "gc/GCInternals.h"
+#include "gc/GCTrace.h"
 #include "gc/Marking.h"
 #include "gc/Memory.h"
 #ifdef JS_ION
@@ -485,6 +486,7 @@ Arena::finalize(FreeOp *fop, AllocKind thingKind, size_t thingSize)
         } else {
             t->finalize(fop);
             JS_POISON(t, JS_SWEPT_TENURED_PATTERN, thingSize);
+            TraceTenuredFinalize(t);
         }
     }
 
@@ -1273,6 +1275,9 @@ GCRuntime::init(uint32_t maxbytes)
         return false;
 #endif
 
+    if (!InitTrace(*this))
+        return false;
+
     if (!marker.init(mode))
         return false;
 
@@ -1336,6 +1341,8 @@ GCRuntime::finish()
         lock = nullptr;
     }
 #endif
+
+    FinishTrace();
 }
 
 void
@@ -2992,7 +2999,8 @@ PurgeRuntime(JSRuntime *rt)
 }
 
 bool
-GCRuntime::shouldPreserveJITCode(JSCompartment *comp, int64_t currentTime)
+GCRuntime::shouldPreserveJITCode(JSCompartment *comp, int64_t currentTime,
+                                 JS::gcreason::Reason reason)
 {
     if (cleanUpEverything)
         return false;
@@ -3000,6 +3008,8 @@ GCRuntime::shouldPreserveJITCode(JSCompartment *comp, int64_t currentTime)
     if (alwaysPreserveCode)
         return true;
     if (comp->lastAnimationTime + PRMJ_USEC_PER_SEC >= currentTime)
+        return true;
+    if (reason == JS::gcreason::DEBUG_GC)
         return true;
 
 #ifdef JS_ION
@@ -3111,7 +3121,7 @@ GCRuntime::checkForCompartmentMismatches()
 #endif
 
 bool
-GCRuntime::beginMarkPhase()
+GCRuntime::beginMarkPhase(JS::gcreason::Reason reason)
 {
     int64_t currentTime = PRMJ_Now();
 
@@ -3148,7 +3158,7 @@ GCRuntime::beginMarkPhase()
     for (CompartmentsIter c(rt, WithAtoms); !c.done(); c.next()) {
         JS_ASSERT(c->gcLiveArrayBuffers.empty());
         c->marked = false;
-        if (shouldPreserveJITCode(c, currentTime))
+        if (shouldPreserveJITCode(c, currentTime, reason))
             c->zone()->setPreservingCode(true);
     }
 
@@ -4242,7 +4252,7 @@ GCRuntime::beginSweepPhase(bool lastGC)
     gcstats::AutoPhase ap(stats, gcstats::PHASE_SWEEP);
 
 #ifdef JS_THREADSAFE
-    sweepOnBackgroundThread = !lastGC;
+    sweepOnBackgroundThread = !lastGC && !TraceEnabled();
 #endif
 
 #ifdef DEBUG
@@ -4758,7 +4768,7 @@ GCRuntime::incrementalCollectSlice(int64_t budget,
     switch (incrementalState) {
 
       case MARK_ROOTS:
-        if (!beginMarkPhase()) {
+        if (!beginMarkPhase(reason)) {
             incrementalState = NO_INCREMENTAL;
             return;
         }
@@ -4951,6 +4961,8 @@ GCRuntime::gcCycle(bool incremental, int64_t budget, JSGCInvocationKind gckind,
     if (prevState != NO_INCREMENTAL && incrementalState == NO_INCREMENTAL)
         return true;
 
+    TraceMajorGCStart();
+
     incrementalCollectSlice(budget, reason, gckind);
 
 #ifndef JS_MORE_DETERMINISTIC
@@ -4971,6 +4983,8 @@ GCRuntime::gcCycle(bool incremental, int64_t budget, JSGCInvocationKind gckind,
     }
 
     resetMallocBytes();
+
+    TraceMajorGCEnd();
 
     return false;
 }

@@ -297,6 +297,8 @@ namespace {
 
 class nsNameThreadRunnable MOZ_FINAL : public nsIRunnable
 {
+  ~nsNameThreadRunnable() {}
+
 public:
   nsNameThreadRunnable(const nsACString& aName) : mName(aName) {}
 
