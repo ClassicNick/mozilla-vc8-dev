@@ -8,6 +8,7 @@
 
 #include "mozilla/StandardInteger.h"                     // for uint32_t, uint64_t, uint8_t
 #include <stdio.h>                      // for FILE
+#include <limits>                      // for numeric_limits
 #include <sys/types.h>                  // for int32_t, int64_t
 #include "FrameMetrics.h"               // for FrameMetrics
 #include "Units.h"                      // for LayerMargin, LayerPoint
@@ -568,7 +569,16 @@ public:
   void Dump() {
     std::stringstream ss;
     Dump(ss);
-    printf_stderr("%s", ss.str().c_str());
+    char line[1024];
+    while (!ss.eof()) {
+      ss.getline(line, sizeof(line));
+      printf_stderr("%s", line);
+      if (ss.fail()) {
+        // line was too long, skip to next newline
+        ss.clear();
+        ss.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+      }
+    }
   }
 
   /**

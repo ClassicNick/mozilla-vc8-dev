@@ -124,7 +124,7 @@ UpdatePromise::RejectAllPromises(const ErrorEventInit& aErrorDesc)
   MOZ_ASSERT(mState == Pending);
   mState = Rejected;
 
-  nsTArray<nsTWeakRef<Promise>> array;
+  nsTArray<nsTWeakRef<Promise> > array;
   array.SwapElements(mPromises);
   for (uint32_t i = 0; i < array.Length(); ++i) {
     nsTWeakRef<Promise>& pendingPromise = array.ElementAt(i);
