@@ -93,6 +93,8 @@ EXPORTS += [
     'MediaSegment.h',
     'MediaStreamGraph.h',
     'MediaTaskQueue.h',
+    'MediaTrack.h',
+    'MediaTrackList.h',
     'MP3FrameParser.h',
     'nsIDocumentActivity.h',
     'RtspMediaResource.h',
@@ -109,6 +111,8 @@ EXPORTS += [
 
 EXPORTS.mozilla.dom += [
     'AudioStreamTrack.h',
+    'AudioTrack.h',
+    'AudioTrackList.h',
     'MediaStreamTrack.h',
     'TextTrack.h',
     'TextTrackCue.h',
@@ -117,6 +121,8 @@ EXPORTS.mozilla.dom += [
     'TextTrackRegion.h',
     'VideoPlaybackQuality.h',
     'VideoStreamTrack.h',
+    'VideoTrack.h',
+    'VideoTrackList.h',
 ]
 
 UNIFIED_SOURCES += [
@@ -129,6 +135,8 @@ UNIFIED_SOURCES += [
     'AudioSink.cpp',
     'AudioStream.cpp',
     'AudioStreamTrack.cpp',
+    'AudioTrack.cpp',
+    'AudioTrackList.cpp',
     'BufferDecoder.cpp',
     'DOMMediaStream.cpp',
     'EncodedBufferCache.cpp',
@@ -144,6 +152,8 @@ UNIFIED_SOURCES += [
     'MediaStreamGraph.cpp',
     'MediaStreamTrack.cpp',
     'MediaTaskQueue.cpp',
+    'MediaTrack.cpp',
+    'MediaTrackList.cpp',
     'MP3FrameParser.cpp',
     'RtspMediaResource.cpp',
     'SharedThreadPool.cpp',
@@ -157,6 +167,8 @@ UNIFIED_SOURCES += [
     'VideoPlaybackQuality.cpp',
     'VideoSegment.cpp',
     'VideoStreamTrack.cpp',
+    'VideoTrack.cpp',
+    'VideoTrackList.cpp',
     'VideoUtils.cpp',
     'WebVTTListener.cpp',
 ]
