@@ -59,7 +59,7 @@ UpdatePromise::ResolveAllPromises(const nsACString& aScriptSpec, const nsACStrin
   RuntimeService* rs = RuntimeService::GetOrCreateService();
   MOZ_ASSERT(rs);
 
-  nsTArray<nsTWeakRef<Promise>> array;
+  nsTArray<nsTWeakRef<Promise> > array;
   array.SwapElements(mPromises);
   for (uint32_t i = 0; i < array.Length(); ++i) {
     nsTWeakRef<Promise>& pendingPromise = array.ElementAt(i);
@@ -96,7 +96,7 @@ UpdatePromise::RejectAllPromises(nsresult aRv)
   MOZ_ASSERT(mState == Pending);
   mState = Rejected;
 
-  nsTArray<nsTWeakRef<Promise>> array;
+  nsTArray<nsTWeakRef<Promise> > array;
   array.SwapElements(mPromises);
   for (uint32_t i = 0; i < array.Length(); ++i) {
     nsTWeakRef<Promise>& pendingPromise = array.ElementAt(i);

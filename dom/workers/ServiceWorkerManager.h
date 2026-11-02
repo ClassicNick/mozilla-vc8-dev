@@ -59,7 +59,7 @@ private:
 
   // XXXnsm: Right now we don't need to support AddPromise() after
   // already being resolved (i.e. true Promise-like behaviour).
-  nsTArray<nsTWeakRef<Promise>> mPromises;
+  nsTArray<nsTWeakRef<Promise> > mPromises;
 };
 
 /*
