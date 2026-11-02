@@ -5281,7 +5281,7 @@ DebuggerObject_getOwnPropertyDescriptor(JSContext *cx, unsigned argc, Value *vp)
 static bool
 DebuggerObject_getOwnPropertyNames(JSContext *cx, unsigned argc, Value *vp)
 {
-    THIS_DEBUGOBJECT_REFERENT(cx, argc, vp, "getOwnPropertyNames", args, obj);
+    THIS_DEBUGOBJECT_OWNER_REFERENT(cx, argc, vp, "getOwnPropertyNames", args, dbg, obj);
 
     AutoIdVector keys(cx);
     {
@@ -5422,7 +5422,7 @@ DebuggerObject_deleteProperty(JSContext *cx, unsigned argc, Value *vp)
         return false;
 
     bool succeeded;
-    ErrorCopier ec(ac, dbg->toJSObject());
+    ErrorCopier ec(ac);
     if (!JSObject::deleteGeneric(cx, obj, id, &succeeded))
         return false;
     args.rval().setBoolean(succeeded);

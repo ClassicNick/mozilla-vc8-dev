@@ -3498,6 +3498,8 @@ CheckNewScriptProperties(JSContext *cx, TypeObject *type, JSFunction *fun)
     PodCopy(newScript->initializerList,
             initializerList.begin(),
             initializerList.length());
+
+    js::gc::TraceTypeNewScript(type);
 #endif // JS_ION
 }
 

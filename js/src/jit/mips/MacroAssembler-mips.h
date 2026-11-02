@@ -1016,6 +1016,7 @@ public:
     void and32(Imm32 imm, Register dest);
     void and32(Imm32 imm, const Address &dest);
     void and32(const Address &src, Register dest);
+    void or32(Imm32 imm, Register dest);
     void or32(Imm32 imm, const Address &dest);
     void xor32(Imm32 imm, Register dest);
     void xorPtr(Imm32 imm, Register dest);
@@ -1166,7 +1167,9 @@ public:
 
     void checkStackAlignment();
 
-    void alignPointerUp(Register src, Register dest, uint32_t alignment);
+    void alignStackPointer();
+    void restoreStackPointer();
+    static void calculateAlignedStackPointer(void **stackPointer);
 
     void rshiftPtr(Imm32 imm, Register dest) {
         ma_srl(dest, dest, imm);

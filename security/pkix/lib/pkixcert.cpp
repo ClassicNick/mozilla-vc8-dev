@@ -122,7 +122,7 @@ BackCert::Init()
 
   // RFC 5280 says: "These fields MUST only appear if the version is 2 or 3
   // (Section 4.1.2.1). These fields MUST NOT appear if the version is 1."
-  if (version != der::Version::v1) {
+  if (version != der::v1) {
 
     // Ignore issuerUniqueID if present.
     if (tbsCertificate.Peek(CSC | 1)) {
@@ -140,7 +140,7 @@ BackCert::Init()
   }
 
   // Extensions were added in v3, so only accept extensions in v3 certificates.
-  if (version == der::Version::v3) {
+  if (version == der::v3) {
     if (der::OptionalExtensions(tbsCertificate, CSC | 3,
                                 bind(&BackCert::RememberExtension, this, _1, _2,
                                      _3)) != der::Success) {
