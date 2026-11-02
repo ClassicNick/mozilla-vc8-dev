@@ -1341,7 +1341,7 @@ mozInlineSpellChecker::DoSpellCheckSelection(mozInlineSpellWordUtil& aWordUtil,
   // Since we could be modifying the ranges for the spellCheckSelection while
   // looping on the spell check selection, keep a separate array of range
   // elements inside the selection
-  nsTArray<nsRefPtr<nsRange>> ranges;
+  nsTArray<nsRefPtr<nsRange> > ranges;
 
   int32_t count = aSpellCheckSelection->GetRangeCount();
 
@@ -1504,7 +1504,7 @@ nsresult mozInlineSpellChecker::DoSpellCheck(mozInlineSpellWordUtil& aWordUtil,
       // likewise, if this word is inside new text, we won't bother testing
       if (!aStatus->mCreatedRange ||
           !aStatus->mCreatedRange->IsPointInRange(*beginNode, beginOffset, erv)) {
-        nsTArray<nsRefPtr<nsRange>> ranges;
+        nsTArray<nsRefPtr<nsRange> > ranges;
         aSpellCheckSelection->GetRangesForInterval(*beginNode, beginOffset,
                                                    *endNode, endOffset,
                                                    true, ranges, erv);
@@ -1632,7 +1632,7 @@ mozInlineSpellChecker::ResumeCheck(mozInlineSpellStatus* aStatus)
   rv = GetSpellCheckSelection(getter_AddRefs(spellCheckSelectionRef));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  auto spellCheckSelection =
+  Selection * spellCheckSelection =
     static_cast<Selection *>(spellCheckSelectionRef.get());
 
   nsAutoString currentDictionary;

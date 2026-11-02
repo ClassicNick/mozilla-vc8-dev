@@ -51,18 +51,18 @@ class nsXMLQuery MOZ_FINAL : public nsISupports
 
     // add a required binding for the query
     void
-    AddBinding(nsIAtom* aVar, nsAutoPtr<mozilla::dom::XPathExpression>&& aExpr)
+    AddBinding(nsIAtom* aVar, nsAutoPtr<mozilla::dom::XPathExpression> aExpr)
     {
         if (!mRequiredBindings) {
             mRequiredBindings = new nsXMLBindingSet();
         }
 
-        mRequiredBindings->AddBinding(aVar, mozilla::Move(aExpr));
+        mRequiredBindings->AddBinding(aVar, aExpr);
     }
 
     nsXMLQuery(nsXULTemplateQueryProcessorXML* aProcessor,
                nsIAtom* aMemberVariable,
-               nsAutoPtr<mozilla::dom::XPathExpression>&& aResultsExpr)
+               nsAutoPtr<mozilla::dom::XPathExpression> aResultsExpr)
         : mProcessor(aProcessor),
           mMemberVariable(aMemberVariable),
           mResultsExpr(aResultsExpr)

@@ -18,8 +18,6 @@
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/XPathResultBinding.h"
 
-using mozilla::Move;
-
 namespace mozilla {
 namespace dom {
 

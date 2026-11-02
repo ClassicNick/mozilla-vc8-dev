@@ -5109,6 +5109,7 @@ JS::CallValue(JSContext *cx, HandleValue thisv, HandleValue fval, const JS::Hand
     return Invoke(cx, thisv, fval, args.length(), args.begin(), rval);
 }
 
+JS_PUBLIC_API(bool)
 JS::Construct(JSContext *cx, HandleValue fval, const JS::HandleValueArray& args,
               MutableHandleValue rval)
 {

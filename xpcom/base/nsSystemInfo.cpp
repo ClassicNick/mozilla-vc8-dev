@@ -421,6 +421,7 @@ nsSystemInfo::Observe(nsISupports* aSubject, const char* aTopic,
 nsresult
 nsSystemInfo::GetProfileHDDInfo()
 {
+#if !defined (_MSC_VER) || _MSC_VER >= 1400
   nsAutoCString hddModel, hddRevision;
   nsresult rv = GetHDDInfo(NS_APP_USER_PROFILE_50_DIR, hddModel, hddRevision);
   if (NS_FAILED(rv)) {
@@ -433,8 +434,11 @@ nsSystemInfo::GetProfileHDDInfo()
   rv = SetPropertyAsACString(NS_LITERAL_STRING("profileHDDRevision"),
                              hddRevision);
   return rv;
+#else
+  return NS_ERROR_NOT_IMPLEMENTED;
+#endif
 }
 
-NS_IMPL_ISUPPORTS_INHERITED(nsSystemInfo, nsHashPropertyBag, nsIObserver)
+NS_IMPL_ISUPPORTS_INHERITED1(nsSystemInfo, nsHashPropertyBag, nsIObserver)
 #endif // defined(XP_WIN)
 

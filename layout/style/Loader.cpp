@@ -2459,7 +2459,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(Loader)
   if (tmp->mSheets) {
     tmp->mSheets->mCompleteSheets.EnumerateRead(TraverseSheet, &cb);
   }
-  nsTObserverArray<nsCOMPtr<nsICSSLoaderObserver>>::ForwardIterator
+  nsTObserverArray<nsCOMPtr<nsICSSLoaderObserver> >::ForwardIterator
     it(tmp->mObservers);
   while (it.HasMore()) {
     ImplCycleCollectionTraverse(cb, it.GetNext(),
