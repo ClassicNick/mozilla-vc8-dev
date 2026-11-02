@@ -5040,7 +5040,12 @@ GCRuntime::collect(bool incremental, int64_t budget, JSGCInvocationKind gckind,
     JS_AbortIfWrongThread(rt);
 
     /* If we attempt to invoke the GC while we are running in the GC, assert. */
-    JS_ASSERT(!rt->isHeapBusy());
+    MOZ_ASSERT(!rt->isHeapBusy());
+
+#ifdef JS_THREADSAFE
+    /* The engine never locks across anything that could GC. */
+    MOZ_ASSERT(!rt->currentThreadHasExclusiveAccess());
+#endif
 
     if (rt->mainThread.suppressGC)
         return;

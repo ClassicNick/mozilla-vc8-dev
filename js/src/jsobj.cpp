@@ -4903,8 +4903,8 @@ MaybeReportUndeclaredVarAssignment(JSContext *cx, JSString *propname)
 bool
 JSObject::reportReadOnly(ThreadSafeContext *cxArg, jsid id, unsigned report)
 {
-     if (cxArg->isForkJoinContext())
-         return cxArg->asForkJoinContext()->reportError(report);
+    if (cxArg->isForkJoinContext())
+        return cxArg->asForkJoinContext()->reportError(report);
 
     if (!cxArg->isJSContext())
         return true;
@@ -4920,7 +4920,7 @@ bool
 JSObject::reportNotConfigurable(ThreadSafeContext *cxArg, jsid id, unsigned report)
 {
     if (cxArg->isForkJoinContext())
-         return cxArg->asForkJoinContext()->reportError(report);
+        return cxArg->asForkJoinContext()->reportError(report);
 
     if (!cxArg->isJSContext())
         return true;
@@ -4936,7 +4936,7 @@ bool
 JSObject::reportNotExtensible(ThreadSafeContext *cxArg, unsigned report)
 {
     if (cxArg->isForkJoinContext())
-         return cxArg->asForkJoinContext()->reportError(report);
+        return cxArg->asForkJoinContext()->reportError(report);
 
     if (!cxArg->isJSContext())
         return true;

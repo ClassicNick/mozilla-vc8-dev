@@ -158,7 +158,7 @@ nsIContentParent::GetOrCreateActorForBlob(nsIDOMBlob* aBlob)
 
   // If the blob represents a remote blob for this ContentParent then we can
   // simply pass its actor back here.
-  const auto* domFile = static_cast<DOMFile*>(aBlob);
+  const DOMFile* domFile = static_cast<DOMFile*>(aBlob);
   nsCOMPtr<nsIRemoteBlob> remoteBlob = do_QueryInterface(domFile->Impl());
   if (remoteBlob) {
     if (BlobParent* actor = static_cast<BlobParent*>(

@@ -1010,10 +1010,10 @@ nsBlockReflowState::ClearFloats(nscoord aBCoord, uint8_t aBreakType,
         nsBlockFrame::WidthToClearPastFloats(*this, floatAvailableSpace.mRect,
                                              aReplacedBlock);
       if (NS_MAX(floatAvailableSpace.mRect.x - ContentIStart(),
-                 replacedWidth.marginLeft) +
+                   replacedWidth.marginLeft) +
             replacedWidth.borderBoxWidth +
-          NS_MAX(ContentIEnd() - floatAvailableSpace.mRect.XMost(),
-                   replacedWidth.marginRight) <=
+            NS_MAX(ContentIEnd() - floatAvailableSpace.mRect.XMost(),
+                     replacedWidth.marginRight) <=
           ContentISize()) {
         break;
       }
