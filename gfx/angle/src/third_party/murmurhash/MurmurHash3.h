@@ -8,19 +8,7 @@
 //-----------------------------------------------------------------------------
 // Platform-specific functions and macros
 
-// Microsoft Visual Studio
-
-#if defined(_MSC_VER)
-
 #include "mozilla/StandardInteger.h"
-
-// Other compilers
-
-#else	// defined(_MSC_VER)
-
-#include <stdint.h>
-
-#endif // !defined(_MSC_VER)
 
 //-----------------------------------------------------------------------------
 

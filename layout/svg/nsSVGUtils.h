@@ -103,6 +103,14 @@ public:
     return mIsEmpty;
   }
 
+  bool IsFinite() const {
+    return mBBox.IsFinite();
+  }
+
+  void Scale(float aScale) {
+    mBBox.Scale(aScale);
+  }
+
   void UnionEdges(const SVGBBox& aSVGBBox) {
     if (aSVGBBox.mIsEmpty) {
       return;
