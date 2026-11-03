@@ -2255,9 +2255,14 @@ nsNativeThemeCocoa::DrawWidgetBackground(nsRenderingContext* aContext,
 
     case NS_THEME_MENUITEM:
     case NS_THEME_CHECKMENUITEM: {
-      SurfaceFormat format  = thebesCtx->GetDrawTarget()->GetFormat();
-      bool isTransparent = (format == SurfaceFormat::R8G8B8A8) ||
-                      (format == SurfaceFormat::B8G8R8A8);
+      bool isTransparent;
+      if (thebesCtx->IsCairo()) {
+        isTransparent = thebesCtx->OriginalSurface()->GetContentType() == gfxContentType::COLOR_ALPHA;
+      } else {
+        SurfaceFormat format  = thebesCtx->GetDrawTarget()->GetFormat();
+        isTransparent = (format == SurfaceFormat::R8G8B8A8) ||
+                        (format == SurfaceFormat::B8G8R8A8);
+      }
       if (isTransparent) {
         // Clear the background to get correct transparency.
         CGContextClearRect(cgContext, macRect);
