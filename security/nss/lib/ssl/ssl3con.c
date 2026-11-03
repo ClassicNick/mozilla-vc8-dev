@@ -36,7 +36,8 @@
 #define androidLog(...) __android_log_print(ANDROID_LOG_VERBOSE, "GeckoNSS", __VA_ARGS__)
 #else
 #ifdef _MSC_VER
-#define androidLog(...)
+#define androidLog(a)
+# pragma warning ( disable : 4002)
 #else
 #define androidLog(...) ((void) 0)
 #endif

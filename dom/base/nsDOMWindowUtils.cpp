@@ -3631,7 +3631,7 @@ private:
   bool mDestructCalled;
 };
 
-NS_IMPL_ISUPPORTS(HandlingUserInputHelper, nsIJSRAIIHelper)
+NS_IMPL_ISUPPORTS1(HandlingUserInputHelper, nsIJSRAIIHelper)
 
 HandlingUserInputHelper::HandlingUserInputHelper(bool aHandlingUserInput)
   : mHandlingUserInput(aHandlingUserInput),

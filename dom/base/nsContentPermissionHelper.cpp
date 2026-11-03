@@ -398,7 +398,7 @@ RemotePermissionRequest::ConvertArrayToPermissionRequest(
   return len;
 }
 
-NS_IMPL_ISUPPORTS(RemotePermissionRequest, nsIContentPermissionRequest)
+NS_IMPL_ISUPPORTS1(RemotePermissionRequest, nsIContentPermissionRequest)
 
 RemotePermissionRequest::RemotePermissionRequest(
   nsIContentPermissionRequest* aRequest,
