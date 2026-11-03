@@ -689,6 +689,8 @@ public:
     void ClearFlag(int32_t aFlag) { mFlags &= ~aFlag; }
     int32_t GetFlags() const { return mFlags; }
 
+    bool IsCairo() const { return !mDT; }
+
     // Work out whether cairo will snap inter-glyph spacing to pixels.
     void GetRoundOffsetsToPixels(bool *aRoundX, bool *aRoundY);
 
@@ -964,9 +966,19 @@ public:
     gfxContextAutoDisableSubpixelAntialiasing(gfxContext *aContext, bool aDisable)
     {
         if (aDisable) {
-            mDT = aContext->GetDrawTarget();
-            mSubpixelAntialiasingEnabled = mDT->GetPermitSubpixelAA();
-            mDT->SetPermitSubpixelAA(false);
+            if (aContext->IsCairo()) {
+                mSurface = aContext->CurrentSurface();
+                if (!mSurface) {
+                  return;
+                }
+                mSubpixelAntialiasingEnabled = mSurface->GetSubpixelAntialiasingEnabled();
+                mSurface->SetSubpixelAntialiasingEnabled(false);
+            } else {
+                mDT = aContext->GetDrawTarget();
+
+                mSubpixelAntialiasingEnabled = mDT->GetPermitSubpixelAA();
+                mDT->SetPermitSubpixelAA(false);
+            }
         }
     }
     ~gfxContextAutoDisableSubpixelAntialiasing()
