@@ -86,9 +86,7 @@ gfxContext::gfxContext(gfxASurface *surface)
 {
   MOZ_COUNT_CTOR(gfxContext);
 
-  if (mDT->GetBackendType() == BackendType::CAIRO) {
-	cairo_create(surface->CairoSurface());
-  }
+  mCairo = cairo_create(surface->CairoSurface());
   mFlags = surface->GetDefaultContextFlags();
   if (mSurface->GetRotateForLandscape()) {
     // Rotate page 90 degrees to draw landscape page on portrait paper
