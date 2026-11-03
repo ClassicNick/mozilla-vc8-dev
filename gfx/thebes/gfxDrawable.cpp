@@ -130,8 +130,14 @@ gfxSurfaceDrawable::Draw(gfxContext* aContext,
 {
     nsRefPtr<gfxPattern> pattern;
     if (mDrawTarget) {
-      RefPtr<SourceSurface> source = mDrawTarget->Snapshot();
-      pattern = new gfxPattern(source, Matrix());
+      if (aContext->IsCairo()) {
+        nsRefPtr<gfxASurface> source =
+          gfxPlatform::GetPlatform()->GetThebesSurfaceForDrawTarget(mDrawTarget);
+        pattern = new gfxPattern(source);
+      } else {
+        RefPtr<SourceSurface> source = mDrawTarget->Snapshot();
+        pattern = new gfxPattern(source, Matrix());
+      }
     } else if (mSourceSurface) {
       pattern = new gfxPattern(mSourceSurface, Matrix());
     } else {
