@@ -90,7 +90,7 @@ BasicThebesLayer::PaintThebes(gfxContext* aContext,
       } else {
         groupContext = aContext;
       }
-      SetAntialiasingFlags(this, groupContext->GetDrawTarget());
+      SetAntialiasingFlags(this, groupContext);
       aCallback(this, groupContext, toDraw, DrawRegionClip::CLIP_NONE, nsIntRegion(), aCallbackData);
       if (needsGroup) {
         aContext->PopGroupToSource();
