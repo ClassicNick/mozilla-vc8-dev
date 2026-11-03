@@ -1506,9 +1506,6 @@ nsNSSCertificate::GetValidEVPolicyOid(nsACString& outDottedOid)
   return NS_OK;
 }
 
-<<<<<<< HEAD
-NS_IMPL_ISUPPORTS1(nsNSSCertList, nsIX509CertList)
-=======
 namespace mozilla {
 
 // TODO(bug 1036065): It seems like we only construct CERTCertLists for the
@@ -1547,8 +1544,7 @@ ConstructCERTCertListFromReversedDERArray(
 
 } // namespace mozilla
 
-NS_IMPL_ISUPPORTS(nsNSSCertList, nsIX509CertList)
->>>>>>> a593e38
+NS_IMPL_ISUPPORTS1(nsNSSCertList, nsIX509CertList)
 
 nsNSSCertList::nsNSSCertList(ScopedCERTCertList& certList,
                              const nsNSSShutDownPreventionLock& proofOfLock)

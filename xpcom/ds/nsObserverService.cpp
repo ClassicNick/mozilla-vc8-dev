@@ -233,7 +233,7 @@ nsObserverService::Create(nsISupports* aOuter, const nsIID& aIID,
   // The memory reporter can not be immediately registered here because
   // the nsMemoryReporterManager may attempt to get the nsObserverService
   // during initialization, causing a recursive GetService.
-  nsRefPtr<nsRunnableMethod<nsObserverService>> registerRunnable =
+  nsRefPtr<nsRunnableMethod<nsObserverService> > registerRunnable =
     NS_NewRunnableMethod(os, &nsObserverService::RegisterReporter);
   NS_DispatchToCurrentThread(registerRunnable);
 

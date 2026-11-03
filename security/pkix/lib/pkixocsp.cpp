@@ -287,7 +287,7 @@ VerifySignature(Context& context, ResponderIDType responderIDType,
   }
 
   for (size_t i = 0; i < numCerts; ++i) {
-    BackCert cert(certs[i], EndEntityOrCA::MustBeEndEntity, nullptr);
+    BackCert cert(certs[i], MustBeEndEntity, nullptr);
     rv = cert.Init();
     if (rv != Success) {
       return rv;
@@ -542,7 +542,7 @@ ResponseData(der::Input& input, Context& context,
   // responder will never return an empty response, and handling the case of an
   // empty response makes things unnecessarily complicated.
   if (der::NestedOf(input, der::SEQUENCE, der::SEQUENCE,
-                    der::EmptyAllowed::No,
+                    der::No,
                     bind(SingleResponse, _1, ref(context))) != der::Success) {
     return der::Failure;
   }

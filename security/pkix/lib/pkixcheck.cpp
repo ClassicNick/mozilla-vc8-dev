@@ -282,7 +282,7 @@ CheckCertificatePolicies(EndEntityOrCA endEntityOrCA,
                  encodedCertificatePolicies->len) != der::Success) {
     return Fail(RecoverableError, SEC_ERROR_POLICY_VALIDATION_FAILED);
   }
-  if (der::NestedOf(input, der::SEQUENCE, der::SEQUENCE, der::EmptyAllowed::No,
+  if (der::NestedOf(input, der::SEQUENCE, der::SEQUENCE, der::No,
                     bind(CheckPolicyInformation, _1, endEntityOrCA,
                          requiredPolicy, ref(found))) != der::Success) {
     return Fail(RecoverableError, SEC_ERROR_POLICY_VALIDATION_FAILED);
@@ -510,8 +510,8 @@ CheckNameConstraints(const BackCert& cert, KeyPurposeId requiredEKUIfPresent)
       return MapSECStatus(SECFailure);
     }
 
-    bool includeCN = child->endEntityOrCA == EndEntityOrCA::MustBeEndEntity &&
-                     requiredEKUIfPresent == KeyPurposeId::id_kp_serverAuth;
+    bool includeCN = child->endEntityOrCA == MustBeEndEntity &&
+                     requiredEKUIfPresent == id_kp_serverAuth;
     // owned by arena
     const CERTGeneralName*
       names(CERT_GetConstrainedCertificateNames(nssCert.get(), arena.get(),
@@ -642,7 +642,7 @@ CheckExtendedKeyUsage(EndEntityOrCA endEntityOrCA,
                    encodedExtendedKeyUsage->len) != der::Success) {
       return Fail(RecoverableError, SEC_ERROR_INADEQUATE_CERT_TYPE);
     }
-    if (der::NestedOf(input, der::SEQUENCE, der::OIDTag, der::EmptyAllowed::No,
+    if (der::NestedOf(input, der::SEQUENCE, der::OIDTag, der::No,
                       bind(MatchEKU, _1, requiredEKU, endEntityOrCA,
                            ref(found), ref(foundOCSPSigning)))
           != der::Success) {

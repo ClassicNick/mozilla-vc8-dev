@@ -189,9 +189,9 @@ bool
 ContentClientRemoteBuffer::CreateAndAllocateTextureClient(RefPtr<TextureClient>& aClient,
                                                           TextureFlags aFlags)
 {
-  TextureAllocationFlags allocFlags = TextureAllocationFlags::ALLOC_CLEAR_BUFFER;
+  TextureAllocationFlags allocFlags = ALLOC_CLEAR_BUFFER;
   if (aFlags & TextureFlags::ON_WHITE) {
-    allocFlags = TextureAllocationFlags::ALLOC_CLEAR_BUFFER_WHITE;
+    allocFlags = ALLOC_CLEAR_BUFFER_WHITE;
   }
 
   // gfx::BackendType::NONE means fallback to the content backend

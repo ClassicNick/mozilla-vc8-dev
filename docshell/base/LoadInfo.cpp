@@ -27,7 +27,7 @@ LoadInfo::~LoadInfo()
 {
 }
 
-NS_IMPL_ISUPPORTS(LoadInfo, nsILoadInfo)
+NS_IMPL_ISUPPORTS1(LoadInfo, nsILoadInfo)
 
 NS_IMETHODIMP
 LoadInfo::GetLoadingPrincipal(nsIPrincipal** aPrincipal)

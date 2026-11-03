@@ -2694,7 +2694,7 @@ LogViolationDetailsRunnable::Run()
   return NS_OK;
 }
 
-NS_IMPL_ISUPPORTS(WorkerBackgroundChildCallback, nsIIPCBackgroundChildCreateCallback)
+NS_IMPL_ISUPPORTS1(WorkerBackgroundChildCallback, nsIIPCBackgroundChildCreateCallback)
 
 NS_IMPL_ISUPPORTS_INHERITED0(WorkerThreadPrimaryRunnable, nsRunnable)
 

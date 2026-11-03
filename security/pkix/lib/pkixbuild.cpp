@@ -132,7 +132,7 @@ SECStatus
 PathBuildingStep::Check(const SECItem& potentialIssuerDER,
                         /*out*/ bool& keepGoing)
 {
-  BackCert potentialIssuer(potentialIssuerDER, EndEntityOrCA::MustBeCA,
+  BackCert potentialIssuer(potentialIssuerDER, MustBeCA,
                            &subject);
   Result rv = potentialIssuer.Init();
   if (rv != Success) {
