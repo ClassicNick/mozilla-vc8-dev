@@ -60,11 +60,11 @@ class WebGLContext;
 
 namespace gl {
 class GLContext;
+class SurfaceStream;
 }
 
 namespace gfx {
 class DrawTarget;
-class SurfaceStream;
 }
 
 namespace css {
@@ -1747,7 +1747,7 @@ public:
   float GetPreYScale() const { return mPreYScale; }
   float GetInheritedXScale() const { return mInheritedXScale; }
   float GetInheritedYScale() const { return mInheritedYScale; }
-  
+
   gfxRGBA GetBackgroundColor() const { return mBackgroundColor; }
 
   MOZ_LAYER_DECL_NAME("ContainerLayer", TYPE_CONTAINER)
@@ -1931,7 +1931,7 @@ public:
     mozilla::gl::GLContext* mGLContext; // or this, for GL.
 
     // Canvas/SkiaGL uses this
-    mozilla::gfx::SurfaceStream* mStream;
+    mozilla::gl::SurfaceStream* mStream;
 
     // ID of the texture backing the canvas layer (defaults to 0)
     uint32_t mTexID;

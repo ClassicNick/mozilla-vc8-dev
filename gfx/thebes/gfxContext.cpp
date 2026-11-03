@@ -292,7 +292,7 @@ gfxContext::ClosePath()
   }
 }
 
-already_AddRefed<gfxPath> gfxContext::CopyPath()
+TemporaryRef<Path> gfxContext::GetPath()
 {
   nsRefPtr<gfxPath> path;
   if (mCairo) {
@@ -304,7 +304,7 @@ already_AddRefed<gfxPath> gfxContext::CopyPath()
   return path.forget();
 }
 
-void gfxContext::SetPath(gfxPath* path)
+void gfxContext::SetPath(Path* path)
 {
   if (mCairo) {
     cairo_new_path(mCairo);

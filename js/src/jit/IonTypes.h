@@ -218,7 +218,7 @@ BailoutKindString(BailoutKind kind)
       case Bailout_IonExceptionDebugMode:
         return "Bailout_IonExceptionDebugMode";
       default:
-        MOZ_CRASH("Invalid BailoutKind");
+        MOZ_ASSUME_UNREACHABLE("Invalid BailoutKind");
     }
 }
 
@@ -295,7 +295,7 @@ MIRTypeFromValueType(JSValueType type)
       case JSVAL_TYPE_UNKNOWN:
         return MIRType_Value;
       default:
-        MOZ_CRASH("unexpected jsval type");
+        MOZ_ASSUME_UNREACHABLE("unexpected jsval type");
     }
 }
 
@@ -374,7 +374,7 @@ StringFromMIRType(MIRType type)
     case MIRType_ForkJoinContext:
       return "ForkJoinContext";
     default:
-      MOZ_CRASH("Unknown MIRType.");
+      MOZ_ASSUME_UNREACHABLE("Unknown MIRType.");
   }
 }
 

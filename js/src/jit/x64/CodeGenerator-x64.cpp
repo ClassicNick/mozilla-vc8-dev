@@ -54,7 +54,7 @@ FrameSizeClass::ClassLimit()
 uint32_t
 FrameSizeClass::frameSize() const
 {
-    MOZ_CRASH("x64 does not use frame size classes");
+    MOZ_ASSUME_UNREACHABLE("x64 does not use frame size classes");
 }
 
 bool
@@ -107,7 +107,7 @@ CodeGeneratorX64::visitUnbox(LUnbox *unbox)
             cond = masm.testString(Assembler::NotEqual, value);
             break;
           default:
-            MOZ_CRASH("Given MIRType cannot be unboxed.");
+            MOZ_ASSUME_UNREACHABLE("Given MIRType cannot be unboxed.");
         }
         if (!bailoutIf(cond, unbox->snapshot()))
             return false;
@@ -127,7 +127,7 @@ CodeGeneratorX64::visitUnbox(LUnbox *unbox)
         masm.unboxString(value, ToRegister(result));
         break;
       default:
-        MOZ_CRASH("Given MIRType cannot be unboxed.");
+        MOZ_ASSUME_UNREACHABLE("Given MIRType cannot be unboxed.");
     }
 
     return true;
@@ -225,13 +225,13 @@ CodeGeneratorX64::visitAsmJSUInt32ToFloat32(LAsmJSUInt32ToFloat32 *lir)
 bool
 CodeGeneratorX64::visitLoadTypedArrayElementStatic(LLoadTypedArrayElementStatic *ins)
 {
-    MOZ_CRASH("NYI");
+    MOZ_ASSUME_UNREACHABLE("NYI");
 }
 
 bool
 CodeGeneratorX64::visitStoreTypedArrayElementStatic(LStoreTypedArrayElementStatic *ins)
 {
-    MOZ_CRASH("NYI");
+    MOZ_ASSUME_UNREACHABLE("NYI");
 }
 
 bool
@@ -265,7 +265,7 @@ CodeGeneratorX64::visitAsmJSLoadHeap(LAsmJSLoadHeap *ins)
       case Scalar::Uint32:  masm.movl(srcAddr, ToRegister(ins->output())); break;
       case Scalar::Float32: masm.loadFloat32(srcAddr, ToFloatRegister(ins->output())); break;
       case Scalar::Float64: masm.loadDouble(srcAddr, ToFloatRegister(ins->output())); break;
-      default: MOZ_CRASH("unexpected array type");
+      default: MOZ_ASSUME_UNREACHABLE("unexpected array type");
     }
     uint32_t after = masm.size();
     if (!skipNote)
@@ -302,7 +302,7 @@ CodeGeneratorX64::visitAsmJSStoreHeap(LAsmJSStoreHeap *ins)
           case Scalar::Uint16:  masm.movw(Imm32(ToInt32(ins->value())), dstAddr); break;
           case Scalar::Int32:
           case Scalar::Uint32:  masm.movl(Imm32(ToInt32(ins->value())), dstAddr); break;
-          default: MOZ_CRASH("unexpected array type");
+          default: MOZ_ASSUME_UNREACHABLE("unexpected array type");
         }
     } else {
         switch (vt) {
@@ -314,7 +314,7 @@ CodeGeneratorX64::visitAsmJSStoreHeap(LAsmJSStoreHeap *ins)
           case Scalar::Uint32:  masm.movl(ToRegister(ins->value()), dstAddr); break;
           case Scalar::Float32: masm.storeFloat32(ToFloatRegister(ins->value()), dstAddr); break;
           case Scalar::Float64: masm.storeDouble(ToFloatRegister(ins->value()), dstAddr); break;
-          default: MOZ_CRASH("unexpected array type");
+          default: MOZ_ASSUME_UNREACHABLE("unexpected array type");
         }
     }
     uint32_t after = masm.size();

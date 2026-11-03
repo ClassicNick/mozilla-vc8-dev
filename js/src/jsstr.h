@@ -9,6 +9,7 @@
 
 #include "mozilla/HashFunctions.h"
 #include "mozilla/PodOperations.h"
+#include "mozilla/UniquePtr.h"
 
 #include "jsutil.h"
 #include "NamespaceImports.h"
@@ -137,10 +138,10 @@ js_strncpy(jschar *dst, const jschar *src, size_t nelem)
     return mozilla::PodCopy(dst, src, nelem);
 }
 
-extern jschar *
-js_strdup(js::ThreadSafeContext *cx, const jschar *s);
-
 namespace js {
+
+extern mozilla::UniquePtr<jschar[], JS::FreePolicy>
+DuplicateString(ThreadSafeContext *cx, const jschar *s);
 
 /* GC-allocate a string descriptor for the given malloc-allocated chars. */
 template <js::AllowGC allowGC, typename CharT>
@@ -354,6 +355,12 @@ extern bool
 str_fromCharCode_one_arg(JSContext *cx, HandleValue code, MutableHandleValue rval);
 
 } /* namespace js */
+
+inline jschar *
+js_strdup(js::ThreadSafeContext *cx, const jschar *s)
+{
+    return js::DuplicateString(cx, s).release();
+}
 
 extern bool
 js_str_toString(JSContext *cx, unsigned argc, js::Value *vp);

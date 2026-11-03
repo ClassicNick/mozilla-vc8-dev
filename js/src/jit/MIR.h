@@ -2726,7 +2726,7 @@ class MUnbox : public MUnaryInstruction, public BoxInputsPolicy
             kind = Bailout_NonObjectInput;
             break;
           default:
-            MOZ_CRASH("Given MIRType cannot be unboxed.");
+            MOZ_ASSUME_UNREACHABLE("Given MIRType cannot be unboxed.");
         }
 
         return new(alloc) MUnbox(ins, type, mode, kind);
@@ -4564,7 +4564,7 @@ class MDiv : public MBinaryArithInstruction
     void analyzeEdgeCasesBackward();
 
     double getIdentity() {
-        MOZ_CRASH("not used");
+        MOZ_ASSUME_UNREACHABLE("not used");
     }
 
     bool canBeNegativeZero() const {
@@ -4658,7 +4658,7 @@ class MMod : public MBinaryArithInstruction
     MDefinition *foldsTo(TempAllocator &alloc);
 
     double getIdentity() {
-        MOZ_CRASH("not used");
+        MOZ_ASSUME_UNREACHABLE("not used");
     }
 
     bool canBeNegativeDividend() const {

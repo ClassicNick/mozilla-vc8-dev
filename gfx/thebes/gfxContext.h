@@ -13,7 +13,6 @@
 #include "gfxRect.h"
 #include "gfxMatrix.h"
 #include "gfxPattern.h"
-#include "gfxPath.h"
 #include "nsTArray.h"
 #include "nsAutoPtr.h"
 
@@ -38,6 +37,8 @@ template <typename T> class FallibleTArray;
  * as opposed to app units.
  */
 class gfxContext MOZ_FINAL {
+    typedef mozilla::gfx::Path Path;
+
     NS_INLINE_DECL_REFCOUNTING(gfxContext)
 
 public:
@@ -137,14 +138,14 @@ public:
     void ClosePath();
 
     /**
-     * Copies the current path and returns the copy.
+     * Returns the current path.
      */
-    already_AddRefed<gfxPath> CopyPath();
+    mozilla::TemporaryRef<Path> GetPath();
 
     /**
      * Appends the given path to the current path.
      */
-    void SetPath(gfxPath* path);
+    void SetPath(Path* path);
 
     /**
      * Moves the pen to a new point without drawing a line.
@@ -731,7 +732,6 @@ private:
   typedef mozilla::gfx::Float Float;
   typedef mozilla::gfx::Rect Rect;
   typedef mozilla::gfx::CompositionOp CompositionOp;
-  typedef mozilla::gfx::Path Path;
   typedef mozilla::gfx::PathBuilder PathBuilder;
   typedef mozilla::gfx::SourceSurface SourceSurface;
   
@@ -860,6 +860,8 @@ private:
  */
 class gfxContextPathAutoSaveRestore
 {
+    typedef mozilla::gfx::Path Path;
+
 public:
     gfxContextPathAutoSaveRestore() : mContext(nullptr) {}
 
@@ -888,7 +890,7 @@ public:
     void Save()
     {
         if (!mPath && mContext) {
-            mPath = mContext->CopyPath();
+            mPath = mContext->GetPath();
         }
     }
 
@@ -907,7 +909,7 @@ public:
 private:
     gfxContext *mContext;
 
-    nsRefPtr<gfxPath> mPath;
+    mozilla::RefPtr<Path> mPath;
 };
 
 /**

@@ -104,7 +104,7 @@ SVGEllipseElement::ConstructPath(gfxContext *aCtx)
     RefPtr<PathBuilder> builder = dt->CreatePathBuilder(fillRule);
     RefPtr<Path> path = BuildPath(builder);
     if (path) {
-      nsRefPtr<gfxPath> gfxpath = new gfxPath(path);
+	  nsRefPtr<gfxPath> gfxpath = new gfxPath(path);
       aCtx->SetPath(gfxpath);
     }
     return;

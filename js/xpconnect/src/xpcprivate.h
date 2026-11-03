@@ -2509,7 +2509,7 @@ public:
 
     static bool JSData2Native(void* d, JS::HandleValue s,
                               const nsXPTType& type,
-                              bool useAllocator, const nsID* iid,
+                              const nsID* iid,
                               nsresult* pErr);
 
     /**
