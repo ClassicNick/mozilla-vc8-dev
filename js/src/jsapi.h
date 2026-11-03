@@ -1260,7 +1260,9 @@ extern JS_PUBLIC_API(void)
 JS_ShutDown(void);
 
 extern JS_PUBLIC_API(JSRuntime *)
-JS_NewRuntime(uint32_t maxbytes, JSRuntime *parentRuntime = nullptr);
+JS_NewRuntime(uint32_t maxbytes,
+              uint32_t maxNurseryBytes = JS::DefaultNurseryBytes,
+              JSRuntime *parentRuntime = nullptr);
 
 extern JS_PUBLIC_API(void)
 JS_DestroyRuntime(JSRuntime *rt);
@@ -1416,7 +1418,8 @@ class JS_PUBLIC_API(RuntimeOptions) {
       : baseline_(false),
         ion_(false),
         asmJS_(false),
-        nativeRegExp_(false)
+        nativeRegExp_(false),
+        werror_(false)
     {
     }
 
@@ -1456,11 +1459,22 @@ class JS_PUBLIC_API(RuntimeOptions) {
         return *this;
     }
 
+    bool werror() const { return werror_; }
+    RuntimeOptions &setWerror(bool flag) {
+        werror_ = flag;
+        return *this;
+    }
+    RuntimeOptions &toggleWerror() {
+        werror_ = !werror_;
+        return *this;
+    }
+
   private:
     bool baseline_ : 1;
     bool ion_ : 1;
     bool asmJS_ : 1;
     bool nativeRegExp_ : 1;
+    bool werror_ : 1;
 };
 
 JS_PUBLIC_API(RuntimeOptions &)
@@ -1473,7 +1487,6 @@ class JS_PUBLIC_API(ContextOptions) {
   public:
     ContextOptions()
       : extraWarnings_(false),
-        werror_(false),
         varObjFix_(false),
         privateIsNSISupports_(false),
         dontReportUncaught_(false),
@@ -1491,16 +1504,6 @@ class JS_PUBLIC_API(ContextOptions) {
     }
     ContextOptions &toggleExtraWarnings() {
         extraWarnings_ = !extraWarnings_;
-        return *this;
-    }
-
-    bool werror() const { return werror_; }
-    ContextOptions &setWerror(bool flag) {
-        werror_ = flag;
-        return *this;
-    }
-    ContextOptions &toggleWerror() {
-        werror_ = !werror_;
         return *this;
     }
 
@@ -1576,7 +1579,6 @@ class JS_PUBLIC_API(ContextOptions) {
 
   private:
     bool extraWarnings_ : 1;
-    bool werror_ : 1;
     bool varObjFix_ : 1;
     bool privateIsNSISupports_ : 1;
     bool dontReportUncaught_ : 1;
@@ -1779,6 +1781,9 @@ IdentifyStandardInstanceOrPrototype(JSObject *obj);
 
 extern JS_PUBLIC_API(JSProtoKey)
 IdentifyStandardConstructor(JSObject *obj);
+
+extern JS_PUBLIC_API(void)
+ProtoKeyToId(JSContext *cx, JSProtoKey key, JS::MutableHandleId idp);
 
 } /* namespace JS */
 

@@ -155,8 +155,11 @@ namespace mozilla {
  *
  * This takes advantage of two new rules in C++11:
  *
- * One hint: if you're writing a move constructor where the type has members
- * that should be moved themselves, it's much nicer to write this:
+ * - First, when a function template takes an argument that is an rvalue
+ *   reference to a template argument (like 'XArg&& x' and 'YArg&& y' above),
+ *   then when the argument is applied to an lvalue, the template argument
+ *   resolves to 'T&'; and when it is applied to an rvalue, the template
+ *   argument resolves to 'T&&'. Thus, in a call to C::C like:
  *
  *   C(MoveRef<C> c) : x(Move(c->x)), y(Move(c->y)) { }
  *
