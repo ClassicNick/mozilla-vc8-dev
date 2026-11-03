@@ -41,6 +41,10 @@ class gfxContext MOZ_FINAL {
     NS_INLINE_DECL_REFCOUNTING(gfxContext)
 
 public:
+    /**
+     * Initialize this context from a surface.
+     */
+    gfxContext(gfxASurface *surface);
 
     /**
      * Initialize this context from a DrawTarget.
