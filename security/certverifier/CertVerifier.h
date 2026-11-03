@@ -12,6 +12,7 @@
 #endif
 #include "pkix/pkixtypes.h"
 #include "OCSPCache.h"
+#include "ScopedNSSTypes.h"
 
 namespace mozilla { namespace psm {
 
@@ -35,7 +36,7 @@ public:
                        const char* hostname,
                        Flags flags = 0,
        /*optional in*/ const SECItem* stapledOCSPResponse = nullptr,
-      /*optional out*/ mozilla::pkix::ScopedCERTCertList* validationChain = nullptr,
+      /*optional out*/ ScopedCERTCertList* builtChain = nullptr,
       /*optional out*/ SECOidTag* evOidPolicy = nullptr);
 
   SECStatus VerifySSLServerCert(
@@ -45,7 +46,7 @@ public:
        /*optional*/ void* pinarg,
                     const char* hostname,
                     bool saveIntermediatesInPermanentDatabase = false,
-   /*optional out*/ mozilla::pkix::ScopedCERTCertList* certChainOut = nullptr,
+   /*optional out*/ ScopedCERTCertList* builtChain = nullptr,
    /*optional out*/ SECOidTag* evOidPolicy = nullptr);
 
   enum pinning_enforcement_config {

@@ -15,7 +15,7 @@ interface nsIDOMStyleSheet;
  * built-in list of user or agent style sheets.
  */
 
-[scriptable, uuid(4c4c8c17-5a73-4d7e-a8e7-f67bfebb97f5)]
+[scriptable, uuid(4de68896-e8eb-41de-8237-a797b570ac4a)]
 interface nsIStyleSheetService : nsISupports
 {
   const unsigned long AGENT_SHEET = 0;

@@ -492,6 +492,8 @@ case "$target" in
             _CC_SUITE=7
             CFLAGS="$CFLAGS -wd4002 -wd4003 -wd4146 -wd4161 -wd4275 -wd4288 -wd4355 -wd4396 -wd4521 -wd4522 -wd4530 -wd4661 -wd4667"
             CXXFLAGS="$CXXFLAGS -wd4002 -wd4003 -wd4146 -wd4161 -wd4275 -wd4288 -wd4355 -wd4396 -wd4521 -wd4522 -wd4530 -wd4661 -wd4667"
+			MSVC_C_RUNTIME_DLL=msvcr71.dll
+            MSVC_CXX_RUNTIME_DLL=msvcp71.dll
         elif test "$_CC_MAJOR_VERSION" = "14"; then
             _CC_SUITE=8
             _MSVS_VERSION=2005
@@ -499,6 +501,8 @@ case "$target" in
             CXXFLAGS="$CXXFLAGS -wd4002 -wd4003 -wd4146 -wd4161 -wd4275 -wd4355 -wd4396 -wd4521 -wd4522 -wd4530 -wd4661"
             AC_DEFINE(_CRT_SECURE_NO_DEPRECATE)
             AC_DEFINE(_CRT_NONSTDC_NO_DEPRECATE)
+			MSVC_C_RUNTIME_DLL=msvcr80.dll
+            MSVC_CXX_RUNTIME_DLL=msvcp80.dll
         elif test "$_CC_MAJOR_VERSION" = "15"; then
             _CC_SUITE=9
             _MSVS_VERSION=2008
@@ -506,21 +510,31 @@ case "$target" in
             CXXFLAGS="$CXXFLAGS -wd4002 -wd4003 -wd4146 -wd4161 -wd4275 -wd4355 -wd4396 -wd4521 -wd4522 -wd4530 -wd4661"
             AC_DEFINE(_CRT_SECURE_NO_WARNINGS)
             AC_DEFINE(_CRT_NONSTDC_NO_WARNINGS)
+			MSVC_C_RUNTIME_DLL=msvcr90.dll
+            MSVC_CXX_RUNTIME_DLL=msvcp90.dll
         elif test "$_CC_MAJOR_VERSION" = "16"; then
             _CC_SUITE=10
             MSVS_VERSION=2010
             CFLAGS="$CFLAGS -wd4002 -wd4003 -wd4146 -wd4161 -wd4275 -wd4355 -wd4396 -wd4530 -wd4661"
             CXXFLAGS="$CXXFLAGS -wd4002 -wd4003 -wd4146 -wd4161 -wd4275 -wd4355 -wd4396 -wd4530 -wd4661"
+            MSVC_C_RUNTIME_DLL=msvcr100.dll
+            MSVC_CXX_RUNTIME_DLL=msvcp100.dll
         elif test "$_CC_MAJOR_VERSION" = "17"; then
             _CC_SUITE=11
             MSVS_VERSION=2012
+            MSVC_C_RUNTIME_DLL=msvcr110.dll
+            MSVC_CXX_RUNTIME_DLL=msvcp110.dll
         elif test "$_CC_MAJOR_VERSION" = "18"; then
             _CC_SUITE=12
             MSVS_VERSION=2013
+            MSVC_C_RUNTIME_DLL=msvcr120.dll
+            MSVC_CXX_RUNTIME_DLL=msvcp120.dll
         else
             AC_MSG_ERROR([This version ($CC_VERSION) of the MSVC compiler is unsupported. See https://developer.mozilla.org/en/Windows_Build_Prerequisites.])
         fi
         AC_SUBST(MSVS_VERSION)
+        AC_SUBST(MSVC_C_RUNTIME_DLL)
+        AC_SUBST(MSVC_CXX_RUNTIME_DLL)
 
         AC_DEFINE(HAVE_SEH_EXCEPTIONS)
 
@@ -1344,8 +1358,8 @@ if test "$GNU_CC"; then
     fi
     # FIXME: Let us build with strict aliasing. bug 414641.
     CFLAGS="$CFLAGS -fno-strict-aliasing"
-    MKSHLIB='$(CXX) $(CXXFLAGS) $(DSO_PIC_CFLAGS) $(DSO_LDOPTS) -Wl,-h,$(notdir $@) -o $@'
-    MKCSHLIB='$(CC) $(CFLAGS) $(DSO_PIC_CFLAGS) $(DSO_LDOPTS) -Wl,-h,$(notdir $@) -o $@'
+    MKSHLIB='$(CXX) $(CXXFLAGS) $(DSO_PIC_CFLAGS) $(DSO_LDOPTS) -Wl,-h,$(DSO_SONAME) -o $@'
+    MKCSHLIB='$(CC) $(CFLAGS) $(DSO_PIC_CFLAGS) $(DSO_LDOPTS) -Wl,-h,$(DSO_SONAME) -o $@'
     WARNINGS_AS_ERRORS='-Werror'
     DSO_CFLAGS=''
     DSO_PIC_CFLAGS='-fPIC'
@@ -1493,8 +1507,8 @@ elif test "$SOLARIS_SUNPRO_CC"; then
     fi
     _DEFINES_CFLAGS='$(ACDEFINES) -D_MOZILLA_CONFIG_H_ -DMOZILLA_CLIENT'
 else
-    MKSHLIB='$(LD) $(DSO_LDOPTS) -h $(notdir $@) -o $@'
-    MKCSHLIB='$(LD) $(DSO_LDOPTS) -h $(notdir $@) -o $@'
+    MKSHLIB='$(LD) $(DSO_LDOPTS) -h $(DSO_SONAME) -o $@'
+    MKCSHLIB='$(LD) $(DSO_LDOPTS) -h $(DSO_SONAME) -o $@'
 
     DSO_LDOPTS='-shared'
     if test "$GNU_LD"; then
@@ -2317,8 +2331,8 @@ ia64*-hpux*)
     if test "$LIBRUNPATH"; then
         DSO_LDOPTS="-Wl,-R$LIBRUNPATH $DSO_LDOPTS"
     fi
-    MKSHLIB='$(CXX) $(CXXFLAGS) $(DSO_PIC_CFLAGS) $(DSO_LDOPTS) -Wl,-soname,$(notdir $@) -o $@'
-    MKCSHLIB='$(CC) $(CFLAGS) $(DSO_PIC_CFLAGS) $(DSO_LDOPTS) -Wl,-soname,$(notdir $@)) -o $@'
+    MKSHLIB='$(CXX) $(CXXFLAGS) $(DSO_PIC_CFLAGS) $(DSO_LDOPTS) -Wl,-soname,$(DSO_SONAME) -o $@'
+    MKCSHLIB='$(CC) $(CFLAGS) $(DSO_PIC_CFLAGS) $(DSO_LDOPTS) -Wl,-soname,$(DSO_SONAME) -o $@'
     ;;
 
 *-openbsd*)
@@ -2361,8 +2375,8 @@ ia64*-hpux*)
                        [LDFLAGS=$_SAVE_LDFLAGS])
        fi
        MOZ_OPTIMIZE_FLAGS="-xO4"
-       MKSHLIB='$(CXX) $(CXXFLAGS) $(DSO_PIC_FLAGS) $(DSO_LDOPTS) -h $(notdir $@) -o $@'
-       MKCSHLIB='$(CC) $(CFLAGS) $(DSO_PIC_FLAGS) $(DSO_LDOPTS) -h $(notdir $@) -o $@'
+       MKSHLIB='$(CXX) $(CXXFLAGS) $(DSO_PIC_FLAGS) $(DSO_LDOPTS) -h $(DSO_SONAME) -o $@'
+       MKCSHLIB='$(CC) $(CFLAGS) $(DSO_PIC_FLAGS) $(DSO_LDOPTS) -h $(DSO_SONAME) -o $@'
        MKSHLIB_FORCE_ALL='-z allextract'
        MKSHLIB_UNFORCE_ALL='-z defaultextract'
        DSO_LDOPTS='-G'
