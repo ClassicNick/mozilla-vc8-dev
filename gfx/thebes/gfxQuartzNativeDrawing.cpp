@@ -27,6 +27,13 @@ gfxQuartzNativeDrawing::BeginNativeDrawing()
 {
   NS_ASSERTION(!mCGContext, "BeginNativeDrawing called when drawing already in progress");
 
+  if (mContext->IsCairo()) {
+    // We're past that now. Any callers that still supply a Cairo context
+    // don't deserve native theming.
+    NS_WARNING("gfxQuartzNativeDrawing being used with a gfxContext that is not backed by a DrawTarget");
+    return nullptr;
+  }
+
   DrawTarget *dt = mContext->GetDrawTarget();
   if (dt->GetBackendType() != BackendType::COREGRAPHICS || dt->IsDualDrawTarget()) {
     IntSize backingSize(NSToIntFloor(mNativeRect.width * mBackingScale),
@@ -55,6 +62,7 @@ void
 gfxQuartzNativeDrawing::EndNativeDrawing()
 {
   NS_ASSERTION(mCGContext, "EndNativeDrawing called without BeginNativeDrawing");
+  MOZ_ASSERT(!mContext->IsCairo(), "BeginNativeDrawing succeeded with cairo context?");
 
   mBorrowedContext.Finish();
   if (mDrawTarget) {
