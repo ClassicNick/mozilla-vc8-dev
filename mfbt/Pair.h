@@ -9,6 +9,9 @@
 #ifndef mozilla_Pair_h
 #define mozilla_Pair_h
 
+#if !defined(_MSC_VER) || _MSC_VER >= 1400
+/* This file is unnecessary if UniquePtr is not used */
+
 #include "mozilla/Attributes.h"
 #include "mozilla/Move.h"
 #include "mozilla/TypeTraits.h"
@@ -180,5 +183,7 @@ Swap(Pair<A, B>& aX, Pair<A, B>& aY)
 }
 
 } // namespace mozilla
+
+#endif // #if !defined(_MSC_VER) || _MSC_VER >= 1400
 
 #endif /* mozilla_Pair_h */

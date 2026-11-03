@@ -9,6 +9,9 @@
 #ifndef mozilla_UniquePtr_h
 #define mozilla_UniquePtr_h
 
+#if !defined(_MSC_VER) || _MSC_VER >= 1400
+/* UniquePtr causes internal compiler errors in MSVC 2003 */
+
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Compiler.h"
@@ -20,7 +23,7 @@
 namespace mozilla {
 
 template<typename T> class DefaultDelete;
-template<typename T, class D = DefaultDelete<T> > class UniquePtr;
+template<typename T, class D = DefaultDelete<T>> class UniquePtr;
 
 } // namespace mozilla
 
@@ -216,7 +219,7 @@ class UniquePtr
     // behavior really isn't something you should use.
     UniquePtr(Pointer p,
               typename RemoveReference<D>::Type& d2)
-      : tuple(p, d2)
+      : tuple(p, Move(d2))
     {
       static_assert(!IsReference<D>::value,
                     "lvalue deleter can't be stored by reference");
@@ -226,6 +229,7 @@ class UniquePtr
       : tuple(other.release(), other.getDeleter())
     {}
 
+#ifdef MOZ_HAVE_CXX11_NULLPTR
     template<typename N>
     UniquePtr(N,
               typename EnableIf<IsNullPointer<N>::value, int>::Type dummy = 0)
@@ -234,6 +238,7 @@ class UniquePtr
       static_assert(!IsPointer<D>::value, "must provide a deleter instance");
       static_assert(!IsReference<D>::value, "must provide a deleter instance");
     }
+#endif
 
     template<typename U, class E>
     UniquePtr(UniquePtr<U, E>& other,
@@ -378,7 +383,7 @@ class UniquePtr<T[], D>
     // comment by this constructor in the non-T[] specialization above.
     UniquePtr(Pointer p,
               typename RemoveReference<D>::Type& d2)
-      : tuple(p, d2)
+      : tuple(p, Move(d2))
     {
       static_assert(!IsReference<D>::value,
                     "lvalue deleter can't be stored by reference");
@@ -398,6 +403,7 @@ class UniquePtr<T[], D>
       : tuple(other.release(), other.getDeleter())
     {}
 
+#ifdef MOZ_HAVE_CXX11_NULLPTR
     template<typename N>
     UniquePtr(N,
               typename EnableIf<IsNullPointer<N>::value, int>::Type dummy = 0)
@@ -406,6 +412,7 @@ class UniquePtr<T[], D>
       static_assert(!IsPointer<D>::value, "must provide a deleter instance");
       static_assert(!IsReference<D>::value, "must provide a deleter instance");
     }
+#endif
 
     ~UniquePtr() {
       reset(nullptr);
@@ -451,6 +458,7 @@ class UniquePtr<T[], D>
     }
 
   private:
+#ifdef MOZ_HAVE_CXX11_NULLPTR
     // Kill off all remaining overloads that aren't true nullptr (the overload
     // above should handle that) or emulated nullptr (which acts like int/long
     // on gcc 4.4/4.5).
@@ -463,6 +471,7 @@ class UniquePtr<T[], D>
                                                      long>::Type>::value,
                                  int>::Type dummy = 0)
 	{};
+#endif
 
   public:
     void swap(UniquePtr& other) {
@@ -713,5 +722,7 @@ typename detail::UniqueSelector<T>::KnownBound
 MakeConstUnique(const A1& a1, const A2& a2, const A3& a3, const A4& a4) MOZ_DELETE;
 
 } // namespace mozilla
+
+#endif // #if !defined(_MSC_VER) || _MSC_VER >= 1400
 
 #endif /* mozilla_UniquePtr_h */
