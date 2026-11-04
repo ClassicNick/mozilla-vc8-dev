@@ -244,13 +244,13 @@ const char *
 js::gcstats::ExplainReason(JS::gcreason::Reason reason)
 {
     switch (reason) {
-#define SWITCH_REASON(name)                     \
+#define SWITCH_REASON(name)                         \
         case JS::gcreason::name:                    \
           return #name;
         GCREASONS(SWITCH_REASON)
 
         default:
-          MOZ_ASSUME_UNREACHABLE("bad GC reason");
+          MOZ_CRASH("bad GC reason");
 #undef SWITCH_REASON
     }
 }
@@ -580,7 +580,7 @@ Statistics::beginSlice(int collectedCount, int zoneCount, int compartmentCount,
     if (first)
         beginGC();
 
-    SliceData data(reason, PRMJ_Now(), SystemPageAllocator::GetPageFaultCount());
+    SliceData data(reason, PRMJ_Now(), GetPageFaultCount());
     (void) slices.append(data); /* Ignore any OOMs here. */
 
     if (JSAccumulateTelemetryDataCallback cb = runtime->telemetryCallback)
@@ -599,7 +599,7 @@ void
 Statistics::endSlice()
 {
     slices.back().end = PRMJ_Now();
-    slices.back().endFaults = SystemPageAllocator::GetPageFaultCount();
+    slices.back().endFaults = GetPageFaultCount();
 
     if (JSAccumulateTelemetryDataCallback cb = runtime->telemetryCallback) {
         (*cb)(JS_TELEMETRY_GC_SLICE_MS, t(slices.back().end - slices.back().start));

@@ -1411,6 +1411,8 @@ public:
     mManager->Mutated(this);
   }
 
+  virtual int32_t GetMaxLayerSize() { return Manager()->GetMaxTextureSize(); }
+
 protected:
   Layer(LayerManager* aManager, void* aImplData);
 

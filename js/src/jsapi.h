@@ -2837,10 +2837,6 @@ JS_DefinePropertyById(JSContext *cx, JS::HandleObject obj, JS::HandleId id, doub
                       JSPropertyOp getter = nullptr, JSStrictPropertyOp setter = nullptr);
 
 extern JS_PUBLIC_API(bool)
-JS_DefineOwnProperty(JSContext *cx, JS::HandleObject obj, JS::HandleId id,
-                     JS::HandleValue descriptor, bool *bp);
-
-extern JS_PUBLIC_API(bool)
 JS_AlreadyHasOwnProperty(JSContext *cx, JS::HandleObject obj, const char *name,
                          bool *foundp);
 
@@ -2958,6 +2954,17 @@ class MutablePropertyDescriptorOperations : public PropertyDescriptorOperations<
     void setSetter(JSStrictPropertyOp op) { desc()->setter = op; }
     void setGetterObject(JSObject *obj) { desc()->getter = reinterpret_cast<JSPropertyOp>(obj); }
     void setSetterObject(JSObject *obj) { desc()->setter = reinterpret_cast<JSStrictPropertyOp>(obj); }
+
+    JS::MutableHandleObject getterObject() {
+        MOZ_ASSERT(this->hasGetterObject());
+        return JS::MutableHandleObject::fromMarkedLocation(
+                reinterpret_cast<JSObject **>(&desc()->getter));
+    }
+    JS::MutableHandleObject setterObject() {
+        MOZ_ASSERT(this->hasSetterObject());
+        return JS::MutableHandleObject::fromMarkedLocation(
+                reinterpret_cast<JSObject **>(&desc()->setter));
+    }
 };
 
 } /* namespace JS */
@@ -3014,6 +3021,16 @@ class MutableHandleBase<JSPropertyDescriptor>
 };
 
 } /* namespace js */
+
+namespace JS {
+
+extern JS_PUBLIC_API(bool)
+ParsePropertyDescriptorObject(JSContext *cx,
+                              JS::HandleObject obj,
+                              JS::HandleValue descriptor,
+                              JS::MutableHandle<JSPropertyDescriptor> desc);
+
+} // namespace JS
 
 extern JS_PUBLIC_API(bool)
 JS_GetOwnPropertyDescriptorById(JSContext *cx, JS::HandleObject obj, JS::HandleId id,
@@ -4145,15 +4162,16 @@ JS_FileEscapedString(FILE *fp, JSString *str, char quote);
  * special cases where getting the chars is infallible:
  *
  * The first case is interned strings, i.e., strings from JS_InternString or
- * JSID_TO_STRING(id), using JS_GetInternedStringChars*.
+ * JSID_TO_STRING(id), using JS_GetLatin1InternedStringChars or
+ * JS_GetTwoByteInternedStringChars.
  *
  * The second case is "flat" strings that have been explicitly prepared in a
  * fallible context by JS_FlattenString. To catch errors, a separate opaque
  * JSFlatString type is returned by JS_FlattenString and expected by
  * JS_GetFlatStringChars. Note, though, that this is purely a syntactic
  * distinction: the input and output of JS_FlattenString are the same actual
- * GC-thing so only one needs to be rooted. If a JSString is known to be flat,
- * JS_ASSERT_STRING_IS_FLAT can be used to make a debug-checked cast. Example:
+ * GC-thing. If a JSString is known to be flat, JS_ASSERT_STRING_IS_FLAT can be
+ * used to make a debug-checked cast. Example:
  *
  *   // in a fallible context
  *   JSFlatString *fstr = JS_FlattenString(cx, str);
@@ -4162,25 +4180,29 @@ JS_FileEscapedString(FILE *fp, JSString *str, char quote);
  *   JS_ASSERT(fstr == JS_ASSERT_STRING_IS_FLAT(str));
  *
  *   // in an infallible context, for the same 'str'
- *   const jschar *chars = JS_GetFlatStringChars(fstr)
+ *   AutoCheckCannotGC nogc;
+ *   const jschar *chars = JS_GetTwoByteFlatStringChars(nogc, fstr)
  *   JS_ASSERT(chars);
  *
- * The CharsZ APIs guarantee that the returned array has a null character at
- * chars[length]. This can require additional copying so clients should prefer
- * APIs without CharsZ if possible. The infallible functions also return
- * null-terminated arrays. (There is no additional cost or non-Z alternative
- * for the infallible functions, so 'Z' is left out of the identifier.)
+ * Flat strings and interned strings are always null-terminated, so
+ * JS_FlattenString can be used to get a null-terminated string.
+ *
+ * Additionally, string characters are stored as either Latin1Char (8-bit)
+ * or jschar (16-bit). Clients can use JS_StringHasLatin1Chars and can then
+ * call either the Latin1* or TwoByte* functions. Some functions like
+ * JS_CopyStringChars and JS_GetStringCharAt accept both Latin1 and TwoByte
+ * strings.
  */
 
 extern JS_PUBLIC_API(size_t)
 JS_GetStringLength(JSString *str);
 
+extern JS_PUBLIC_API(bool)
+JS_StringIsFlat(JSString *str);
+
 /* Returns true iff the string's characters are stored as Latin1. */
 extern JS_PUBLIC_API(bool)
 JS_StringHasLatin1Chars(JSString *str);
-
-extern JS_PUBLIC_API(const jschar *)
-JS_GetStringCharsAndLength(JSContext *cx, JSString *str, size_t *length);
 
 extern JS_PUBLIC_API(const JS::Latin1Char *)
 JS_GetLatin1StringCharsAndLength(JSContext *cx, const JS::AutoCheckCannotGC &nogc, JSString *str,
@@ -4202,23 +4224,20 @@ JS_GetTwoByteExternalStringChars(JSString *str);
 extern JS_PUBLIC_API(bool)
 JS_CopyStringChars(JSContext *cx, mozilla::Range<jschar> dest, JSString *str);
 
-extern JS_PUBLIC_API(const jschar *)
-JS_GetInternedStringChars(JSString *str);
+extern JS_PUBLIC_API(const JS::Latin1Char *)
+JS_GetLatin1InternedStringChars(const JS::AutoCheckCannotGC &nogc, JSString *str);
 
 extern JS_PUBLIC_API(const jschar *)
-JS_GetInternedStringCharsAndLength(JSString *str, size_t *length);
-
-extern JS_PUBLIC_API(const jschar *)
-JS_GetStringCharsZ(JSContext *cx, JSString *str);
-
-extern JS_PUBLIC_API(const jschar *)
-JS_GetStringCharsZAndLength(JSContext *cx, JSString *str, size_t *length);
+JS_GetTwoByteInternedStringChars(const JS::AutoCheckCannotGC &nogc, JSString *str);
 
 extern JS_PUBLIC_API(JSFlatString *)
 JS_FlattenString(JSContext *cx, JSString *str);
 
+extern JS_PUBLIC_API(const JS::Latin1Char *)
+JS_GetLatin1FlatStringChars(const JS::AutoCheckCannotGC &nogc, JSFlatString *str);
+
 extern JS_PUBLIC_API(const jschar *)
-JS_GetFlatStringChars(JSFlatString *str);
+JS_GetTwoByteFlatStringChars(const JS::AutoCheckCannotGC &nogc, JSFlatString *str);
 
 static MOZ_ALWAYS_INLINE JSFlatString *
 JSID_TO_FLAT_STRING(jsid id)
@@ -4230,7 +4249,7 @@ JSID_TO_FLAT_STRING(jsid id)
 static MOZ_ALWAYS_INLINE JSFlatString *
 JS_ASSERT_STRING_IS_FLAT(JSString *str)
 {
-    JS_ASSERT(JS_GetFlatStringChars((JSFlatString *)str));
+    JS_ASSERT(JS_StringIsFlat(str));
     return (JSFlatString *)str;
 }
 
@@ -4390,9 +4409,6 @@ namespace JS {
 
 extern JS_PUBLIC_API(JSAddonId *)
 NewAddonId(JSContext *cx, JS::HandleString str);
-
-extern JS_PUBLIC_API(const jschar *)
-CharsZOfAddonId(JSAddonId *id);
 
 extern JS_PUBLIC_API(JSString *)
 StringOfAddonId(JSAddonId *id);
