@@ -2378,12 +2378,6 @@ class AutoCompartmentRooter : private JS::CustomAutoRooter
 
 } /* anonymous namespace */
 
-bool
-JS::CompartmentOptions::cloneSingletons(JSContext *cx) const
-{
-    return cloneSingletonsOverride_.get(cx->options().cloneSingletons());
-}
-
 JS::CompartmentOptions &
 JS::CompartmentOptions::setZone(ZoneSpecifier spec)
 {
@@ -4489,7 +4483,7 @@ JS::CompileOptions::CompileOptions(JSContext *cx, JSVersion version)
 
     compileAndGo = false;
     noScriptRval = cx->options().noScriptRval();
-    strictOption = cx->options().strictMode();
+    strictOption = cx->runtime()->options().strictMode();
     extraWarningsOption = cx->options().extraWarnings();
     werrorOption = cx->runtime()->options().werror();
     asmJSOption = cx->runtime()->options().asmJS();

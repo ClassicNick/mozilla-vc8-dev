@@ -58,9 +58,9 @@ class nsFilePicker :
 #endif
   public nsBaseWinFilePicker
 {
+  virtual ~nsFilePicker();
 public:
   nsFilePicker(); 
-  virtual ~nsFilePicker();
 
   NS_IMETHOD Init(nsIDOMWindow *aParent, const nsAString& aTitle, int16_t aMode);
                   

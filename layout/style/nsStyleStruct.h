@@ -92,7 +92,10 @@ public:
   static nscoord ZoomText(nsPresContext* aPresContext, nscoord aSize);
   static nscoord UnZoomText(nsPresContext* aPresContext, nscoord aSize);
 
-  void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW;
+  void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
+    return aContext->PresShell()->
+      AllocateByObjectID(nsPresArena::nsStyleFont_id, sz);
+  }
   void Destroy(nsPresContext* aContext);
 
   void EnableZoom(nsPresContext* aContext, bool aEnable);
@@ -327,11 +330,13 @@ struct nsStyleColor {
   }
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
-    return aContext->AllocateFromShell(sz);
+    return aContext->PresShell()->
+      AllocateByObjectID(nsPresArena::nsStyleColor_id, sz);
   }
   void Destroy(nsPresContext* aContext) {
     this->~nsStyleColor();
-    aContext->FreeToShell(sizeof(nsStyleColor), this);
+    aContext->PresShell()->
+      FreeByObjectID(nsPresArena::nsStyleColor_id, this);
   }
 
   // Don't add ANY members to this struct!  We can achieve caching in the rule
@@ -345,7 +350,8 @@ struct nsStyleBackground {
   ~nsStyleBackground();
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
-    return aContext->AllocateFromShell(sz);
+    return aContext->PresShell()->
+      AllocateByObjectID(nsPresArena::nsStyleBackground_id, sz);
   }
   void Destroy(nsPresContext* aContext);
 
@@ -571,7 +577,10 @@ struct nsStyleMargin {
     MOZ_COUNT_DTOR(nsStyleMargin);
   }
 
-  void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW;
+  void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
+    return aContext->PresShell()->
+      AllocateByObjectID(nsPresArena::nsStyleMargin_id, sz);
+  }
   void Destroy(nsPresContext* aContext);
 
   void RecalcData();
@@ -612,7 +621,10 @@ struct nsStylePadding {
     MOZ_COUNT_DTOR(nsStylePadding);
   }
 
-  void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW;
+  void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
+    return aContext->PresShell()->
+      AllocateByObjectID(nsPresArena::nsStylePadding_id, sz);
+  }
   void Destroy(nsPresContext* aContext);
 
   void RecalcData();
@@ -799,7 +811,10 @@ struct nsStyleBorder {
   nsStyleBorder(const nsStyleBorder& aBorder);
   ~nsStyleBorder();
 
-  void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW;
+  void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
+    return aContext->PresShell()->
+      AllocateByObjectID(nsPresArena::nsStyleBorder_id, sz);
+  }
   void Destroy(nsPresContext* aContext);
 
   nsChangeHint CalcDifference(const nsStyleBorder& aOther) const;
@@ -1025,11 +1040,13 @@ struct nsStyleOutline {
   }
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
-    return aContext->AllocateFromShell(sz);
+    return aContext->PresShell()->
+      AllocateByObjectID(nsPresArena::nsStyleOutline_id, sz);
   }
   void Destroy(nsPresContext* aContext) {
     this->~nsStyleOutline();
-    aContext->FreeToShell(sizeof(nsStyleOutline), this);
+    aContext->PresShell()->
+      FreeByObjectID(nsPresArena::nsStyleOutline_id, this);
   }
 
   void RecalcData(nsPresContext* aContext);
@@ -1118,11 +1135,13 @@ struct nsStyleList {
   ~nsStyleList(void);
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
-    return aContext->AllocateFromShell(sz);
+    return aContext->PresShell()->
+      AllocateByObjectID(nsPresArena::nsStyleList_id, sz);
   }
   void Destroy(nsPresContext* aContext) {
     this->~nsStyleList();
-    aContext->FreeToShell(sizeof(nsStyleList), this);
+    aContext->PresShell()->
+      FreeByObjectID(nsPresArena::nsStyleList_id, this);
   }
 
   nsChangeHint CalcDifference(const nsStyleList& aOther) const;
@@ -1284,11 +1303,13 @@ struct nsStylePosition {
   ~nsStylePosition(void);
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
-    return aContext->AllocateFromShell(sz);
+    return aContext->PresShell()->
+      AllocateByObjectID(nsPresArena::nsStylePosition_id, sz);
   }
   void Destroy(nsPresContext* aContext) {
     this->~nsStylePosition();
-    aContext->FreeToShell(sizeof(nsStylePosition), this);
+    aContext->PresShell()->
+      FreeByObjectID(nsPresArena::nsStylePosition_id, this);
   }
 
   nsChangeHint CalcDifference(const nsStylePosition& aOther) const;
@@ -1434,11 +1455,13 @@ struct nsStyleTextReset {
   ~nsStyleTextReset(void);
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
-    return aContext->AllocateFromShell(sz);
+    return aContext->PresShell()->
+      AllocateByObjectID(nsPresArena::nsStyleTextReset_id, sz);
   }
   void Destroy(nsPresContext* aContext) {
     this->~nsStyleTextReset();
-    aContext->FreeToShell(sizeof(nsStyleTextReset), this);
+    aContext->PresShell()->
+      FreeByObjectID(nsPresArena::nsStyleTextReset_id, this);
   }
 
   uint8_t GetDecorationStyle() const
@@ -1508,11 +1531,13 @@ struct nsStyleText {
   ~nsStyleText(void);
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
-    return aContext->AllocateFromShell(sz);
+    return aContext->PresShell()->
+      AllocateByObjectID(nsPresArena::nsStyleText_id, sz);
   }
   void Destroy(nsPresContext* aContext) {
     this->~nsStyleText();
-    aContext->FreeToShell(sizeof(nsStyleText), this);
+    aContext->PresShell()->
+      FreeByObjectID(nsPresArena::nsStyleText_id, this);
   }
 
   nsChangeHint CalcDifference(const nsStyleText& aOther) const;
@@ -1695,11 +1720,13 @@ struct nsStyleVisibility {
   }
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
-    return aContext->AllocateFromShell(sz);
+    return aContext->PresShell()->
+      AllocateByObjectID(nsPresArena::nsStyleVisibility_id, sz);
   }
   void Destroy(nsPresContext* aContext) {
     this->~nsStyleVisibility();
-    aContext->FreeToShell(sizeof(nsStyleVisibility), this);
+    aContext->PresShell()->
+      FreeByObjectID(nsPresArena::nsStyleVisibility_id, this);
   }
 
   nsChangeHint CalcDifference(const nsStyleVisibility& aOther) const;
@@ -1907,11 +1934,13 @@ struct nsStyleDisplay {
   }
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
-    return aContext->AllocateFromShell(sz);
+    return aContext->PresShell()->
+      AllocateByObjectID(nsPresArena::nsStyleDisplay_id, sz);
   }
   void Destroy(nsPresContext* aContext) {
     this->~nsStyleDisplay();
-    aContext->FreeToShell(sizeof(nsStyleDisplay), this);
+    aContext->PresShell()->
+      FreeByObjectID(nsPresArena::nsStyleDisplay_id, this);
   }
 
   nsChangeHint CalcDifference(const nsStyleDisplay& aOther) const;
@@ -2107,11 +2136,13 @@ struct nsStyleTable {
   ~nsStyleTable(void);
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
-    return aContext->AllocateFromShell(sz);
+    return aContext->PresShell()->
+      AllocateByObjectID(nsPresArena::nsStyleTable_id, sz);
   }
   void Destroy(nsPresContext* aContext) {
     this->~nsStyleTable();
-    aContext->FreeToShell(sizeof(nsStyleTable), this);
+    aContext->PresShell()->
+      FreeByObjectID(nsPresArena::nsStyleTable_id, this);
   }
 
   nsChangeHint CalcDifference(const nsStyleTable& aOther) const;
@@ -2137,11 +2168,13 @@ struct nsStyleTableBorder {
   ~nsStyleTableBorder(void);
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
-    return aContext->AllocateFromShell(sz);
+    return aContext->PresShell()->
+      AllocateByObjectID(nsPresArena::nsStyleTableBorder_id, sz);
   }
   void Destroy(nsPresContext* aContext) {
     this->~nsStyleTableBorder();
-    aContext->FreeToShell(sizeof(nsStyleTableBorder), this);
+    aContext->PresShell()->
+      FreeByObjectID(nsPresArena::nsStyleTableBorder_id, this);
   }
 
   nsChangeHint CalcDifference(const nsStyleTableBorder& aOther) const;
@@ -2230,11 +2263,13 @@ struct nsStyleQuotes {
   ~nsStyleQuotes();
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
-    return aContext->AllocateFromShell(sz);
+    return aContext->PresShell()->
+      AllocateByObjectID(nsPresArena::nsStyleQuotes_id, sz);
   }
   void Destroy(nsPresContext* aContext) {
     this->~nsStyleQuotes();
-    aContext->FreeToShell(sizeof(nsStyleQuotes), this);
+    aContext->PresShell()->
+      FreeByObjectID(nsPresArena::nsStyleQuotes_id, this);
   }
 
   void SetInitial();
@@ -2309,7 +2344,8 @@ struct nsStyleContent {
   ~nsStyleContent(void);
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
-    return aContext->AllocateFromShell(sz);
+    return aContext->PresShell()->
+      AllocateByObjectID(nsPresArena::nsStyleContent_id, sz);
   }
   void Destroy(nsPresContext* aContext);
 
@@ -2416,11 +2452,13 @@ struct nsStyleUIReset {
   ~nsStyleUIReset(void);
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
-    return aContext->AllocateFromShell(sz);
+    return aContext->PresShell()->
+      AllocateByObjectID(nsPresArena::nsStyleUIReset_id, sz);
   }
   void Destroy(nsPresContext* aContext) {
     this->~nsStyleUIReset();
-    aContext->FreeToShell(sizeof(nsStyleUIReset), this);
+    aContext->PresShell()->
+      FreeByObjectID(nsPresArena::nsStyleUIReset_id, this);
   }
 
   nsChangeHint CalcDifference(const nsStyleUIReset& aOther) const;
@@ -2475,11 +2513,13 @@ struct nsStyleUserInterface {
   ~nsStyleUserInterface(void);
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
-    return aContext->AllocateFromShell(sz);
+    return aContext->PresShell()->
+      AllocateByObjectID(nsPresArena::nsStyleUserInterface_id, sz);
   }
   void Destroy(nsPresContext* aContext) {
     this->~nsStyleUserInterface();
-    aContext->FreeToShell(sizeof(nsStyleUserInterface), this);
+    aContext->PresShell()->
+      FreeByObjectID(nsPresArena::nsStyleUserInterface_id, this);
   }
 
   nsChangeHint CalcDifference(const nsStyleUserInterface& aOther) const;
@@ -2516,11 +2556,13 @@ struct nsStyleXUL {
   ~nsStyleXUL();
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
-    return aContext->AllocateFromShell(sz);
+    return aContext->PresShell()->
+      AllocateByObjectID(nsPresArena::nsStyleXUL_id, sz);
   }
   void Destroy(nsPresContext* aContext) {
     this->~nsStyleXUL();
-    aContext->FreeToShell(sizeof(nsStyleXUL), this);
+    aContext->PresShell()->
+      FreeByObjectID(nsPresArena::nsStyleXUL_id, this);
   }
 
   nsChangeHint CalcDifference(const nsStyleXUL& aOther) const;
@@ -2549,11 +2591,13 @@ struct nsStyleColumn {
   ~nsStyleColumn();
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
-    return aContext->AllocateFromShell(sz);
+    return aContext->PresShell()->
+      AllocateByObjectID(nsPresArena::nsStyleColumn_id, sz);
   }
   void Destroy(nsPresContext* aContext) {
     this->~nsStyleColumn();
-    aContext->FreeToShell(sizeof(nsStyleColumn), this);
+    aContext->PresShell()->
+      FreeByObjectID(nsPresArena::nsStyleColumn_id, this);
   }
 
   nsChangeHint CalcDifference(const nsStyleColumn& aOther) const;
@@ -2638,11 +2682,13 @@ struct nsStyleSVG {
   ~nsStyleSVG();
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
-    return aContext->AllocateFromShell(sz);
+    return aContext->PresShell()->
+      AllocateByObjectID(nsPresArena::nsStyleSVG_id, sz);
   }
   void Destroy(nsPresContext* aContext) {
     this->~nsStyleSVG();
-    aContext->FreeToShell(sizeof(nsStyleSVG), this);
+    aContext->PresShell()->
+      FreeByObjectID(nsPresArena::nsStyleSVG_id, this);
   }
 
   nsChangeHint CalcDifference(const nsStyleSVG& aOther) const;
@@ -2724,6 +2770,9 @@ struct nsStyleFilter {
   nsStyleFilter& operator=(const nsStyleFilter& aOther);
 
   bool operator==(const nsStyleFilter& aOther) const;
+  bool operator!=(const nsStyleFilter& aOther) const {
+    return !(*this == aOther);
+  }
 
   int32_t GetType() const {
     return mType;
@@ -2772,11 +2821,13 @@ struct nsStyleSVGReset {
   ~nsStyleSVGReset();
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
-    return aContext->AllocateFromShell(sz);
+    return aContext->PresShell()->
+      AllocateByObjectID(nsPresArena::nsStyleSVGReset_id, sz);
   }
   void Destroy(nsPresContext* aContext) {
     this->~nsStyleSVGReset();
-    aContext->FreeToShell(sizeof(nsStyleSVGReset), this);
+    aContext->PresShell()->
+      FreeByObjectID(nsPresArena::nsStyleSVGReset_id, this);
   }
 
   nsChangeHint CalcDifference(const nsStyleSVGReset& aOther) const;
@@ -2816,11 +2867,13 @@ struct nsStyleVariables {
   ~nsStyleVariables();
 
   void* operator new(size_t sz, nsPresContext* aContext) CPP_THROW_NEW {
-    return aContext->AllocateFromShell(sz);
+    return aContext->PresShell()->
+      AllocateByObjectID(nsPresArena::nsStyleVariables_id, sz);
   }
   void Destroy(nsPresContext* aContext) {
     this->~nsStyleVariables();
-    aContext->FreeToShell(sizeof(nsStyleVariables), this);
+    aContext->PresShell()->
+      FreeByObjectID(nsPresArena::nsStyleVariables_id, this);
   }
 
   nsChangeHint CalcDifference(const nsStyleVariables& aOther) const;
