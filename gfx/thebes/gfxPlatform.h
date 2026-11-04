@@ -15,6 +15,7 @@
 #include "gfxTypes.h"
 #include "gfxFontFamilyList.h"
 #include "gfxBlur.h"
+#include "gfxImageSurface.h"
 #include "nsRect.h"
 
 #include "qcms.h"

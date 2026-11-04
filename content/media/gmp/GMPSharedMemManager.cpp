@@ -19,7 +19,7 @@ namespace gmp {
 // Compressed (encoded) data goes from the Decoder parent to the child;
 // pool there, and then return with Encoded() frames and goes into the parent
 // pool.
-static StaticAutoPtr<nsTArray<ipc::Shmem>> sGmpFreelist[GMPSharedMemManager::kGMPNumTypes];
+static StaticAutoPtr<nsTArray<ipc::Shmem> > sGmpFreelist[GMPSharedMemManager::kGMPNumTypes];
 static uint32_t sGMPShmemManagerCount = 0;
 
 GMPSharedMemManager::GMPSharedMemManager()

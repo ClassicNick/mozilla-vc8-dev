@@ -11,7 +11,7 @@ namespace mozilla {
 namespace dom {
 namespace mobilemessage {
 
-NS_IMPL_ISUPPORTS(DeletedMessageInfo, nsIDeletedMessageInfo)
+NS_IMPL_ISUPPORTS1(DeletedMessageInfo, nsIDeletedMessageInfo)
 
 DeletedMessageInfo::DeletedMessageInfo(const DeletedMessageInfoData& aData)
   : mData(aData)

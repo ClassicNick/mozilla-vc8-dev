@@ -26008,6 +26008,37 @@ fi
 
 
 
+
+_SAVE_CFLAGS="$CFLAGS"
+CFLAGS="$CFLAGS -fno-integrated-as"
+
+echo $ac_n "checking whether C compiler supports -fno-integrated-as""... $ac_c" 1>&6
+echo "configure:26017: checking whether C compiler supports -fno-integrated-as" >&5
+cat > conftest.$ac_ext <<EOF
+#line 26019 "configure"
+#include "confdefs.h"
+
+int main() {
+return 0;
+; return 0; }
+EOF
+if { (eval echo configure:26026: \"$ac_compile\") 1>&5; (eval $ac_compile) 2>&5; }; then
+  rm -rf conftest*
+   NO_INTEGRATED_AS_CFLAGS="-fno-integrated-as"
+                 result="yes" 
+else
+  echo "configure: failed program was:" >&5
+  cat conftest.$ac_ext >&5
+  rm -rf conftest*
+  result="no"
+fi
+rm -f conftest*
+echo "$ac_t""$result" 1>&6
+
+CFLAGS="$_SAVE_CFLAGS"
+
+
+
 fi # ! SKIP_COMPILER_CHECKS
 
 cat >> confdefs.pytmp <<\EOF
@@ -26029,20 +26060,20 @@ if test "$COMPILE_ENVIRONMENT"; then
 
 
 echo $ac_n "checking what kind of list files are supported by the linker""... $ac_c" 1>&6
-echo "configure:26033: checking what kind of list files are supported by the linker" >&5
+echo "configure:26064: checking what kind of list files are supported by the linker" >&5
 if eval "test \"`echo '$''{'EXPAND_LIBS_LIST_STYLE'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
   echo "int main() {return 0;}" > conftest.${ac_ext}
-     if { ac_try='${CC-cc} -o conftest.${OBJ_SUFFIX} -c $CFLAGS $CPPFLAGS conftest.${ac_ext} 1>&5'; { (eval echo configure:26038: \"$ac_try\") 1>&5; (eval $ac_try) 2>&5; }; } && test -s conftest.${OBJ_SUFFIX}; then
+     if { ac_try='${CC-cc} -o conftest.${OBJ_SUFFIX} -c $CFLAGS $CPPFLAGS conftest.${ac_ext} 1>&5'; { (eval echo configure:26069: \"$ac_try\") 1>&5; (eval $ac_try) 2>&5; }; } && test -s conftest.${OBJ_SUFFIX}; then
          echo "INPUT(conftest.${OBJ_SUFFIX})" > conftest.list
-         if { ac_try='${CC-cc} -o conftest${ac_exeext} $LDFLAGS conftest.list $LIBS 1>&5'; { (eval echo configure:26040: \"$ac_try\") 1>&5; (eval $ac_try) 2>&5; }; } && test -s conftest${ac_exeext}; then
+         if { ac_try='${CC-cc} -o conftest${ac_exeext} $LDFLAGS conftest.list $LIBS 1>&5'; { (eval echo configure:26071: \"$ac_try\") 1>&5; (eval $ac_try) 2>&5; }; } && test -s conftest${ac_exeext}; then
              EXPAND_LIBS_LIST_STYLE=linkerscript
          else
              echo "conftest.${OBJ_SUFFIX}" > conftest.list
-                                                                 if { ac_try='${CC-cc} -o conftest${ac_exeext} $LDFLAGS -Wl,-filelist,conftest.list $LIBS 1>&5'; { (eval echo configure:26044: \"$ac_try\") 1>&5; (eval $ac_try) 2>&5; }; } && test -s conftest${ac_exeext}; then
+                                                                 if { ac_try='${CC-cc} -o conftest${ac_exeext} $LDFLAGS -Wl,-filelist,conftest.list $LIBS 1>&5'; { (eval echo configure:26075: \"$ac_try\") 1>&5; (eval $ac_try) 2>&5; }; } && test -s conftest${ac_exeext}; then
                  EXPAND_LIBS_LIST_STYLE=filelist
-             elif { ac_try='${CC-cc} -o conftest${ac_exeext} $LDFLAGS @conftest.list $LIBS 1>&5'; { (eval echo configure:26046: \"$ac_try\") 1>&5; (eval $ac_try) 2>&5; }; } && test -s conftest${ac_exeext}; then
+             elif { ac_try='${CC-cc} -o conftest${ac_exeext} $LDFLAGS @conftest.list $LIBS 1>&5'; { (eval echo configure:26077: \"$ac_try\") 1>&5; (eval $ac_try) 2>&5; }; } && test -s conftest${ac_exeext}; then
                  EXPAND_LIBS_LIST_STYLE=list
              else
                  EXPAND_LIBS_LIST_STYLE=none
@@ -26062,7 +26093,7 @@ LIBS_DESC_SUFFIX=desc
 
 if test "$GCC_USE_GNU_LD"; then
     echo $ac_n "checking what kind of ordering can be done with the linker""... $ac_c" 1>&6
-echo "configure:26066: checking what kind of ordering can be done with the linker" >&5
+echo "configure:26097: checking what kind of ordering can be done with the linker" >&5
 if eval "test \"`echo '$''{'EXPAND_LIBS_ORDER_STYLE'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
@@ -26070,14 +26101,14 @@ else
          _SAVE_LDFLAGS="$LDFLAGS"
          LDFLAGS="${LDFLAGS} -Wl,--section-ordering-file,conftest.order"
          cat > conftest.$ac_ext <<EOF
-#line 26074 "configure"
+#line 26105 "configure"
 #include "confdefs.h"
 
 int main() {
 
 ; return 0; }
 EOF
-if { (eval echo configure:26081: \"$ac_link\") 1>&5; (eval $ac_link) 2>&5; } && test -s conftest${ac_exeext}; then
+if { (eval echo configure:26112: \"$ac_link\") 1>&5; (eval $ac_link) 2>&5; } && test -s conftest${ac_exeext}; then
   rm -rf conftest*
   EXPAND_LIBS_ORDER_STYLE=section-ordering-file
 else
@@ -26089,7 +26120,7 @@ fi
 rm -f conftest*
          LDFLAGS="$_SAVE_LDFLAGS"
          if test -z "$EXPAND_LIBS_ORDER_STYLE"; then
-             if { ac_try='${CC-cc} ${DSO_LDOPTS} ${LDFLAGS} -o ${DLL_PREFIX}conftest${DLL_SUFFIX} -Wl'; { (eval echo configure:26093: \"$ac_try\") 1>&5; (eval $ac_try) 2>&5; }; }; then
+             if { ac_try='${CC-cc} ${DSO_LDOPTS} ${LDFLAGS} -o ${DLL_PREFIX}conftest${DLL_SUFFIX} -Wl'; { (eval echo configure:26124: \"$ac_try\") 1>&5; (eval $ac_try) 2>&5; }; }; then
                  EXPAND_LIBS_ORDER_STYLE=linkerscript
              else
                  EXPAND_LIBS_ORDER_STYLE=none
@@ -26181,7 +26212,7 @@ if test -z "${GLIB_CFLAGS}" -o -z "${GLIB_LIBS}" ; then
     # Extract the first word of "pkg-config", so it can be a program name with args.
 set dummy pkg-config; ac_word=$2
 echo $ac_n "checking for $ac_word""... $ac_c" 1>&6
-echo "configure:26185: checking for $ac_word" >&5
+echo "configure:26216: checking for $ac_word" >&5
 if eval "test \"`echo '$''{'ac_cv_path_PKG_CONFIG'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
@@ -26225,19 +26256,19 @@ fi
      PKG_CONFIG_MIN_VERSION=0.9.0
      if $PKG_CONFIG --atleast-pkgconfig-version $PKG_CONFIG_MIN_VERSION; then
         echo $ac_n "checking for glib-2.0 >= 1.3.7 gobject-2.0""... $ac_c" 1>&6
-echo "configure:26229: checking for glib-2.0 >= 1.3.7 gobject-2.0" >&5
+echo "configure:26260: checking for glib-2.0 >= 1.3.7 gobject-2.0" >&5
 
         if $PKG_CONFIG --exists "glib-2.0 >= 1.3.7 gobject-2.0" ; then
             echo "$ac_t""yes" 1>&6
             succeeded=yes
 
             echo $ac_n "checking GLIB_CFLAGS""... $ac_c" 1>&6
-echo "configure:26236: checking GLIB_CFLAGS" >&5
+echo "configure:26267: checking GLIB_CFLAGS" >&5
             GLIB_CFLAGS=`$PKG_CONFIG --cflags "glib-2.0 >= 1.3.7 gobject-2.0"`
             echo "$ac_t""$GLIB_CFLAGS" 1>&6
 
             echo $ac_n "checking GLIB_LIBS""... $ac_c" 1>&6
-echo "configure:26241: checking GLIB_LIBS" >&5
+echo "configure:26272: checking GLIB_LIBS" >&5
             ## Remove evil flags like -Wl,--export-dynamic
             GLIB_LIBS="`$PKG_CONFIG --libs \"glib-2.0 >= 1.3.7 gobject-2.0\" |sed s/-Wl,--export-dynamic//g`"
             echo "$ac_t""$GLIB_LIBS" 1>&6
@@ -26328,7 +26359,7 @@ if test "$USE_FC_FREETYPE"; then
     # Extract the first word of "pkg-config", so it can be a program name with args.
 set dummy pkg-config; ac_word=$2
 echo $ac_n "checking for $ac_word""... $ac_c" 1>&6
-echo "configure:26332: checking for $ac_word" >&5
+echo "configure:26363: checking for $ac_word" >&5
 if eval "test \"`echo '$''{'ac_cv_path_PKG_CONFIG'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
@@ -26372,19 +26403,19 @@ fi
      PKG_CONFIG_MIN_VERSION=0.9.0
      if $PKG_CONFIG --atleast-pkgconfig-version $PKG_CONFIG_MIN_VERSION; then
         echo $ac_n "checking for freetype2 >= 6.1.0""... $ac_c" 1>&6
-echo "configure:26376: checking for freetype2 >= 6.1.0" >&5
+echo "configure:26407: checking for freetype2 >= 6.1.0" >&5
 
         if $PKG_CONFIG --exists "freetype2 >= 6.1.0" ; then
             echo "$ac_t""yes" 1>&6
             succeeded=yes
 
             echo $ac_n "checking FT2_CFLAGS""... $ac_c" 1>&6
-echo "configure:26383: checking FT2_CFLAGS" >&5
+echo "configure:26414: checking FT2_CFLAGS" >&5
             FT2_CFLAGS=`$PKG_CONFIG --cflags "freetype2 >= 6.1.0"`
             echo "$ac_t""$FT2_CFLAGS" 1>&6
 
             echo $ac_n "checking FT2_LIBS""... $ac_c" 1>&6
-echo "configure:26388: checking FT2_LIBS" >&5
+echo "configure:26419: checking FT2_LIBS" >&5
             ## Remove evil flags like -Wl,--export-dynamic
             FT2_LIBS="`$PKG_CONFIG --libs \"freetype2 >= 6.1.0\" |sed s/-Wl,--export-dynamic//g`"
             echo "$ac_t""$FT2_LIBS" 1>&6
@@ -26421,12 +26452,12 @@ echo "configure:26388: checking FT2_LIBS" >&5
             CFLAGS="$CFLAGS $FT2_CFLAGS"
 
             echo $ac_n "checking for FT_Bitmap_Size.y_ppem""... $ac_c" 1>&6
-echo "configure:26425: checking for FT_Bitmap_Size.y_ppem" >&5
+echo "configure:26456: checking for FT_Bitmap_Size.y_ppem" >&5
 if eval "test \"`echo '$''{'ac_cv_member_FT_Bitmap_Size_y_ppem'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
   cat > conftest.$ac_ext <<EOF
-#line 26430 "configure"
+#line 26461 "configure"
 #include "confdefs.h"
 #include <ft2build.h>
                                  #include FT_FREETYPE_H
@@ -26436,7 +26467,7 @@ FT_Bitmap_Size s;
                                  return 1
 ; return 0; }
 EOF
-if { (eval echo configure:26440: \"$ac_compile\") 1>&5; (eval $ac_compile) 2>&5; }; then
+if { (eval echo configure:26471: \"$ac_compile\") 1>&5; (eval $ac_compile) 2>&5; }; then
   rm -rf conftest*
   ac_cv_member_FT_Bitmap_Size_y_ppem=yes
 else
@@ -26465,12 +26496,12 @@ EOF
             for ac_func in FT_GlyphSlot_Embolden FT_Load_Sfnt_Table
 do
 echo $ac_n "checking for $ac_func""... $ac_c" 1>&6
-echo "configure:26469: checking for $ac_func" >&5
+echo "configure:26500: checking for $ac_func" >&5
 if eval "test \"`echo '$''{'ac_cv_func2_$ac_func'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
   cat > conftest.$ac_ext <<EOF
-#line 26474 "configure"
+#line 26505 "configure"
 #define $ac_func innocuous_$ac_func
 #include "confdefs.h"
 #undef $ac_func
@@ -26497,7 +26528,7 @@ $ac_func();
 
 ; return 0; }
 EOF
-if { (eval echo configure:26501: \"$ac_link\") 1>&5; (eval $ac_link) 2>&5; } && test -s conftest${ac_exeext}; then
+if { (eval echo configure:26532: \"$ac_link\") 1>&5; (eval $ac_link) 2>&5; } && test -s conftest${ac_exeext}; then
   rm -rf conftest*
   eval "ac_cv_func2_$ac_func=yes"
 else
@@ -26535,12 +26566,12 @@ done
   do
        ac_safe=`echo "$ac_hdr" | sed 'y%./+-%__p_%'`
   echo $ac_n "checking for $ac_hdr""... $ac_c" 1>&6
-echo "configure:26539: checking for $ac_hdr" >&5
+echo "configure:26570: checking for $ac_hdr" >&5
   if eval "test \"`echo '$''{'ac_cv_header_$ac_safe'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
    cat > conftest.$ac_ext <<EOF
-#line 26544 "configure"
+#line 26575 "configure"
 #include "confdefs.h"
 #include <fontconfig/fontconfig.h>
 #include <$ac_hdr>
@@ -26548,7 +26579,7 @@ int main() {
 
 ; return 0; }
 EOF
-if { (eval echo configure:26552: \"$ac_compile\") 1>&5; (eval $ac_compile) 2>&5; }; then
+if { (eval echo configure:26583: \"$ac_compile\") 1>&5; (eval $ac_compile) 2>&5; }; then
   rm -rf conftest*
   eval "ac_cv_header_$ac_safe=yes"
 else
@@ -26594,7 +26625,7 @@ EOF
     # Extract the first word of "pkg-config", so it can be a program name with args.
 set dummy pkg-config; ac_word=$2
 echo $ac_n "checking for $ac_word""... $ac_c" 1>&6
-echo "configure:26598: checking for $ac_word" >&5
+echo "configure:26629: checking for $ac_word" >&5
 if eval "test \"`echo '$''{'ac_cv_path_PKG_CONFIG'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
@@ -26638,19 +26669,19 @@ fi
      PKG_CONFIG_MIN_VERSION=0.9.0
      if $PKG_CONFIG --atleast-pkgconfig-version $PKG_CONFIG_MIN_VERSION; then
         echo $ac_n "checking for fontconfig""... $ac_c" 1>&6
-echo "configure:26642: checking for fontconfig" >&5
+echo "configure:26673: checking for fontconfig" >&5
 
         if $PKG_CONFIG --exists "fontconfig" ; then
             echo "$ac_t""yes" 1>&6
             succeeded=yes
 
             echo $ac_n "checking _FONTCONFIG_CFLAGS""... $ac_c" 1>&6
-echo "configure:26649: checking _FONTCONFIG_CFLAGS" >&5
+echo "configure:26680: checking _FONTCONFIG_CFLAGS" >&5
             _FONTCONFIG_CFLAGS=`$PKG_CONFIG --cflags "fontconfig"`
             echo "$ac_t""$_FONTCONFIG_CFLAGS" 1>&6
 
             echo $ac_n "checking _FONTCONFIG_LIBS""... $ac_c" 1>&6
-echo "configure:26654: checking _FONTCONFIG_LIBS" >&5
+echo "configure:26685: checking _FONTCONFIG_LIBS" >&5
             ## Remove evil flags like -Wl,--export-dynamic
             _FONTCONFIG_LIBS="`$PKG_CONFIG --libs \"fontconfig\" |sed s/-Wl,--export-dynamic//g`"
             echo "$ac_t""$_FONTCONFIG_LIBS" 1>&6
@@ -26754,7 +26785,7 @@ else
     # Extract the first word of "pkg-config", so it can be a program name with args.
 set dummy pkg-config; ac_word=$2
 echo $ac_n "checking for $ac_word""... $ac_c" 1>&6
-echo "configure:26758: checking for $ac_word" >&5
+echo "configure:26789: checking for $ac_word" >&5
 if eval "test \"`echo '$''{'ac_cv_path_PKG_CONFIG'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
@@ -26798,19 +26829,19 @@ fi
      PKG_CONFIG_MIN_VERSION=0.9.0
      if $PKG_CONFIG --atleast-pkgconfig-version $PKG_CONFIG_MIN_VERSION; then
         echo $ac_n "checking for pixman-1 >= 0.19.2""... $ac_c" 1>&6
-echo "configure:26802: checking for pixman-1 >= 0.19.2" >&5
+echo "configure:26833: checking for pixman-1 >= 0.19.2" >&5
 
         if $PKG_CONFIG --exists "pixman-1 >= 0.19.2" ; then
             echo "$ac_t""yes" 1>&6
             succeeded=yes
 
             echo $ac_n "checking PIXMAN_CFLAGS""... $ac_c" 1>&6
-echo "configure:26809: checking PIXMAN_CFLAGS" >&5
+echo "configure:26840: checking PIXMAN_CFLAGS" >&5
             PIXMAN_CFLAGS=`$PKG_CONFIG --cflags "pixman-1 >= 0.19.2"`
             echo "$ac_t""$PIXMAN_CFLAGS" 1>&6
 
             echo $ac_n "checking PIXMAN_LIBS""... $ac_c" 1>&6
-echo "configure:26814: checking PIXMAN_LIBS" >&5
+echo "configure:26845: checking PIXMAN_LIBS" >&5
             ## Remove evil flags like -Wl,--export-dynamic
             PIXMAN_LIBS="`$PKG_CONFIG --libs \"pixman-1 >= 0.19.2\" |sed s/-Wl,--export-dynamic//g`"
             echo "$ac_t""$PIXMAN_LIBS" 1>&6
@@ -26851,12 +26882,12 @@ if test -n "$COMPILE_ENVIRONMENT"; then
   do
        ac_safe=`echo "$ac_hdr" | sed 'y%./+-%__p_%'`
   echo $ac_n "checking for $ac_hdr""... $ac_c" 1>&6
-echo "configure:26855: checking for $ac_hdr" >&5
+echo "configure:26886: checking for $ac_hdr" >&5
   if eval "test \"`echo '$''{'ac_cv_header_$ac_safe'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
    cat > conftest.$ac_ext <<EOF
-#line 26860 "configure"
+#line 26891 "configure"
 #include "confdefs.h"
 
 #include <$ac_hdr>
@@ -26864,7 +26895,7 @@ int main() {
 
 ; return 0; }
 EOF
-if { (eval echo configure:26868: \"$ac_compile\") 1>&5; (eval $ac_compile) 2>&5; }; then
+if { (eval echo configure:26899: \"$ac_compile\") 1>&5; (eval $ac_compile) 2>&5; }; then
   rm -rf conftest*
   eval "ac_cv_header_$ac_safe=yes"
 else
@@ -26958,12 +26989,12 @@ EOF
 if test "$MOZ_WINSDK_TARGETVER" -ge "06000000"; then
            ac_safe=`echo "d3d9.h" | sed 'y%./+-%__p_%'`
   echo $ac_n "checking for d3d9.h""... $ac_c" 1>&6
-echo "configure:26962: checking for d3d9.h" >&5
+echo "configure:26993: checking for d3d9.h" >&5
   if eval "test \"`echo '$''{'ac_cv_header_$ac_safe'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
    cat > conftest.$ac_ext <<EOF
-#line 26967 "configure"
+#line 26998 "configure"
 #include "confdefs.h"
 
 #include <d3d9.h>
@@ -26971,7 +27002,7 @@ int main() {
 
 ; return 0; }
 EOF
-if { (eval echo configure:26975: \"$ac_compile\") 1>&5; (eval $ac_compile) 2>&5; }; then
+if { (eval echo configure:27006: \"$ac_compile\") 1>&5; (eval $ac_compile) 2>&5; }; then
   rm -rf conftest*
   eval "ac_cv_header_$ac_safe=yes"
 else
@@ -26996,12 +27027,12 @@ fi
                 if test -n "$WIN32_D2D_SURFACE_FEATURE"; then
              ac_safe=`echo "d3d10.h" | sed 'y%./+-%__p_%'`
   echo $ac_n "checking for d3d10.h""... $ac_c" 1>&6
-echo "configure:27000: checking for d3d10.h" >&5
+echo "configure:27031: checking for d3d10.h" >&5
   if eval "test \"`echo '$''{'ac_cv_header_$ac_safe'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
    cat > conftest.$ac_ext <<EOF
-#line 27005 "configure"
+#line 27036 "configure"
 #include "confdefs.h"
 
 #include <d3d10.h>
@@ -27009,7 +27040,7 @@ int main() {
 
 ; return 0; }
 EOF
-if { (eval echo configure:27013: \"$ac_compile\") 1>&5; (eval $ac_compile) 2>&5; }; then
+if { (eval echo configure:27044: \"$ac_compile\") 1>&5; (eval $ac_compile) 2>&5; }; then
   rm -rf conftest*
   eval "ac_cv_header_$ac_safe=yes"
 else
@@ -27079,7 +27110,7 @@ else
     # Extract the first word of "pkg-config", so it can be a program name with args.
 set dummy pkg-config; ac_word=$2
 echo $ac_n "checking for $ac_word""... $ac_c" 1>&6
-echo "configure:27083: checking for $ac_word" >&5
+echo "configure:27114: checking for $ac_word" >&5
 if eval "test \"`echo '$''{'ac_cv_path_PKG_CONFIG'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
@@ -27123,19 +27154,19 @@ fi
      PKG_CONFIG_MIN_VERSION=0.9.0
      if $PKG_CONFIG --atleast-pkgconfig-version $PKG_CONFIG_MIN_VERSION; then
         echo $ac_n "checking for cairo >= $CAIRO_VERSION""... $ac_c" 1>&6
-echo "configure:27127: checking for cairo >= $CAIRO_VERSION" >&5
+echo "configure:27158: checking for cairo >= $CAIRO_VERSION" >&5
 
         if $PKG_CONFIG --exists "cairo >= $CAIRO_VERSION" ; then
             echo "$ac_t""yes" 1>&6
             succeeded=yes
 
             echo $ac_n "checking CAIRO_CFLAGS""... $ac_c" 1>&6
-echo "configure:27134: checking CAIRO_CFLAGS" >&5
+echo "configure:27165: checking CAIRO_CFLAGS" >&5
             CAIRO_CFLAGS=`$PKG_CONFIG --cflags "cairo >= $CAIRO_VERSION"`
             echo "$ac_t""$CAIRO_CFLAGS" 1>&6
 
             echo $ac_n "checking CAIRO_LIBS""... $ac_c" 1>&6
-echo "configure:27139: checking CAIRO_LIBS" >&5
+echo "configure:27170: checking CAIRO_LIBS" >&5
             ## Remove evil flags like -Wl,--export-dynamic
             CAIRO_LIBS="`$PKG_CONFIG --libs \"cairo >= $CAIRO_VERSION\" |sed s/-Wl,--export-dynamic//g`"
             echo "$ac_t""$CAIRO_LIBS" 1>&6
@@ -27172,7 +27203,7 @@ echo "configure:27139: checking CAIRO_LIBS" >&5
     # Extract the first word of "pkg-config", so it can be a program name with args.
 set dummy pkg-config; ac_word=$2
 echo $ac_n "checking for $ac_word""... $ac_c" 1>&6
-echo "configure:27176: checking for $ac_word" >&5
+echo "configure:27207: checking for $ac_word" >&5
 if eval "test \"`echo '$''{'ac_cv_path_PKG_CONFIG'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
@@ -27216,19 +27247,19 @@ fi
      PKG_CONFIG_MIN_VERSION=0.9.0
      if $PKG_CONFIG --atleast-pkgconfig-version $PKG_CONFIG_MIN_VERSION; then
         echo $ac_n "checking for cairo-tee >= $CAIRO_VERSION""... $ac_c" 1>&6
-echo "configure:27220: checking for cairo-tee >= $CAIRO_VERSION" >&5
+echo "configure:27251: checking for cairo-tee >= $CAIRO_VERSION" >&5
 
         if $PKG_CONFIG --exists "cairo-tee >= $CAIRO_VERSION" ; then
             echo "$ac_t""yes" 1>&6
             succeeded=yes
 
             echo $ac_n "checking CAIRO_TEE_CFLAGS""... $ac_c" 1>&6
-echo "configure:27227: checking CAIRO_TEE_CFLAGS" >&5
+echo "configure:27258: checking CAIRO_TEE_CFLAGS" >&5
             CAIRO_TEE_CFLAGS=`$PKG_CONFIG --cflags "cairo-tee >= $CAIRO_VERSION"`
             echo "$ac_t""$CAIRO_TEE_CFLAGS" 1>&6
 
             echo $ac_n "checking CAIRO_TEE_LIBS""... $ac_c" 1>&6
-echo "configure:27232: checking CAIRO_TEE_LIBS" >&5
+echo "configure:27263: checking CAIRO_TEE_LIBS" >&5
             ## Remove evil flags like -Wl,--export-dynamic
             CAIRO_TEE_LIBS="`$PKG_CONFIG --libs \"cairo-tee >= $CAIRO_VERSION\" |sed s/-Wl,--export-dynamic//g`"
             echo "$ac_t""$CAIRO_TEE_LIBS" 1>&6
@@ -27264,7 +27295,7 @@ echo "configure:27232: checking CAIRO_TEE_LIBS" >&5
     # Extract the first word of "pkg-config", so it can be a program name with args.
 set dummy pkg-config; ac_word=$2
 echo $ac_n "checking for $ac_word""... $ac_c" 1>&6
-echo "configure:27268: checking for $ac_word" >&5
+echo "configure:27299: checking for $ac_word" >&5
 if eval "test \"`echo '$''{'ac_cv_path_PKG_CONFIG'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
@@ -27308,19 +27339,19 @@ fi
      PKG_CONFIG_MIN_VERSION=0.9.0
      if $PKG_CONFIG --atleast-pkgconfig-version $PKG_CONFIG_MIN_VERSION; then
         echo $ac_n "checking for cairo-xlib-xrender >= $CAIRO_VERSION""... $ac_c" 1>&6
-echo "configure:27312: checking for cairo-xlib-xrender >= $CAIRO_VERSION" >&5
+echo "configure:27343: checking for cairo-xlib-xrender >= $CAIRO_VERSION" >&5
 
         if $PKG_CONFIG --exists "cairo-xlib-xrender >= $CAIRO_VERSION" ; then
             echo "$ac_t""yes" 1>&6
             succeeded=yes
 
             echo $ac_n "checking CAIRO_XRENDER_CFLAGS""... $ac_c" 1>&6
-echo "configure:27319: checking CAIRO_XRENDER_CFLAGS" >&5
+echo "configure:27350: checking CAIRO_XRENDER_CFLAGS" >&5
             CAIRO_XRENDER_CFLAGS=`$PKG_CONFIG --cflags "cairo-xlib-xrender >= $CAIRO_VERSION"`
             echo "$ac_t""$CAIRO_XRENDER_CFLAGS" 1>&6
 
             echo $ac_n "checking CAIRO_XRENDER_LIBS""... $ac_c" 1>&6
-echo "configure:27324: checking CAIRO_XRENDER_LIBS" >&5
+echo "configure:27355: checking CAIRO_XRENDER_LIBS" >&5
             ## Remove evil flags like -Wl,--export-dynamic
             CAIRO_XRENDER_LIBS="`$PKG_CONFIG --libs \"cairo-xlib-xrender >= $CAIRO_VERSION\" |sed s/-Wl,--export-dynamic//g`"
             echo "$ac_t""$CAIRO_XRENDER_LIBS" 1>&6
@@ -28238,7 +28269,6 @@ EOF
 
 
 
-
 if test "$MOZ_DEBUG"; then
     MOZ_EM_DEBUG=1
 fi
@@ -28248,12 +28278,12 @@ if test -n "$COMPILE_ENVIRONMENT"; then
 for ac_func in posix_fadvise posix_fallocate
 do
 echo $ac_n "checking for $ac_func""... $ac_c" 1>&6
-echo "configure:28252: checking for $ac_func" >&5
+echo "configure:28282: checking for $ac_func" >&5
 if eval "test \"`echo '$''{'ac_cv_func2_$ac_func'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
   cat > conftest.$ac_ext <<EOF
-#line 28257 "configure"
+#line 28287 "configure"
 #define $ac_func innocuous_$ac_func
 #include "confdefs.h"
 #undef $ac_func
@@ -28280,7 +28310,7 @@ $ac_func();
 
 ; return 0; }
 EOF
-if { (eval echo configure:28284: \"$ac_link\") 1>&5; (eval $ac_link) 2>&5; } && test -s conftest${ac_exeext}; then
+if { (eval echo configure:28314: \"$ac_link\") 1>&5; (eval $ac_link) 2>&5; } && test -s conftest${ac_exeext}; then
   rm -rf conftest*
   eval "ac_cv_func2_$ac_func=yes"
 else
@@ -28315,7 +28345,7 @@ if test "$MOZ_X11"; then
                 _SAVE_CFLAGS=$CFLAGS
     CFLAGS="$CFLAGS $XCFLAGS"
     cat > conftest.$ac_ext <<EOF
-#line 28319 "configure"
+#line 28349 "configure"
 #include "confdefs.h"
 
         #include <stdio.h>
@@ -28334,7 +28364,7 @@ int main() {
     
 ; return 0; }
 EOF
-if { (eval echo configure:28338: \"$ac_compile\") 1>&5; (eval $ac_compile) 2>&5; }; then
+if { (eval echo configure:28368: \"$ac_compile\") 1>&5; (eval $ac_compile) 2>&5; }; then
   :
 else
   echo "configure: failed program was:" >&5
@@ -28504,7 +28534,7 @@ if test -n "$MOZ_NATIVE_ICU"; then
     # Extract the first word of "pkg-config", so it can be a program name with args.
 set dummy pkg-config; ac_word=$2
 echo $ac_n "checking for $ac_word""... $ac_c" 1>&6
-echo "configure:28508: checking for $ac_word" >&5
+echo "configure:28538: checking for $ac_word" >&5
 if eval "test \"`echo '$''{'ac_cv_path_PKG_CONFIG'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
@@ -28548,19 +28578,19 @@ fi
      PKG_CONFIG_MIN_VERSION=0.9.0
      if $PKG_CONFIG --atleast-pkgconfig-version $PKG_CONFIG_MIN_VERSION; then
         echo $ac_n "checking for icu-i18n >= 50.1""... $ac_c" 1>&6
-echo "configure:28552: checking for icu-i18n >= 50.1" >&5
+echo "configure:28582: checking for icu-i18n >= 50.1" >&5
 
         if $PKG_CONFIG --exists "icu-i18n >= 50.1" ; then
             echo "$ac_t""yes" 1>&6
             succeeded=yes
 
             echo $ac_n "checking MOZ_ICU_CFLAGS""... $ac_c" 1>&6
-echo "configure:28559: checking MOZ_ICU_CFLAGS" >&5
+echo "configure:28589: checking MOZ_ICU_CFLAGS" >&5
             MOZ_ICU_CFLAGS=`$PKG_CONFIG --cflags "icu-i18n >= 50.1"`
             echo "$ac_t""$MOZ_ICU_CFLAGS" 1>&6
 
             echo $ac_n "checking MOZ_ICU_LIBS""... $ac_c" 1>&6
-echo "configure:28564: checking MOZ_ICU_LIBS" >&5
+echo "configure:28594: checking MOZ_ICU_LIBS" >&5
             ## Remove evil flags like -Wl,--export-dynamic
             MOZ_ICU_LIBS="`$PKG_CONFIG --libs \"icu-i18n >= 50.1\" |sed s/-Wl,--export-dynamic//g`"
             echo "$ac_t""$MOZ_ICU_LIBS" 1>&6
@@ -29252,6 +29282,7 @@ sed 's/$/,/' >> $CONFIG_STATUS <<EOF
     (''' PROFILE_GEN_LDFLAGS ''', r''' $PROFILE_GEN_LDFLAGS ''')
     (''' PROFILE_USE_CFLAGS ''', r''' $PROFILE_USE_CFLAGS ''')
     (''' PROFILE_USE_LDFLAGS ''', r''' $PROFILE_USE_LDFLAGS ''')
+    (''' NO_INTEGRATED_AS_CFLAGS ''', r''' $NO_INTEGRATED_AS_CFLAGS ''')
     (''' LIBS_DESC_SUFFIX ''', r''' $LIBS_DESC_SUFFIX ''')
     (''' EXPAND_LIBS_LIST_STYLE ''', r''' $EXPAND_LIBS_LIST_STYLE ''')
     (''' EXPAND_LIBS_ORDER_STYLE ''', r''' $EXPAND_LIBS_ORDER_STYLE ''')
@@ -29513,7 +29544,6 @@ sed 's/$/,/' >> $CONFIG_STATUS <<EOF
     (''' CXX_VERSION ''', r''' $CXX_VERSION ''')
     (''' MSMANIFEST_TOOL ''', r''' $MSMANIFEST_TOOL ''')
     (''' NS_ENABLE_TSF ''', r''' $NS_ENABLE_TSF ''')
-    (''' MOZ_APP_COMPONENT_LIBS ''', r''' $MOZ_APP_COMPONENT_LIBS ''')
     (''' MOZ_APP_EXTRA_LIBS ''', r''' $MOZ_APP_EXTRA_LIBS ''')
     (''' MOZ_WAVE ''', r''' $MOZ_WAVE ''')
     (''' MOZ_VORBIS ''', r''' $MOZ_VORBIS ''')
@@ -29630,27 +29660,8 @@ if test -z "$BUILDING_JS" -o -n "$JS_STANDALONE"; then
         ICU_CPPFLAGS="$ICU_CPPFLAGS -I$icudir/common -I$icudir/i18n"
 
         ICU_CROSS_BUILD_OPT=""
-        ICU_SRCDIR=""
-        if test "$HOST_OS_ARCH" = "WINNT"; then
-    	ICU_SRCDIR="--srcdir=$(cd $srcdir/intl/icu/source; pwd -W)"
-        fi
 
         if test "$CROSS_COMPILE"; then
-    	# Building host tools.  It is necessary to build target binary.
-    	case "$HOST_OS_ARCH" in
-    	    Darwin)
-    		ICU_TARGET=MacOSX
-    		;;
-    	    Linux)
-    		ICU_TARGET=Linux
-    		;;
-    	    WINNT)
-    		ICU_TARGET=MSYS/MSVC
-    		;;
-            DragonFly|FreeBSD|NetBSD|OpenBSD|GNU_kFreeBSD)
-    		ICU_TARGET=BSD
-    		;;
-    	esac
     	# Remove _DEPEND_CFLAGS from HOST_FLAGS to avoid configure error
     	HOST_ICU_CFLAGS="$HOST_CFLAGS"
     	HOST_ICU_CXXFLAGS="$HOST_CXXFLAGS"
@@ -29672,40 +29683,156 @@ if test -z "$BUILDING_JS" -o -n "$JS_STANDALONE"; then
 
     	abs_srcdir=`(cd $srcdir; pwd)`
     	mkdir -p $_objdir/intl/icu/host
-    	(cd $_objdir/intl/icu/host
-    	  _CONFIG_SHELL=${CONFIG_SHELL-/bin/sh}
-case "$host" in
-*-mingw*)
+        (export AR="$HOST_AR"
+         export RANLIB="$HOST_RANLIB"
+         export CC="$HOST_CC"
+         export CXX="$HOST_CXX"
+         export CPP="$HOST_CPP"
+         export LD="$HOST_LD"
+         export CFLAGS="$HOST_ICU_CFLAGS $HOST_OPTIMIZE_FLAGS"
+         export CPPFLAGS="$ICU_CPPFLAGS"
+         export CXXFLAGS="$HOST_ICU_CXXFLAGS $HOST_OPTIMIZE_FLAGS"
+         export LDFLAGS="$HOST_LDFLAGS"
+         ac_configure_args="$HOST_ICU_BUILD_OPTS"
+         ac_configure_args="$ac_configure_args --enable-static --disable-shared --enable-extras=no --enable-icuio=no --enable-layout=no --enable-tests=no --enable-samples=no"
+         trap '' EXIT
+for moz_config_dir in intl/icu/source:intl/icu/host; do
+  case "$moz_config_dir" in
+  *:*)
+    moz_config_srcdir=$(echo $moz_config_dir | awk -F: '{print $1}')
+    moz_config_dir=$(echo $moz_config_dir | awk -F: '{print $2}')
+    ;;
+  *)
+    moz_config_srcdir=$moz_config_dir
+    ;;
+  esac
+  _CONFIG_SHELL=${CONFIG_SHELL-/bin/sh}
+  case "$host" in
+  *-mingw*)
     _CONFIG_SHELL=$(cd $(dirname $_CONFIG_SHELL); pwd -W)/$(basename $_CONFIG_SHELL)
     if test ! -e "$_CONFIG_SHELL" -a -e "${_CONFIG_SHELL}.exe"; then
         _CONFIG_SHELL="${_CONFIG_SHELL}.exe"
     fi
     ;;
-esac
+  esac
 
-if test -d "."; then
-    (cd "."; $PYTHON $_topsrcdir/build/subconfigure.py dump "$_CONFIG_SHELL")
-else
-    mkdir -p "."
+  if test -d "$moz_config_dir"; then
+    (cd "$moz_config_dir"; eval $PYTHON $_topsrcdir/build/subconfigure.py dump "$_CONFIG_SHELL" $ac_configure_args)
+  else
+    mkdir -p "$moz_config_dir"
+  fi
+  _save_cache_file="$cache_file"
+  cache_file="$moz_config_dir/config.cache"
+  
+
+
+if test "$no_recursion" != yes; then
+
+  # Remove --cache-file and --srcdir arguments so they do not pile up.
+  ac_sub_configure_args=
+  ac_prev=
+  for ac_arg in $ac_configure_args; do
+    if test -n "$ac_prev"; then
+      ac_prev=
+      continue
+    fi
+    case "$ac_arg" in
+    -cache-file | --cache-file | --cache-fil | --cache-fi \
+    | --cache-f | --cache- | --cache | --cach | --cac | --ca | --c)
+      ac_prev=cache_file ;;
+    -cache-file=* | --cache-file=* | --cache-fil=* | --cache-fi=* \
+    | --cache-f=* | --cache-=* | --cache=* | --cach=* | --cac=* | --ca=* | --c=*)
+      ;;
+    -srcdir | --srcdir | --srcdi | --srcd | --src | --sr)
+      ac_prev=srcdir ;;
+    -srcdir=* | --srcdir=* | --srcdi=* | --srcd=* | --src=* | --sr=*)
+      ;;
+    *) ac_sub_configure_args="$ac_sub_configure_args $ac_arg" ;;
+    esac
+  done
+
+  for ac_config_dir in $moz_config_dir; do
+
+    # Do not complain, so a configure script can configure whichever
+    # parts of a large source tree are present.
+    if test ! -d $srcdir/$moz_config_srcdir; then
+      continue
+    fi
+
+    echo configuring in $ac_config_dir
+
+    case "$srcdir" in
+    .) ;;
+    *)
+      if test -d ./$ac_config_dir || mkdir ./$ac_config_dir; then :;
+      else
+        { echo "configure: error: can not create `pwd`/$ac_config_dir" 1>&2; echo "configure: error: can not create `pwd`/$ac_config_dir" 1>&5; exit 1; }
+      fi
+      ;;
+    esac
+
+    ac_popdir=`pwd`
+    cd $ac_config_dir
+
+      # A "../" for each directory in /$ac_config_dir.
+      ac_dots=`echo $ac_config_dir|sed -e 's%^\./%%' -e 's%[^/]$%&/%' -e 's%[^/]*/%../%g'`
+
+    case "$srcdir" in
+    .) # No --srcdir option.  We are building in place.
+      ac_sub_srcdir=$srcdir ;;
+    /* | ?:/*) # Absolute path.
+      ac_sub_srcdir=$srcdir/$moz_config_srcdir ;;
+    *) # Relative path.
+      ac_sub_srcdir=$ac_dots$srcdir/$moz_config_srcdir ;;
+    esac
+
+    # Check for guested configure; otherwise get Cygnus style configure.
+    if test -f $ac_sub_srcdir/configure; then
+      ac_sub_configure=$ac_sub_srcdir/configure
+    elif test -f $ac_sub_srcdir/configure.in; then
+      ac_sub_configure=$ac_configure
+    else
+      echo "configure: warning: no configuration information is in $ac_config_dir" 1>&2
+      ac_sub_configure=
+    fi
+
+    # The recursion is here.
+    if test -n "$ac_sub_configure"; then
+
+      # Make the cache file name correct relative to the subdirectory.
+      case "$cache_file" in
+      /* | ?:/*) ac_sub_cache_file=$cache_file ;;
+      *) # Relative path.
+        ac_sub_cache_file="$ac_dots$cache_file" ;;
+      esac
+  case "$ac_given_INSTALL" in
+        [/$]*) INSTALL="$ac_given_INSTALL" ;;
+        *) INSTALL="$ac_dots$ac_given_INSTALL" ;;
+        esac
+
+      echo "running ${CONFIG_SHELL-/bin/sh} $ac_sub_configure $ac_sub_configure_args --cache-file=$ac_sub_cache_file --srcdir=$ac_sub_srcdir"
+      # The eval makes quoting arguments work.
+      if eval ${CONFIG_SHELL-/bin/sh} $ac_sub_configure $ac_sub_configure_args --cache-file=$ac_sub_cache_file --srcdir=$ac_sub_srcdir
+      then :
+      else
+        { echo "configure: error: $ac_sub_configure failed for $ac_config_dir" 1>&2; echo "configure: error: $ac_sub_configure failed for $ac_config_dir" 1>&5; exit 1; }
+      fi
+    fi
+
+    cd $ac_popdir
+  done
 fi
 
-    	 AR="$HOST_AR" RANLIB="$HOST_RANLIB" \
-    	 CC="$HOST_CC" CXX="$HOST_CXX" LD="$HOST_LD" \
-    	 CFLAGS="$HOST_ICU_CFLAGS $HOST_OPTIMIZE_FLAGS" \
-    	 CPPFLAGS="$ICU_CPPFLAGS" \
-    	 CXXFLAGS="$HOST_ICU_CXXFLAGS $HOST_OPTIMIZE_FLAGS" \
-    	 LDFLAGS="$HOST_LDFLAGS" \
-    		$SHELL $abs_srcdir/intl/icu/source/runConfigureICU \
-    		$HOST_ICU_BUILD_OPTS \
-    		$ICU_TARGET \
-    	    		${ICU_SRCDIR+"$ICU_SRCDIR"} \
-    		--enable-static --disable-shared \
-    		--enable-extras=no --enable-icuio=no --enable-layout=no \
-    		--enable-tests=no --enable-samples=no || exit 1
-    	 
-(cd "."; $PYTHON $_topsrcdir/build/subconfigure.py adjust $ac_sub_configure)
 
-    	) || exit 1
+
+  cache_file="$_save_cache_file"
+  (cd "$moz_config_dir"; $PYTHON $_topsrcdir/build/subconfigure.py adjust $ac_sub_configure)
+done
+
+trap '[ "$?" != 0 ] && echo "------ config.log ------" && tail -n 25 config.log' EXIT
+
+
+        ) || exit 1
     	# generate config/icucross.mk
     	$GMAKE -C $_objdir/intl/icu/host/ config/icucross.mk
 
@@ -29800,45 +29927,153 @@ fi
           fi
         fi
 
-        # We cannot use AC_OUTPUT_SUBDIRS since ICU tree is out of spidermonkey.
-        # When using AC_OUTPUT_SUBDIRS, objdir of ICU is out of objdir
-        # due to relative path.
-        # If building ICU moves into root of mozilla tree, we can use
-        # AC_OUTPUT_SUBDIR instead.
-        mkdir -p $_objdir/intl/icu/target
-        (cd $_objdir/intl/icu/target
-          _CONFIG_SHELL=${CONFIG_SHELL-/bin/sh}
-case "$host" in
-*-mingw*)
+        (export AR="$AR"
+         export CC="$CC"
+         export CXX="$CXX"
+         export LD="$LD"
+         export ARFLAGS="$ARFLAGS"
+         export CPPFLAGS="$ICU_CPPFLAGS $CPPFLAGS"
+         export CFLAGS="$ICU_CFLAGS"
+         export CXXFLAGS="$ICU_CXXFLAGS"
+         export LDFLAGS="$ICU_LDFLAGS $LDFLAGS"
+         ac_configure_args="$ICU_BUILD_OPTS $ICU_CROSS_BUILD_OPT $ICU_LINK_OPTS $ICU_TARGET_OPT"
+         ac_configure_args="$ac_configure_args --disable-extras --disable-icuio --disable-layout --disable-tests --disable-samples"
+         trap '' EXIT
+for moz_config_dir in intl/icu/source:intl/icu/target; do
+  case "$moz_config_dir" in
+  *:*)
+    moz_config_srcdir=$(echo $moz_config_dir | awk -F: '{print $1}')
+    moz_config_dir=$(echo $moz_config_dir | awk -F: '{print $2}')
+    ;;
+  *)
+    moz_config_srcdir=$moz_config_dir
+    ;;
+  esac
+  _CONFIG_SHELL=${CONFIG_SHELL-/bin/sh}
+  case "$host" in
+  *-mingw*)
     _CONFIG_SHELL=$(cd $(dirname $_CONFIG_SHELL); pwd -W)/$(basename $_CONFIG_SHELL)
     if test ! -e "$_CONFIG_SHELL" -a -e "${_CONFIG_SHELL}.exe"; then
         _CONFIG_SHELL="${_CONFIG_SHELL}.exe"
     fi
     ;;
-esac
+  esac
 
-if test -d "."; then
-    (cd "."; $PYTHON $_topsrcdir/build/subconfigure.py dump "$_CONFIG_SHELL")
-else
-    mkdir -p "."
+  if test -d "$moz_config_dir"; then
+    (cd "$moz_config_dir"; eval $PYTHON $_topsrcdir/build/subconfigure.py dump "$_CONFIG_SHELL" $ac_configure_args)
+  else
+    mkdir -p "$moz_config_dir"
+  fi
+  _save_cache_file="$cache_file"
+  cache_file="$moz_config_dir/config.cache"
+  
+
+
+if test "$no_recursion" != yes; then
+
+  # Remove --cache-file and --srcdir arguments so they do not pile up.
+  ac_sub_configure_args=
+  ac_prev=
+  for ac_arg in $ac_configure_args; do
+    if test -n "$ac_prev"; then
+      ac_prev=
+      continue
+    fi
+    case "$ac_arg" in
+    -cache-file | --cache-file | --cache-fil | --cache-fi \
+    | --cache-f | --cache- | --cache | --cach | --cac | --ca | --c)
+      ac_prev=cache_file ;;
+    -cache-file=* | --cache-file=* | --cache-fil=* | --cache-fi=* \
+    | --cache-f=* | --cache-=* | --cache=* | --cach=* | --cac=* | --ca=* | --c=*)
+      ;;
+    -srcdir | --srcdir | --srcdi | --srcd | --src | --sr)
+      ac_prev=srcdir ;;
+    -srcdir=* | --srcdir=* | --srcdi=* | --srcd=* | --src=* | --sr=*)
+      ;;
+    *) ac_sub_configure_args="$ac_sub_configure_args $ac_arg" ;;
+    esac
+  done
+
+  for ac_config_dir in $moz_config_dir; do
+
+    # Do not complain, so a configure script can configure whichever
+    # parts of a large source tree are present.
+    if test ! -d $srcdir/$moz_config_srcdir; then
+      continue
+    fi
+
+    echo configuring in $ac_config_dir
+
+    case "$srcdir" in
+    .) ;;
+    *)
+      if test -d ./$ac_config_dir || mkdir ./$ac_config_dir; then :;
+      else
+        { echo "configure: error: can not create `pwd`/$ac_config_dir" 1>&2; echo "configure: error: can not create `pwd`/$ac_config_dir" 1>&5; exit 1; }
+      fi
+      ;;
+    esac
+
+    ac_popdir=`pwd`
+    cd $ac_config_dir
+
+      # A "../" for each directory in /$ac_config_dir.
+      ac_dots=`echo $ac_config_dir|sed -e 's%^\./%%' -e 's%[^/]$%&/%' -e 's%[^/]*/%../%g'`
+
+    case "$srcdir" in
+    .) # No --srcdir option.  We are building in place.
+      ac_sub_srcdir=$srcdir ;;
+    /* | ?:/*) # Absolute path.
+      ac_sub_srcdir=$srcdir/$moz_config_srcdir ;;
+    *) # Relative path.
+      ac_sub_srcdir=$ac_dots$srcdir/$moz_config_srcdir ;;
+    esac
+
+    # Check for guested configure; otherwise get Cygnus style configure.
+    if test -f $ac_sub_srcdir/configure; then
+      ac_sub_configure=$ac_sub_srcdir/configure
+    elif test -f $ac_sub_srcdir/configure.in; then
+      ac_sub_configure=$ac_configure
+    else
+      echo "configure: warning: no configuration information is in $ac_config_dir" 1>&2
+      ac_sub_configure=
+    fi
+
+    # The recursion is here.
+    if test -n "$ac_sub_configure"; then
+
+      # Make the cache file name correct relative to the subdirectory.
+      case "$cache_file" in
+      /* | ?:/*) ac_sub_cache_file=$cache_file ;;
+      *) # Relative path.
+        ac_sub_cache_file="$ac_dots$cache_file" ;;
+      esac
+  case "$ac_given_INSTALL" in
+        [/$]*) INSTALL="$ac_given_INSTALL" ;;
+        *) INSTALL="$ac_dots$ac_given_INSTALL" ;;
+        esac
+
+      echo "running ${CONFIG_SHELL-/bin/sh} $ac_sub_configure $ac_sub_configure_args --cache-file=$ac_sub_cache_file --srcdir=$ac_sub_srcdir"
+      # The eval makes quoting arguments work.
+      if eval ${CONFIG_SHELL-/bin/sh} $ac_sub_configure $ac_sub_configure_args --cache-file=$ac_sub_cache_file --srcdir=$ac_sub_srcdir
+      then :
+      else
+        { echo "configure: error: $ac_sub_configure failed for $ac_config_dir" 1>&2; echo "configure: error: $ac_sub_configure failed for $ac_config_dir" 1>&5; exit 1; }
+      fi
+    fi
+
+    cd $ac_popdir
+  done
 fi
 
-           AR="$AR" CC="$CC" CXX="$CXX" LD="$LD" \
-           ARFLAGS="$ARFLAGS" \
-           CPPFLAGS="$ICU_CPPFLAGS $CPPFLAGS" \
-           CFLAGS="$ICU_CFLAGS" \
-           CXXFLAGS="$ICU_CXXFLAGS" \
-           LDFLAGS="$ICU_LDFLAGS $LDFLAGS" \
-           $SHELL $_topsrcdir/intl/icu/source/configure \
-    		$ICU_BUILD_OPTS \
-    		$ICU_CROSS_BUILD_OPT \
-    		$ICU_LINK_OPTS \
-    		${ICU_SRCDIR+"$ICU_SRCDIR"} \
-    		$ICU_TARGET_OPT \
-    		--disable-extras --disable-icuio --disable-layout \
-    		--disable-tests --disable-samples || exit 1
-           
-(cd "."; $PYTHON $_topsrcdir/build/subconfigure.py adjust $ac_sub_configure)
+
+
+  cache_file="$_save_cache_file"
+  (cd "$moz_config_dir"; $PYTHON $_topsrcdir/build/subconfigure.py adjust $ac_sub_configure)
+done
+
+trap '[ "$?" != 0 ] && echo "------ config.log ------" && tail -n 25 config.log' EXIT
+
 
         ) || exit 1
     fi
@@ -29912,30 +30147,38 @@ if test -z "$BUILDING_JS" -o -n "$JS_STANDALONE"; then
 
     # Use a separate cache file for libffi, since it does things differently
     # from our configure.
-    mkdir -p $_objdir/js/src/ctypes/libffi
-    old_cache_file=$cache_file
-    cache_file=$_objdir/js/src/ctypes/libffi/config.cache
     old_config_files=$CONFIG_FILES
     unset CONFIG_FILES
     trap '' EXIT
 for moz_config_dir in js/src/ctypes/libffi; do
-   _CONFIG_SHELL=${CONFIG_SHELL-/bin/sh}
-case "$host" in
-*-mingw*)
+  case "$moz_config_dir" in
+  *:*)
+    moz_config_srcdir=$(echo $moz_config_dir | awk -F: '{print $1}')
+    moz_config_dir=$(echo $moz_config_dir | awk -F: '{print $2}')
+    ;;
+  *)
+    moz_config_srcdir=$moz_config_dir
+    ;;
+  esac
+  _CONFIG_SHELL=${CONFIG_SHELL-/bin/sh}
+  case "$host" in
+  *-mingw*)
     _CONFIG_SHELL=$(cd $(dirname $_CONFIG_SHELL); pwd -W)/$(basename $_CONFIG_SHELL)
     if test ! -e "$_CONFIG_SHELL" -a -e "${_CONFIG_SHELL}.exe"; then
         _CONFIG_SHELL="${_CONFIG_SHELL}.exe"
     fi
     ;;
-esac
+  esac
 
-if test -d "$moz_config_dir"; then
-    (cd "$moz_config_dir"; $PYTHON $_topsrcdir/build/subconfigure.py dump "$_CONFIG_SHELL")
-else
+  if test -d "$moz_config_dir"; then
+    (cd "$moz_config_dir"; eval $PYTHON $_topsrcdir/build/subconfigure.py dump "$_CONFIG_SHELL" $ac_configure_args)
+  else
     mkdir -p "$moz_config_dir"
-fi
+  fi
+  _save_cache_file="$cache_file"
+  cache_file="$moz_config_dir/config.cache"
+  
 
-    
 
 if test "$no_recursion" != yes; then
 
@@ -29966,7 +30209,7 @@ if test "$no_recursion" != yes; then
 
     # Do not complain, so a configure script can configure whichever
     # parts of a large source tree are present.
-    if test ! -d $srcdir/$ac_config_dir; then
+    if test ! -d $srcdir/$moz_config_srcdir; then
       continue
     fi
 
@@ -29992,9 +30235,9 @@ if test "$no_recursion" != yes; then
     .) # No --srcdir option.  We are building in place.
       ac_sub_srcdir=$srcdir ;;
     /* | ?:/*) # Absolute path.
-      ac_sub_srcdir=$srcdir/$ac_config_dir ;;
+      ac_sub_srcdir=$srcdir/$moz_config_srcdir ;;
     *) # Relative path.
-      ac_sub_srcdir=$ac_dots$srcdir/$ac_config_dir ;;
+      ac_sub_srcdir=$ac_dots$srcdir/$moz_config_srcdir ;;
     esac
 
     # Check for guested configure; otherwise get Cygnus style configure.
@@ -30035,15 +30278,14 @@ if test "$no_recursion" != yes; then
 fi
 
 
-  
-(cd "$moz_config_dir"; $PYTHON $_topsrcdir/build/subconfigure.py adjust $ac_sub_configure)
 
+  cache_file="$_save_cache_file"
+  (cd "$moz_config_dir"; $PYTHON $_topsrcdir/build/subconfigure.py adjust $ac_sub_configure)
 done
 
 trap '[ "$?" != 0 ] && echo "------ config.log ------" && tail -n 25 config.log' EXIT
 
 
-    cache_file=$old_cache_file
     ac_configure_args="$_SUBDIR_CONFIG_ARGS"
     CONFIG_FILES=$old_config_files
   fi
@@ -30127,8 +30369,6 @@ if test -z "$MOZ_NATIVE_JEMALLOC" -a "$MOZ_MEMORY" && test -n "$MOZ_JEMALLOC3" -
   if test "$CROSS_COMPILE"; then
     ac_configure_args="$ac_configure_args je_cv_static_page_shift=12"
   fi
-  _save_cache_file="$cache_file"
-  cache_file=$_objdir/memory/jemalloc/src/config.cache
 
   if ! test -e memory/jemalloc; then
     mkdir -p memory/jemalloc
@@ -30138,23 +30378,34 @@ if test -z "$MOZ_NATIVE_JEMALLOC" -a "$MOZ_MEMORY" && test -n "$MOZ_JEMALLOC3" -
   srcdir=`cd $srcdir; pwd`
   trap '' EXIT
 for moz_config_dir in memory/jemalloc/src; do
-   _CONFIG_SHELL=${CONFIG_SHELL-/bin/sh}
-case "$host" in
-*-mingw*)
+  case "$moz_config_dir" in
+  *:*)
+    moz_config_srcdir=$(echo $moz_config_dir | awk -F: '{print $1}')
+    moz_config_dir=$(echo $moz_config_dir | awk -F: '{print $2}')
+    ;;
+  *)
+    moz_config_srcdir=$moz_config_dir
+    ;;
+  esac
+  _CONFIG_SHELL=${CONFIG_SHELL-/bin/sh}
+  case "$host" in
+  *-mingw*)
     _CONFIG_SHELL=$(cd $(dirname $_CONFIG_SHELL); pwd -W)/$(basename $_CONFIG_SHELL)
     if test ! -e "$_CONFIG_SHELL" -a -e "${_CONFIG_SHELL}.exe"; then
         _CONFIG_SHELL="${_CONFIG_SHELL}.exe"
     fi
     ;;
-esac
+  esac
 
-if test -d "$moz_config_dir"; then
-    (cd "$moz_config_dir"; $PYTHON $_topsrcdir/build/subconfigure.py dump "$_CONFIG_SHELL")
-else
+  if test -d "$moz_config_dir"; then
+    (cd "$moz_config_dir"; eval $PYTHON $_topsrcdir/build/subconfigure.py dump "$_CONFIG_SHELL" $ac_configure_args)
+  else
     mkdir -p "$moz_config_dir"
-fi
+  fi
+  _save_cache_file="$cache_file"
+  cache_file="$moz_config_dir/config.cache"
+  
 
-    
 
 if test "$no_recursion" != yes; then
 
@@ -30185,7 +30436,7 @@ if test "$no_recursion" != yes; then
 
     # Do not complain, so a configure script can configure whichever
     # parts of a large source tree are present.
-    if test ! -d $srcdir/$ac_config_dir; then
+    if test ! -d $srcdir/$moz_config_srcdir; then
       continue
     fi
 
@@ -30211,9 +30462,9 @@ if test "$no_recursion" != yes; then
     .) # No --srcdir option.  We are building in place.
       ac_sub_srcdir=$srcdir ;;
     /* | ?:/*) # Absolute path.
-      ac_sub_srcdir=$srcdir/$ac_config_dir ;;
+      ac_sub_srcdir=$srcdir/$moz_config_srcdir ;;
     *) # Relative path.
-      ac_sub_srcdir=$ac_dots$srcdir/$ac_config_dir ;;
+      ac_sub_srcdir=$ac_dots$srcdir/$moz_config_srcdir ;;
     esac
 
     # Check for guested configure; otherwise get Cygnus style configure.
@@ -30254,16 +30505,15 @@ if test "$no_recursion" != yes; then
 fi
 
 
-  
-(cd "$moz_config_dir"; $PYTHON $_topsrcdir/build/subconfigure.py adjust $ac_sub_configure)
 
+  cache_file="$_save_cache_file"
+  (cd "$moz_config_dir"; $PYTHON $_topsrcdir/build/subconfigure.py adjust $ac_sub_configure)
 done
 
 trap '[ "$?" != 0 ] && echo "------ config.log ------" && tail -n 25 config.log' EXIT
 
 
   srcdir="$_save_srcdir"
-  cache_file="$_save_cache_file"
   ac_configure_args="$_SUBDIR_CONFIG_ARGS"
 fi
 
@@ -30289,23 +30539,34 @@ if test "$MOZ_TREE_FREETYPE"; then
 
    trap '' EXIT
 for moz_config_dir in modules/freetype2; do
-   _CONFIG_SHELL=${CONFIG_SHELL-/bin/sh}
-case "$host" in
-*-mingw*)
+  case "$moz_config_dir" in
+  *:*)
+    moz_config_srcdir=$(echo $moz_config_dir | awk -F: '{print $1}')
+    moz_config_dir=$(echo $moz_config_dir | awk -F: '{print $2}')
+    ;;
+  *)
+    moz_config_srcdir=$moz_config_dir
+    ;;
+  esac
+  _CONFIG_SHELL=${CONFIG_SHELL-/bin/sh}
+  case "$host" in
+  *-mingw*)
     _CONFIG_SHELL=$(cd $(dirname $_CONFIG_SHELL); pwd -W)/$(basename $_CONFIG_SHELL)
     if test ! -e "$_CONFIG_SHELL" -a -e "${_CONFIG_SHELL}.exe"; then
         _CONFIG_SHELL="${_CONFIG_SHELL}.exe"
     fi
     ;;
-esac
+  esac
 
-if test -d "$moz_config_dir"; then
-    (cd "$moz_config_dir"; $PYTHON $_topsrcdir/build/subconfigure.py dump "$_CONFIG_SHELL")
-else
+  if test -d "$moz_config_dir"; then
+    (cd "$moz_config_dir"; eval $PYTHON $_topsrcdir/build/subconfigure.py dump "$_CONFIG_SHELL" $ac_configure_args)
+  else
     mkdir -p "$moz_config_dir"
-fi
+  fi
+  _save_cache_file="$cache_file"
+  cache_file="$cache_file"
+  
 
-    
 
 if test "$no_recursion" != yes; then
 
@@ -30336,7 +30597,7 @@ if test "$no_recursion" != yes; then
 
     # Do not complain, so a configure script can configure whichever
     # parts of a large source tree are present.
-    if test ! -d $srcdir/$ac_config_dir; then
+    if test ! -d $srcdir/$moz_config_srcdir; then
       continue
     fi
 
@@ -30362,9 +30623,9 @@ if test "$no_recursion" != yes; then
     .) # No --srcdir option.  We are building in place.
       ac_sub_srcdir=$srcdir ;;
     /* | ?:/*) # Absolute path.
-      ac_sub_srcdir=$srcdir/$ac_config_dir ;;
+      ac_sub_srcdir=$srcdir/$moz_config_srcdir ;;
     *) # Relative path.
-      ac_sub_srcdir=$ac_dots$srcdir/$ac_config_dir ;;
+      ac_sub_srcdir=$ac_dots$srcdir/$moz_config_srcdir ;;
     esac
 
     # Check for guested configure; otherwise get Cygnus style configure.
@@ -30405,9 +30666,9 @@ if test "$no_recursion" != yes; then
 fi
 
 
-  
-(cd "$moz_config_dir"; $PYTHON $_topsrcdir/build/subconfigure.py adjust $ac_sub_configure)
 
+  cache_file="$_save_cache_file"
+  (cd "$moz_config_dir"; $PYTHON $_topsrcdir/build/subconfigure.py adjust $ac_sub_configure)
 done
 
 trap '[ "$?" != 0 ] && echo "------ config.log ------" && tail -n 25 config.log' EXIT
@@ -30438,23 +30699,34 @@ if test -n "$_subconfigure_subdir"; then
   ac_configure_args="$_subconfigure_config_args"
   trap '' EXIT
 for moz_config_dir in "$_subconfigure_subdir"; do
-   _CONFIG_SHELL=${CONFIG_SHELL-/bin/sh}
-case "$host" in
-*-mingw*)
+  case "$moz_config_dir" in
+  *:*)
+    moz_config_srcdir=$(echo $moz_config_dir | awk -F: '{print $1}')
+    moz_config_dir=$(echo $moz_config_dir | awk -F: '{print $2}')
+    ;;
+  *)
+    moz_config_srcdir=$moz_config_dir
+    ;;
+  esac
+  _CONFIG_SHELL=${CONFIG_SHELL-/bin/sh}
+  case "$host" in
+  *-mingw*)
     _CONFIG_SHELL=$(cd $(dirname $_CONFIG_SHELL); pwd -W)/$(basename $_CONFIG_SHELL)
     if test ! -e "$_CONFIG_SHELL" -a -e "${_CONFIG_SHELL}.exe"; then
         _CONFIG_SHELL="${_CONFIG_SHELL}.exe"
     fi
     ;;
-esac
+  esac
 
-if test -d "$moz_config_dir"; then
-    (cd "$moz_config_dir"; $PYTHON $_topsrcdir/build/subconfigure.py dump "$_CONFIG_SHELL")
-else
+  if test -d "$moz_config_dir"; then
+    (cd "$moz_config_dir"; eval $PYTHON $_topsrcdir/build/subconfigure.py dump "$_CONFIG_SHELL" $ac_configure_args)
+  else
     mkdir -p "$moz_config_dir"
-fi
+  fi
+  _save_cache_file="$cache_file"
+  cache_file="$moz_config_dir/config.cache"
+  
 
-    
 
 if test "$no_recursion" != yes; then
 
@@ -30485,7 +30757,7 @@ if test "$no_recursion" != yes; then
 
     # Do not complain, so a configure script can configure whichever
     # parts of a large source tree are present.
-    if test ! -d $srcdir/$ac_config_dir; then
+    if test ! -d $srcdir/$moz_config_srcdir; then
       continue
     fi
 
@@ -30511,9 +30783,9 @@ if test "$no_recursion" != yes; then
     .) # No --srcdir option.  We are building in place.
       ac_sub_srcdir=$srcdir ;;
     /* | ?:/*) # Absolute path.
-      ac_sub_srcdir=$srcdir/$ac_config_dir ;;
+      ac_sub_srcdir=$srcdir/$moz_config_srcdir ;;
     *) # Relative path.
-      ac_sub_srcdir=$ac_dots$srcdir/$ac_config_dir ;;
+      ac_sub_srcdir=$ac_dots$srcdir/$moz_config_srcdir ;;
     esac
 
     # Check for guested configure; otherwise get Cygnus style configure.
@@ -30554,9 +30826,9 @@ if test "$no_recursion" != yes; then
 fi
 
 
-  
-(cd "$moz_config_dir"; $PYTHON $_topsrcdir/build/subconfigure.py adjust $ac_sub_configure)
 
+  cache_file="$_save_cache_file"
+  (cd "$moz_config_dir"; $PYTHON $_topsrcdir/build/subconfigure.py adjust $ac_sub_configure)
 done
 
 trap '[ "$?" != 0 ] && echo "------ config.log ------" && tail -n 25 config.log' EXIT
@@ -30625,29 +30897,36 @@ if test -z "$MOZ_NATIVE_NSPR"; then
     export LDFLAGS="$LDFLAGS $NSPR_LDFLAGS"
     export CFLAGS="$CFLAGS $MOZ_FRAMEPTR_FLAGS"
 
-    # Use a separate cache file for NSPR since it uses autoconf 2.68.
-    _save_cache_file="$cache_file"
-    cache_file=$_objdir/nsprpub/config.cache
-
     trap '' EXIT
 for moz_config_dir in nsprpub; do
-   _CONFIG_SHELL=${CONFIG_SHELL-/bin/sh}
-case "$host" in
-*-mingw*)
+  case "$moz_config_dir" in
+  *:*)
+    moz_config_srcdir=$(echo $moz_config_dir | awk -F: '{print $1}')
+    moz_config_dir=$(echo $moz_config_dir | awk -F: '{print $2}')
+    ;;
+  *)
+    moz_config_srcdir=$moz_config_dir
+    ;;
+  esac
+  _CONFIG_SHELL=${CONFIG_SHELL-/bin/sh}
+  case "$host" in
+  *-mingw*)
     _CONFIG_SHELL=$(cd $(dirname $_CONFIG_SHELL); pwd -W)/$(basename $_CONFIG_SHELL)
     if test ! -e "$_CONFIG_SHELL" -a -e "${_CONFIG_SHELL}.exe"; then
         _CONFIG_SHELL="${_CONFIG_SHELL}.exe"
     fi
     ;;
-esac
+  esac
 
-if test -d "$moz_config_dir"; then
-    (cd "$moz_config_dir"; $PYTHON $_topsrcdir/build/subconfigure.py dump "$_CONFIG_SHELL")
-else
+  if test -d "$moz_config_dir"; then
+    (cd "$moz_config_dir"; eval $PYTHON $_topsrcdir/build/subconfigure.py dump "$_CONFIG_SHELL" $ac_configure_args)
+  else
     mkdir -p "$moz_config_dir"
-fi
+  fi
+  _save_cache_file="$cache_file"
+  cache_file="$moz_config_dir/config.cache"
+  
 
-    
 
 if test "$no_recursion" != yes; then
 
@@ -30678,7 +30957,7 @@ if test "$no_recursion" != yes; then
 
     # Do not complain, so a configure script can configure whichever
     # parts of a large source tree are present.
-    if test ! -d $srcdir/$ac_config_dir; then
+    if test ! -d $srcdir/$moz_config_srcdir; then
       continue
     fi
 
@@ -30704,9 +30983,9 @@ if test "$no_recursion" != yes; then
     .) # No --srcdir option.  We are building in place.
       ac_sub_srcdir=$srcdir ;;
     /* | ?:/*) # Absolute path.
-      ac_sub_srcdir=$srcdir/$ac_config_dir ;;
+      ac_sub_srcdir=$srcdir/$moz_config_srcdir ;;
     *) # Relative path.
-      ac_sub_srcdir=$ac_dots$srcdir/$ac_config_dir ;;
+      ac_sub_srcdir=$ac_dots$srcdir/$moz_config_srcdir ;;
     esac
 
     # Check for guested configure; otherwise get Cygnus style configure.
@@ -30747,9 +31026,9 @@ if test "$no_recursion" != yes; then
 fi
 
 
-  
-(cd "$moz_config_dir"; $PYTHON $_topsrcdir/build/subconfigure.py adjust $ac_sub_configure)
 
+  cache_file="$_save_cache_file"
+  (cd "$moz_config_dir"; $PYTHON $_topsrcdir/build/subconfigure.py adjust $ac_sub_configure)
 done
 
 trap '[ "$?" != 0 ] && echo "------ config.log ------" && tail -n 25 config.log' EXIT
@@ -30757,7 +31036,6 @@ trap '[ "$?" != 0 ] && echo "------ config.log ------" && tail -n 25 config.log'
 
 
     # .. and restore them
-    cache_file="$_save_cache_file"
     CFLAGS="$_SAVE_CFLAGS"
     CPPFLAGS="$_SAVE_CPPFLAGS"
     LDFLAGS="$_SAVE_LDFLAGS"
@@ -30781,23 +31059,34 @@ if test -n "$ENABLE_CLANG_PLUGIN"; then
     ac_configure_args="$_SUBDIR_CONFIG_ARGS"
     trap '' EXIT
 for moz_config_dir in build/clang-plugin; do
-   _CONFIG_SHELL=${CONFIG_SHELL-/bin/sh}
-case "$host" in
-*-mingw*)
+  case "$moz_config_dir" in
+  *:*)
+    moz_config_srcdir=$(echo $moz_config_dir | awk -F: '{print $1}')
+    moz_config_dir=$(echo $moz_config_dir | awk -F: '{print $2}')
+    ;;
+  *)
+    moz_config_srcdir=$moz_config_dir
+    ;;
+  esac
+  _CONFIG_SHELL=${CONFIG_SHELL-/bin/sh}
+  case "$host" in
+  *-mingw*)
     _CONFIG_SHELL=$(cd $(dirname $_CONFIG_SHELL); pwd -W)/$(basename $_CONFIG_SHELL)
     if test ! -e "$_CONFIG_SHELL" -a -e "${_CONFIG_SHELL}.exe"; then
         _CONFIG_SHELL="${_CONFIG_SHELL}.exe"
     fi
     ;;
-esac
+  esac
 
-if test -d "$moz_config_dir"; then
-    (cd "$moz_config_dir"; $PYTHON $_topsrcdir/build/subconfigure.py dump "$_CONFIG_SHELL")
-else
+  if test -d "$moz_config_dir"; then
+    (cd "$moz_config_dir"; eval $PYTHON $_topsrcdir/build/subconfigure.py dump "$_CONFIG_SHELL" $ac_configure_args)
+  else
     mkdir -p "$moz_config_dir"
-fi
+  fi
+  _save_cache_file="$cache_file"
+  cache_file="$moz_config_dir/config.cache"
+  
 
-    
 
 if test "$no_recursion" != yes; then
 
@@ -30828,7 +31117,7 @@ if test "$no_recursion" != yes; then
 
     # Do not complain, so a configure script can configure whichever
     # parts of a large source tree are present.
-    if test ! -d $srcdir/$ac_config_dir; then
+    if test ! -d $srcdir/$moz_config_srcdir; then
       continue
     fi
 
@@ -30854,9 +31143,9 @@ if test "$no_recursion" != yes; then
     .) # No --srcdir option.  We are building in place.
       ac_sub_srcdir=$srcdir ;;
     /* | ?:/*) # Absolute path.
-      ac_sub_srcdir=$srcdir/$ac_config_dir ;;
+      ac_sub_srcdir=$srcdir/$moz_config_srcdir ;;
     *) # Relative path.
-      ac_sub_srcdir=$ac_dots$srcdir/$ac_config_dir ;;
+      ac_sub_srcdir=$ac_dots$srcdir/$moz_config_srcdir ;;
     esac
 
     # Check for guested configure; otherwise get Cygnus style configure.
@@ -30897,9 +31186,9 @@ if test "$no_recursion" != yes; then
 fi
 
 
-  
-(cd "$moz_config_dir"; $PYTHON $_topsrcdir/build/subconfigure.py adjust $ac_sub_configure)
 
+  cache_file="$_save_cache_file"
+  (cd "$moz_config_dir"; $PYTHON $_topsrcdir/build/subconfigure.py adjust $ac_sub_configure)
 done
 
 trap '[ "$?" != 0 ] && echo "------ config.log ------" && tail -n 25 config.log' EXIT
@@ -30970,23 +31259,34 @@ fi
 
 trap '' EXIT
 for moz_config_dir in js/src; do
-   _CONFIG_SHELL=${CONFIG_SHELL-/bin/sh}
-case "$host" in
-*-mingw*)
+  case "$moz_config_dir" in
+  *:*)
+    moz_config_srcdir=$(echo $moz_config_dir | awk -F: '{print $1}')
+    moz_config_dir=$(echo $moz_config_dir | awk -F: '{print $2}')
+    ;;
+  *)
+    moz_config_srcdir=$moz_config_dir
+    ;;
+  esac
+  _CONFIG_SHELL=${CONFIG_SHELL-/bin/sh}
+  case "$host" in
+  *-mingw*)
     _CONFIG_SHELL=$(cd $(dirname $_CONFIG_SHELL); pwd -W)/$(basename $_CONFIG_SHELL)
     if test ! -e "$_CONFIG_SHELL" -a -e "${_CONFIG_SHELL}.exe"; then
         _CONFIG_SHELL="${_CONFIG_SHELL}.exe"
     fi
     ;;
-esac
+  esac
 
-if test -d "$moz_config_dir"; then
-    (cd "$moz_config_dir"; $PYTHON $_topsrcdir/build/subconfigure.py dump "$_CONFIG_SHELL")
-else
+  if test -d "$moz_config_dir"; then
+    (cd "$moz_config_dir"; eval $PYTHON $_topsrcdir/build/subconfigure.py dump "$_CONFIG_SHELL" $ac_configure_args)
+  else
     mkdir -p "$moz_config_dir"
-fi
+  fi
+  _save_cache_file="$cache_file"
+  cache_file="$cache_file"
+  
 
-    
 
 if test "$no_recursion" != yes; then
 
@@ -31017,7 +31317,7 @@ if test "$no_recursion" != yes; then
 
     # Do not complain, so a configure script can configure whichever
     # parts of a large source tree are present.
-    if test ! -d $srcdir/$ac_config_dir; then
+    if test ! -d $srcdir/$moz_config_srcdir; then
       continue
     fi
 
@@ -31043,9 +31343,9 @@ if test "$no_recursion" != yes; then
     .) # No --srcdir option.  We are building in place.
       ac_sub_srcdir=$srcdir ;;
     /* | ?:/*) # Absolute path.
-      ac_sub_srcdir=$srcdir/$ac_config_dir ;;
+      ac_sub_srcdir=$srcdir/$moz_config_srcdir ;;
     *) # Relative path.
-      ac_sub_srcdir=$ac_dots$srcdir/$ac_config_dir ;;
+      ac_sub_srcdir=$ac_dots$srcdir/$moz_config_srcdir ;;
     esac
 
     # Check for guested configure; otherwise get Cygnus style configure.
@@ -31086,9 +31386,9 @@ if test "$no_recursion" != yes; then
 fi
 
 
-  
-(cd "$moz_config_dir"; $PYTHON $_topsrcdir/build/subconfigure.py adjust $ac_sub_configure)
 
+  cache_file="$_save_cache_file"
+  (cd "$moz_config_dir"; $PYTHON $_topsrcdir/build/subconfigure.py adjust $ac_sub_configure)
 done
 
 trap '[ "$?" != 0 ] && echo "------ config.log ------" && tail -n 25 config.log' EXIT

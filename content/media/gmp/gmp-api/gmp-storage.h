@@ -18,7 +18,7 @@
 #define GMP_STORAGE_h_
 
 #include "gmp-errors.h"
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 // Provides basic per-origin storage for CDMs. GMPRecord instances can be
 // retrieved by calling GMPPlatformAPI->openstorage. Multiple GMPRecord

@@ -23,6 +23,7 @@
 
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/WindowBinding.h"
+#include "mozilla/MacroForEach.h"
 #include "nsGlobalWindow.h"
 
 using namespace mozilla::dom;

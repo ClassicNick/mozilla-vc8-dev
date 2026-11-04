@@ -32,7 +32,7 @@ private:
   const int mTimerId;
 };
 
-NS_IMPL_ISUPPORTS(TimerEvent, nsITimerCallback, nsIRunnable);
+NS_IMPL_ISUPPORTS2(TimerEvent, nsITimerCallback, nsIRunnable);
 } // anonymous namespace
 
 static already_AddRefed<nsIEventTarget>

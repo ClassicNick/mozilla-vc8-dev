@@ -654,7 +654,7 @@ VectorBase<T, N, AllocPolicy, TV>::VectorBase(MoveRef<TV> aRhs)
      * in-line storage.
      */
     mBegin = aRhs->mBegin;
-    aRhs.mBegin = static_cast<T*>(aRhs->mStorage.addr());
+    aRhs->mBegin = static_cast<T*>(aRhs->mStorage.addr());
     aRhs->mCapacity = kInlineCapacity;
     aRhs->mLength = 0;
 #ifdef DEBUG
