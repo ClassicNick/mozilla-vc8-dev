@@ -3846,12 +3846,7 @@ CSSParserImpl::ParseKeyframeRule()
 
   // Takes ownership of declaration, and steals contents of selectorList.
   nsRefPtr<nsCSSKeyframeRule> rule =
-<<<<<<< HEAD
-    new nsCSSKeyframeRule(selectorList, declaration);
-
-=======
-    new nsCSSKeyframeRule(selectorList, Move(declaration), linenum, colnum);
->>>>>>> 1a8a0ce
+    new nsCSSKeyframeRule(selectorList, declaration, linenum, colnum);
   return rule.forget();
 }
 

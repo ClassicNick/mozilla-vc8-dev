@@ -127,13 +127,13 @@ DigestAlgorithmOIDValue(Input& algorithmID, /*out*/ DigestAlgorithm& algorithm)
   // Matching is attempted based on a rough estimate of the commonality of the
   // algorithm, to minimize the number of MatchRest calls.
   if (algorithmID.MatchRest(id_sha1)) {
-    algorithm = DigestAlgorithm::sha1;
+    algorithm = sha1;
   } else if (algorithmID.MatchRest(id_sha256)) {
-    algorithm = DigestAlgorithm::sha256;
+    algorithm = sha256;
   } else if (algorithmID.MatchRest(id_sha384)) {
-    algorithm = DigestAlgorithm::sha384;
+    algorithm = sha384;
   } else if (algorithmID.MatchRest(id_sha512)) {
-    algorithm = DigestAlgorithm::sha512;
+    algorithm = sha512;
   } else {
     return Fail(SEC_ERROR_INVALID_ALGORITHM);
   }
@@ -209,25 +209,25 @@ SignatureAlgorithmOIDValue(Input& algorithmID,
   // Matching is attempted based on a rough estimate of the commonality of the
   // algorithm, to minimize the number of MatchRest calls.
   if (algorithmID.MatchRest(sha256WithRSAEncryption)) {
-    algorithm = SignatureAlgorithm::rsa_pkcs1_with_sha256;
+    algorithm = rsa_pkcs1_with_sha256;
   } else if (algorithmID.MatchRest(ecdsa_with_SHA256)) {
-    algorithm = SignatureAlgorithm::ecdsa_with_sha256;
+    algorithm = ecdsa_with_sha256;
   } else if (algorithmID.MatchRest(sha_1WithRSAEncryption)) {
-    algorithm = SignatureAlgorithm::rsa_pkcs1_with_sha1;
+    algorithm = rsa_pkcs1_with_sha1;
   } else if (algorithmID.MatchRest(ecdsa_with_SHA1)) {
-    algorithm = SignatureAlgorithm::ecdsa_with_sha1;
+    algorithm = ecdsa_with_sha1;
   } else if (algorithmID.MatchRest(ecdsa_with_SHA384)) {
-    algorithm = SignatureAlgorithm::ecdsa_with_sha384;
+    algorithm = ecdsa_with_sha384;
   } else if (algorithmID.MatchRest(ecdsa_with_SHA512)) {
-    algorithm = SignatureAlgorithm::ecdsa_with_sha512;
+    algorithm = ecdsa_with_sha512;
   } else if (algorithmID.MatchRest(sha384WithRSAEncryption)) {
-    algorithm = SignatureAlgorithm::rsa_pkcs1_with_sha384;
+    algorithm = rsa_pkcs1_with_sha384;
   } else if (algorithmID.MatchRest(sha512WithRSAEncryption)) {
-    algorithm = SignatureAlgorithm::rsa_pkcs1_with_sha512;
+    algorithm = rsa_pkcs1_with_sha512;
   } else if (algorithmID.MatchRest(id_dsa_with_sha1)) {
-    algorithm = SignatureAlgorithm::dsa_with_sha1;
+    algorithm = dsa_with_sha1;
   } else if (algorithmID.MatchRest(id_dsa_with_sha256)) {
-    algorithm = SignatureAlgorithm::dsa_with_sha256;
+    algorithm = dsa_with_sha256;
   } else {
     // Any MD5-based signature algorithm, or any unknown signature algorithm.
     return Fail(SEC_ERROR_CERT_SIGNATURE_ALGORITHM_DISABLED);

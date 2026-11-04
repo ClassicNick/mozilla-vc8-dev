@@ -187,8 +187,8 @@ AddonWrapper<Base>::delete_(JSContext *cx, HandleObject wrapper, HandleId id, bo
 }
 
 #define AddonWrapperCC AddonWrapper<CrossCompartmentWrapper>
-#define AddonWrapperXrayXPCWN AddonWrapper<PermissiveXrayXPCWN>
-#define AddonWrapperXrayDOM AddonWrapper<PermissiveXrayDOM>
+#define AddonWrapperXrayXPCWN AddonWrapper<PermissiveXrayXPCWN >
+#define AddonWrapperXrayDOM AddonWrapper<PermissiveXrayDOM >
 
 template<> AddonWrapperCC AddonWrapperCC::singleton(0);
 template<> AddonWrapperXrayXPCWN AddonWrapperXrayXPCWN::singleton(0);

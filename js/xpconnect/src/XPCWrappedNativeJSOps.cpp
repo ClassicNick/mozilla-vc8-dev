@@ -363,7 +363,7 @@ DefinePropertyIfFound(XPCCallContext& ccx,
             AutoResolveName arn(ccx, id);
             if (resolved)
                 *resolved = true;
-            return JS_DefinePropertyById(ccx, obj, id, desc.value(), desc.attributes(),
+            return JS_DefinePropertyById(ccx, obj, id, (HandleValue) desc.value(), desc.attributes(),
                                          desc.getter(), desc.setter());
         }
     }

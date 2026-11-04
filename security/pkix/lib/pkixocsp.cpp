@@ -715,7 +715,7 @@ CertID(der::Input& input, const Context& context, /*out*/ bool& match)
 
   // TODO: support SHA-2 hashes.
 
-  if (hashAlgorithm != DigestAlgorithm::sha1) {
+  if (hashAlgorithm != sha1) {
     // Again, not interested in this response. Consume input, return success.
     input.SkipToEnd();
     return der::Success;

@@ -251,7 +251,7 @@ StackFrame::~StackFrame()
 {
 }
 
-NS_IMPL_CYCLE_COLLECTION(StackFrame, mCaller)
+NS_IMPL_CYCLE_COLLECTION_1(StackFrame, mCaller)
 NS_IMPL_CYCLE_COLLECTING_ADDREF(StackFrame)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(StackFrame)
 

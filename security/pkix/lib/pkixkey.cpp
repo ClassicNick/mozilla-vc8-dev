@@ -55,43 +55,43 @@ VerifySignedData(const SignedDataWithSignature& sd,
   SECOidTag pubKeyAlg;
   SECOidTag digestAlg;
   switch (sd.algorithm) {
-    case SignatureAlgorithm::ecdsa_with_sha512:
+    case ecdsa_with_sha512:
       pubKeyAlg = SEC_OID_ANSIX962_EC_PUBLIC_KEY;
       digestAlg = SEC_OID_SHA512;
       break;
-    case SignatureAlgorithm::ecdsa_with_sha384:
+    case ecdsa_with_sha384:
       pubKeyAlg = SEC_OID_ANSIX962_EC_PUBLIC_KEY;
       digestAlg = SEC_OID_SHA384;
       break;
-    case SignatureAlgorithm::ecdsa_with_sha256:
+    case ecdsa_with_sha256:
       pubKeyAlg = SEC_OID_ANSIX962_EC_PUBLIC_KEY;
       digestAlg = SEC_OID_SHA256;
       break;
-    case SignatureAlgorithm::ecdsa_with_sha1:
+    case ecdsa_with_sha1:
       pubKeyAlg = SEC_OID_ANSIX962_EC_PUBLIC_KEY;
       digestAlg = SEC_OID_SHA1;
       break;
-    case SignatureAlgorithm::rsa_pkcs1_with_sha512:
+    case rsa_pkcs1_with_sha512:
       pubKeyAlg = SEC_OID_PKCS1_RSA_ENCRYPTION;
       digestAlg = SEC_OID_SHA512;
       break;
-    case SignatureAlgorithm::rsa_pkcs1_with_sha384:
+    case rsa_pkcs1_with_sha384:
       pubKeyAlg = SEC_OID_PKCS1_RSA_ENCRYPTION;
       digestAlg = SEC_OID_SHA384;
       break;
-    case SignatureAlgorithm::rsa_pkcs1_with_sha256:
+    case rsa_pkcs1_with_sha256:
       pubKeyAlg = SEC_OID_PKCS1_RSA_ENCRYPTION;
       digestAlg = SEC_OID_SHA256;
       break;
-    case SignatureAlgorithm::rsa_pkcs1_with_sha1:
+    case rsa_pkcs1_with_sha1:
       pubKeyAlg = SEC_OID_PKCS1_RSA_ENCRYPTION;
       digestAlg = SEC_OID_SHA1;
       break;
-    case SignatureAlgorithm::dsa_with_sha256:
+    case dsa_with_sha256:
       pubKeyAlg = SEC_OID_ANSIX9_DSA_SIGNATURE;
       digestAlg = SEC_OID_SHA256;
       break;
-    case SignatureAlgorithm::dsa_with_sha1:
+    case dsa_with_sha1:
       pubKeyAlg = SEC_OID_ANSIX9_DSA_SIGNATURE;
       digestAlg = SEC_OID_SHA1;
       break;
@@ -130,7 +130,7 @@ DigestBuf(const SECItem& item, /*out*/ uint8_t* digestBuf, size_t digestBufLen)
     return SECFailure;
   }
   if (item.len >
-      static_cast<decltype(item.len)>(std::numeric_limits<int32_t>::max())) {
+      std::numeric_limits<int32_t>::max()) {
     PR_NOT_REACHED("large OCSP responses should have already been rejected");
     PR_SetError(SEC_ERROR_INVALID_ARGS, 0);
     return SECFailure;

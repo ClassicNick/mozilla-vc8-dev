@@ -19,7 +19,7 @@ using namespace mozilla;
 using namespace mozilla::dom;
 using namespace mozilla::widget;
 
-NS_IMPL_ISUPPORTS(nsScreenManagerProxy, nsIScreenManager)
+NS_IMPL_ISUPPORTS1(nsScreenManagerProxy, nsIScreenManager)
 
 nsScreenManagerProxy::nsScreenManagerProxy()
   : mNumberOfScreens(-1)

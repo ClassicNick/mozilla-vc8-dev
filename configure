@@ -4027,8 +4027,8 @@ cross_compiling=$ac_cv_prog_cc_cross
         fi
         if test "$_CC_MAJOR_VERSION" = "13"; then
             _CC_SUITE=7
-            CFLAGS="$CFLAGS -wd4002 -wd4003 -wd4146 -wd4161 -wd4275 -wd4288 -wd4355 -wd4396 -wd4521 -wd4522 -wd4530 -wd4661 -wd4667"
-            CXXFLAGS="$CXXFLAGS -wd4002 -wd4003 -wd4146 -wd4161 -wd4275 -wd4288 -wd4355 -wd4396 -wd4521 -wd4522 -wd4530 -wd4661 -wd4667"
+            CFLAGS="$CFLAGS -wd4002 -wd4003 -wd4061 -wd4146 -wd4161 -wd4275 -wd4288 -wd4355 -wd4396 -wd4521 -wd4522 -wd4530 -wd4661 -wd4667"
+            CXXFLAGS="$CXXFLAGS -wd4002 -wd4003 -wd4061 -wd4146 -wd4161 -wd4275 -wd4288 -wd4355 -wd4396 -wd4521 -wd4522 -wd4530 -wd4661 -wd4667"
 			MSVC_C_RUNTIME_DLL=msvcr71.dll
             MSVC_CXX_RUNTIME_DLL=msvcp71.dll
         elif test "$_CC_MAJOR_VERSION" = "14"; then
