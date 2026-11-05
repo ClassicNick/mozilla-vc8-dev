@@ -564,6 +564,49 @@ ErrorObject::createProto(JSContext *cx, JSProtoKey key)
         return nullptr;
     }
 
+    // Create the corresponding constructor.
+    RootedFunction ctor(cx, global->createConstructor(cx, Error, name, 1,
+                                                      JSFunction::ExtendedFinalizeKind));
+    if (!ctor)
+        return nullptr;
+    ctor->setExtendedSlot(0, Int32Value(int32_t(type)));
+
+    if (!LinkConstructorAndPrototype(cx, ctor, err))
+        return nullptr;
+
+    if (!GlobalObject::initBuiltinConstructor(cx, global, key, ctor, err))
+        return nullptr;
+
+    return err;
+}
+
+JSObject *
+js_InitExceptionClasses(JSContext *cx, HandleObject obj)
+{
+    JS_ASSERT(obj->is<GlobalObject>());
+    JS_ASSERT(obj->isNative());
+
+    Rooted<GlobalObject*> global(cx, &obj->as<GlobalObject>());
+
+    RootedObject objProto(cx, global->getOrCreateObjectPrototype(cx));
+    if (!objProto)
+        return nullptr;
+
+    /* Initialize the base Error class first. */
+    RootedObject errorProto(cx, ErrorObject::createProto(cx, global, JSEXN_ERR, objProto));
+    if (!errorProto)
+        return nullptr;
+
+    /* |Error.prototype| alone has method properties. */
+    if (!DefinePropertiesAndFunctions(cx, errorProto, nullptr, exception_methods))
+        return nullptr;
+
+    /* Define all remaining *Error constructors. */
+    for (int i = JSEXN_ERR + 1; i < JSEXN_LIMIT; i++) {
+        if (!ErrorObject::createProto(cx, global, JSExnType(i), errorProto))
+            return nullptr;
+    }
+
     return errorProto;
 }
 
