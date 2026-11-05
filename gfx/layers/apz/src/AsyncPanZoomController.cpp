@@ -1976,9 +1976,9 @@ void AsyncPanZoomController::RequestContentRepaint(FrameMetrics& aFrameMetrics) 
   SendAsyncScrollEvent();
   mPaintThrottler.PostTask(
     FROM_HERE,
-    UniquePtr<CancelableTask>(NewRunnableMethod(this,
+    NewRunnableMethod(this,
                       &AsyncPanZoomController::DispatchRepaintRequest,
-                      aFrameMetrics)),
+                      aFrameMetrics),
     GetFrameTime());
 
   aFrameMetrics.SetPresShellId(mLastContentPaintMetrics.GetPresShellId());
