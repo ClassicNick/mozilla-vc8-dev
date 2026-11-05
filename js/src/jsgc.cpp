@@ -214,6 +214,7 @@
 #include "vm/ProxyObject.h"
 #include "vm/Shape.h"
 #include "vm/String.h"
+#include "vm/Symbol.h"
 #include "vm/TraceLogging.h"
 #include "vm/WrapperObject.h"
 
@@ -269,6 +270,7 @@ const uint32_t Arena::ThingSizes[] = {
     sizeof(JSFatInlineString),  /* FINALIZE_FAT_INLINE_STRING   */
     sizeof(JSString),           /* FINALIZE_STRING              */
     sizeof(JSExternalString),   /* FINALIZE_EXTERNAL_STRING     */
+    sizeof(JS::Symbol),         /* FINALIZE_SYMBOL              */
     sizeof(jit::JitCode),       /* FINALIZE_JITCODE             */
 };
 
@@ -295,6 +297,7 @@ const uint32_t Arena::FirstThingOffsets[] = {
     OFFSET(JSFatInlineString),  /* FINALIZE_FAT_INLINE_STRING   */
     OFFSET(JSString),           /* FINALIZE_STRING              */
     OFFSET(JSExternalString),   /* FINALIZE_EXTERNAL_STRING     */
+    OFFSET(JS::Symbol),         /* FINALIZE_SYMBOL              */
     OFFSET(jit::JitCode),       /* FINALIZE_JITCODE             */
 };
 
@@ -306,6 +309,7 @@ js::gc::TraceKindAsAscii(JSGCTraceKind kind)
     switch(kind) {
       case JSTRACE_OBJECT: return "JSTRACE_OBJECT";
       case JSTRACE_STRING: return "JSTRACE_STRING";
+      case JSTRACE_SYMBOL: return "JSTRACE_SYMBOL";
       case JSTRACE_SCRIPT: return "JSTRACE_SCRIPT";
       case JSTRACE_LAZY_SCRIPT: return "JSTRACE_SCRIPT";
       case JSTRACE_JITCODE: return "JSTRACE_JITCODE";
@@ -373,9 +377,10 @@ static const AllocKind BackgroundPhaseObjects[] = {
     FINALIZE_OBJECT16_BACKGROUND
 };
 
-static const AllocKind BackgroundPhaseStrings[] = {
+static const AllocKind BackgroundPhaseStringsAndSymbols[] = {
     FINALIZE_FAT_INLINE_STRING,
-    FINALIZE_STRING
+    FINALIZE_STRING,
+    FINALIZE_SYMBOL
 };
 
 static const AllocKind BackgroundPhaseShapes[] = {
@@ -386,14 +391,14 @@ static const AllocKind BackgroundPhaseShapes[] = {
 
 static const AllocKind * const BackgroundPhases[] = {
     BackgroundPhaseObjects,
-    BackgroundPhaseStrings,
+    BackgroundPhaseStringsAndSymbols,
     BackgroundPhaseShapes
 };
 static const int BackgroundPhaseCount = sizeof(BackgroundPhases) / sizeof(AllocKind*);
 
 static const int BackgroundPhaseLength[] = {
     sizeof(BackgroundPhaseObjects) / sizeof(AllocKind),
-    sizeof(BackgroundPhaseStrings) / sizeof(AllocKind),
+    sizeof(BackgroundPhaseStringsAndSymbols) / sizeof(AllocKind),
     sizeof(BackgroundPhaseShapes) / sizeof(AllocKind)
 };
 
@@ -599,6 +604,8 @@ FinalizeArenas(FreeOp *fop,
         return FinalizeTypedArenas<JSFatInlineString>(fop, src, dest, thingKind, budget);
       case FINALIZE_EXTERNAL_STRING:
         return FinalizeTypedArenas<JSExternalString>(fop, src, dest, thingKind, budget);
+      case FINALIZE_SYMBOL:
+        return FinalizeTypedArenas<JS::Symbol>(fop, src, dest, thingKind, budget);
       case FINALIZE_JITCODE:
 #ifdef JS_ION
       {
@@ -2101,12 +2108,13 @@ ArenaLists::queueObjectsForSweep(FreeOp *fop)
 }
 
 void
-ArenaLists::queueStringsForSweep(FreeOp *fop)
+ArenaLists::queueStringsAndSymbolsForSweep(FreeOp *fop)
 {
     gcstats::AutoPhase ap(fop->runtime()->gc.stats, gcstats::PHASE_SWEEP_STRING);
 
     queueForBackgroundSweep(fop, FINALIZE_FAT_INLINE_STRING);
     queueForBackgroundSweep(fop, FINALIZE_STRING);
+    queueForBackgroundSweep(fop, FINALIZE_SYMBOL);
 
     queueForForegroundSweep(fop, FINALIZE_EXTERNAL_STRING);
 }
@@ -4240,7 +4248,7 @@ GCRuntime::beginSweepingZoneGroup()
     }
     for (GCZoneGroupIter zone(rt); !zone.done(); zone.next()) {
         gcstats::AutoSCC scc(stats, zoneGroupIndex);
-        zone->allocator.arenas.queueStringsForSweep(&fop);
+        zone->allocator.arenas.queueStringsAndSymbolsForSweep(&fop);
     }
     for (GCZoneGroupIter zone(rt); !zone.done(); zone.next()) {
         gcstats::AutoSCC scc(stats, zoneGroupIndex);

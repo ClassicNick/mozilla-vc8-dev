@@ -77,6 +77,7 @@
 #include "vm/SharedArrayObject.h"
 #include "vm/StopIterationObject.h"
 #include "vm/StringBuffer.h"
+#include "vm/Symbol.h"
 #include "vm/TypedArrayObject.h"
 #include "vm/WeakMapObject.h"
 #include "vm/WrapperObject.h"
@@ -5641,6 +5642,23 @@ JS_EncodeStringToBuffer(JSContext *cx, JSString *str, char *buffer, size_t lengt
         return size_t(-1);
     JS_ASSERT(writtenLength == length); // C strings are NOT encoded.
     return necessaryLength;
+}
+
+JS_PUBLIC_API(JS::Symbol *)
+JS::NewSymbol(JSContext *cx, HandleString description)
+{
+    AssertHeapIsIdle(cx);
+    CHECK_REQUEST(cx);
+    if (description)
+        assertSameCompartment(cx, description);
+
+    return Symbol::new_(cx, description);
+}
+
+JS_PUBLIC_API(JSString *)
+JS::GetSymbolDescription(HandleSymbol symbol)
+{
+    return symbol->description();
 }
 
 JS_PUBLIC_API(bool)
