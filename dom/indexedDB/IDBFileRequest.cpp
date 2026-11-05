@@ -107,8 +107,8 @@ IDBFileRequest::NotifyHelperCompleted(FileHelper* aFileHelper)
   return NS_OK;
 }
 
-NS_IMPL_CYCLE_COLLECTION_INHERITED(IDBFileRequest, DOMRequest,
-                                   mFileHandle)
+NS_IMPL_CYCLE_COLLECTION_INHERITED_1(IDBFileRequest, DOMRequest,
+                                     mFileHandle)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(IDBFileRequest)
 NS_INTERFACE_MAP_END_INHERITING(DOMRequest)

@@ -199,7 +199,7 @@ public:
   virtual ~MediaEngineVideoSource() {}
 
   virtual const MediaSourceType GetMediaSource() {
-      return MediaSourceType::Camera;
+      return Camera;
   }
   /* This call reserves but does not start the device. */
   virtual nsresult Allocate(const VideoTrackConstraintsN &aConstraints,

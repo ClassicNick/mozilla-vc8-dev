@@ -254,7 +254,7 @@ GetFileHelper::GetSuccessResult(JSContext* aCx,
 {
   MOZ_ASSERT(NS_IsMainThread());
 
-  auto fileHandle = static_cast<IDBFileHandle*>(mFileHandle.get());
+  IDBFileHandle* fileHandle = static_cast<IDBFileHandle*>(mFileHandle.get());
 
   nsCOMPtr<nsIDOMFile> domFile =
     mMutableFile->CreateFileObject(fileHandle, mParams->Size());

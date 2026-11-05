@@ -60,18 +60,18 @@ private:
   friend class MetadataHelper;
 
   ReadyState mReadyState;
-  FileMode mMode;
-  RequestMode mRequestMode;
   uint64_t mLocation;
   uint32_t mPendingRequests;
 
-  nsTArray<nsCOMPtr<nsISupports>> mParallelStreams;
+  nsTArray<nsCOMPtr<nsISupports> > mParallelStreams;
   nsCOMPtr<nsISupports> mStream;
 
   bool mAborted;
   bool mCreating;
 
 public:
+  FileMode mMode;
+  RequestMode mRequestMode;
   NS_IMETHOD_(MozExternalRefCountType)
   AddRef() = 0;
 

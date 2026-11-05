@@ -25,6 +25,9 @@
 #include "imgIContainer.h"
 #include "gfxColor.h"
 
+namespace mozilla {
+namespace image {
+
 /*
  * This creates a gfxImageSurface which will unlock the buffer on destruction
  */
@@ -161,7 +164,7 @@ public:
 
   size_t SizeOfExcludingThisWithComputedFallbackIfHeap(
            gfxMemoryLocation aLocation,
-           mozilla::MallocSizeOf aMallocSizeOf) const;
+           MallocSizeOf aMallocSizeOf) const;
 
   uint8_t GetPaletteDepth() const { return mPaletteDepth; }
   uint32_t PaletteDataLength() const {
@@ -209,7 +212,7 @@ private: // data
 
   nsIntRect    mDecoded;
 
-  mutable mozilla::Mutex mDirtyMutex;
+  mutable Mutex mDirtyMutex;
 
   // The palette and image data for images that are paletted, since Cairo
   // doesn't support these images.
@@ -226,7 +229,8 @@ private: // data
   /** Indicates how many readers currently have locked this frame */
   int32_t mLockCount;
 
-  mozilla::RefPtr<mozilla::VolatileBuffer> mVBuf;
+  RefPtr<VolatileBuffer> mVBuf;
+  VolatileBufferPtr<uint8_t> mVBufPtr;
 
   gfxImageFormat mFormat;
   uint8_t      mPaletteDepth;
@@ -243,8 +247,6 @@ private: // data
   bool mDirty;
 };
 
-namespace mozilla {
-namespace image {
   // An RAII class to ensure it's easy to balance locks and unlocks on
   // imgFrames.
   class AutoFrameLocker
@@ -269,7 +271,8 @@ namespace image {
     imgFrame* mFrame;
     bool mSucceeded;
   };
-}
-}
+
+} // namespace image
+} // namespace mozilla
 
 #endif /* imgFrame_h */

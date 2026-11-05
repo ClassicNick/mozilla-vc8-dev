@@ -491,7 +491,7 @@ MediaEngineDefault::EnumerateVideoDevices(MediaSourceType aMediaSource,
   MutexAutoLock lock(mMutex);
 
   // only supports camera sources (for now).  See Bug 1038241
-  if (aMediaSource != MediaSourceType::Camera) {
+  if (aMediaSource != Camera) {
     return;
   }
 

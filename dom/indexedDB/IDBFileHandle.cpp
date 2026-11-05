@@ -83,8 +83,8 @@ IDBFileHandle::MutableFile() const
   return mMutableFile;
 }
 
-NS_IMPL_CYCLE_COLLECTION_INHERITED(IDBFileHandle, DOMEventTargetHelper,
-                                   mMutableFile)
+NS_IMPL_CYCLE_COLLECTION_INHERITED_1(IDBFileHandle, DOMEventTargetHelper,
+                                     mMutableFile)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(IDBFileHandle)
   NS_INTERFACE_MAP_ENTRY(nsIRunnable)

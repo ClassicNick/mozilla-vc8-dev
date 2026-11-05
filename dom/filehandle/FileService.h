@@ -101,11 +101,10 @@ private:
 
     ThreadSafeAutoRefCnt mRefCnt;
     NS_DECL_OWNINGTHREAD
-    nsRefPtr<FileHandleBase> mFileHandle;
     nsTArray<nsRefPtr<FileHelper> > mQueue;
     nsRefPtr<FileHelper> mCurrentHelper;
-  public:
-	nsRefPtr<FileHandle> mFileHandle;
+	public:
+	nsRefPtr<FileHandleBase> mFileHandle;
   };
 
   struct DelayedEnqueueInfo

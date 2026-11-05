@@ -628,8 +628,8 @@ MediaStreamGraphImpl::UpdateStreamOrder()
 
   // Rearrange dfsStack order as required to DFS upstream and pop streams
   // in processing order to place in mStreams.
-  while (auto ps = static_cast<ProcessedMediaStream*>(dfsStack.getFirst())) {
-    const auto& inputs = ps->mInputs;
+  while (ProcessedMediaStream* ps = static_cast<ProcessedMediaStream*>(dfsStack.getFirst())) {
+    const nsTArray<MediaInputPort*>& inputs = ps->mInputs;
     MOZ_ASSERT(ps->AsProcessedStream());
     if (ps->mCycleMarker == NOT_VISITED) {
       // Record the position on the visited stack, so that any searches
@@ -639,7 +639,7 @@ MediaStreamGraphImpl::UpdateStreamOrder()
       // Not-visited input streams should be processed first.
       // SourceMediaStreams have already been ordered.
       for (uint32_t i = inputs.Length(); i--; ) {
-        auto input = inputs[i]->mSource->AsProcessedStream();
+        ProcessedMediaStream* input = inputs[i]->mSource->AsProcessedStream();
         if (input && input->mCycleMarker == NOT_VISITED) {
           input->remove();
           dfsStack.insertFront(input);
@@ -658,7 +658,7 @@ MediaStreamGraphImpl::UpdateStreamOrder()
     // unless it is part of the cycle.
     uint32_t cycleStackMarker = 0;
     for (uint32_t i = inputs.Length(); i--; ) {
-      auto input = inputs[i]->mSource->AsProcessedStream();
+      ProcessedMediaStream* input = inputs[i]->mSource->AsProcessedStream();
       if (input) {
         cycleStackMarker = std::max(cycleStackMarker, input->mCycleMarker);
       }
@@ -694,7 +694,7 @@ MediaStreamGraphImpl::UpdateStreamOrder()
     MOZ_ASSERT(cycleStackMarker == ps->mCycleMarker);
     // If there are DelayNodes in this SCC, then they may break the cycles.
     bool haveDelayNode = false;
-    auto next = static_cast<ProcessedMediaStream*>(sccStack.getFirst());
+    ProcessedMediaStream* next = static_cast<ProcessedMediaStream*>(sccStack.getFirst());
     // Streams in this SCC are identified by mCycleMarker <= cycleStackMarker.
     // (There may be other streams later in sccStack from other incompletely
     // searched SCCs, involving streams still on dfsStack.)
@@ -702,7 +702,7 @@ MediaStreamGraphImpl::UpdateStreamOrder()
     // DelayNodes in cycles must behave differently from those not in cycles,
     // so all DelayNodes in the SCC must be identified.
     while (next && next->mCycleMarker <= cycleStackMarker) {
-      auto ns = next->AsAudioNodeStream();
+      AudioNodeStream* ns = next->AsAudioNodeStream();
       // Get next before perhaps removing from list below.
       next = static_cast<ProcessedMediaStream*>(next->getNext());
       if (ns && ns->Engine()->AsDelayNodeEngine()) {
@@ -717,7 +717,7 @@ MediaStreamGraphImpl::UpdateStreamOrder()
         mStreams[mFirstCycleBreaker] = ns;
       }
     }
-    auto after_scc = next;
+    ProcessedMediaStream* after_scc = next;
     while ((next = static_cast<ProcessedMediaStream*>(sccStack.popFirst()))
            != after_scc) {
       if (haveDelayNode) {
@@ -1261,7 +1261,7 @@ MediaStreamGraphImpl::ProduceDataForStreamsBlockByBlock(uint32_t aStreamIndex,
   while (t < aTo) {
     GraphTime next = RoundUpToNextAudioBlock(aSampleRate, t);
     for (uint32_t i = mFirstCycleBreaker; i < mStreams.Length(); ++i) {
-      auto ns = static_cast<AudioNodeStream*>(mStreams[i]);
+      AudioNodeStream* ns = static_cast<AudioNodeStream*>(mStreams[i]);
       MOZ_ASSERT(ns->AsAudioNodeStream());
       ns->ProduceOutputBeforeInput(t);
     }

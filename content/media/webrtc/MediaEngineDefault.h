@@ -62,7 +62,7 @@ public:
   }
 
   virtual const MediaSourceType GetMediaSource() {
-    return MediaSourceType::Camera;
+    return Camera;
   }
 
   NS_DECL_THREADSAFE_ISUPPORTS
@@ -122,7 +122,7 @@ public:
   }
 
   virtual const MediaSourceType GetMediaSource() {
-    return MediaSourceType::Microphone;
+    return Microphone;
   }
 
   NS_DECL_THREADSAFE_ISUPPORTS

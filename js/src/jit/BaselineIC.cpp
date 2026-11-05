@@ -6076,6 +6076,8 @@ TryAttachMagicArgumentsGetPropStub(JSContext *cx, JSScript *script, ICGetProp_Fa
 
     // Try handling arguments.callee on optimized arguments.
     if (name == cx->names().callee) {
+        MOZ_ASSERT(!script->strict());
+
         IonSpew(IonSpew_BaselineIC, "  Generating GetProp(MagicArgs.callee) stub");
 
         // Unlike ICGetProp_ArgumentsLength, only magic argument stubs are
@@ -6468,6 +6470,7 @@ ComputeGetPropResult(JSContext *cx, BaselineFrame *frame, JSOp op, HandlePropert
             res.setInt32(frame->numActualArgs());
         } else {
             MOZ_ASSERT(name == cx->names().callee);
+            MOZ_ASSERT(!frame->script()->strict());
             res.setObject(*frame->callee());
         }
     } else {

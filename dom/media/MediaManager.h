@@ -105,7 +105,7 @@ public:
   {
     NS_ASSERTION(NS_IsMainThread(), "Only call on main thread");
     return mVideoSource && !mStopped &&
-           mVideoSource->GetMediaSource() == MediaSourceType::Camera &&
+           mVideoSource->GetMediaSource() == Camera &&
            (!mVideoSource->IsFake() ||
             Preferences::GetBool("media.navigator.permission.fake"));
   }
@@ -120,13 +120,13 @@ public:
   {
     NS_ASSERTION(NS_IsMainThread(), "Only call on main thread");
     return mVideoSource && !mStopped &&
-           mVideoSource->GetMediaSource() == MediaSourceType::Screen;
+           mVideoSource->GetMediaSource() == Screen;
   }
   bool CapturingWindow()
   {
     NS_ASSERTION(NS_IsMainThread(), "Only call on main thread");
     return mVideoSource && !mStopped &&
-           mVideoSource->GetMediaSource() == MediaSourceType::Window;
+           mVideoSource->GetMediaSource() == Window;
   }
 
   void SetStopped()
