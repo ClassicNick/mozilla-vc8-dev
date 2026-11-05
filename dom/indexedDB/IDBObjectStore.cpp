@@ -14,8 +14,8 @@
 #include <algorithm>
 #include "jsfriendapi.h"
 #include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/IDBMutableFileBinding.h"
 #include "mozilla/dom/nsIContentParent.h"
-#include "mozilla/dom/MutableFileBinding.h"
 #include "mozilla/dom/StructuredCloneTags.h"
 #include "mozilla/dom/TabChild.h"
 #include "mozilla/dom/ipc/Blob.h"
@@ -778,10 +778,11 @@ ResolveMysteryBlob(nsIDOMBlob* aBlob, const nsString& aContentType,
 class MainThreadDeserializationTraits
 {
 public:
-  static JSObject* CreateAndWrapMutableFile(JSContext* aCx,
-                                            IDBDatabase* aDatabase,
-                                            StructuredCloneFile& aFile,
-                                            const MutableFileData& aData)
+  static bool CreateAndWrapMutableFile(JSContext* aCx,
+                                       IDBDatabase* aDatabase,
+                                       StructuredCloneFile& aFile,
+                                       const MutableFileData& aData,
+                                       JS::MutableHandle<JSObject*> aResult)
   {
     MOZ_ASSERT(NS_IsMainThread());
 
@@ -790,7 +791,13 @@ public:
     nsRefPtr<IDBMutableFile> mutableFile = IDBMutableFile::Create(aData.name,
       aData.type, aDatabase, fileInfo.forget());
 
-    return mutableFile->WrapObject(aCx);
+    JS::Rooted<JSObject*> result(aCx, mutableFile->WrapObject(aCx));
+    if (NS_WARN_IF(!result)) {
+      return false;
+    }
+ 
+    aResult.set(result);
+    return true;
   }
 
   static JSObject* CreateAndWrapBlobOrFile(JSContext* aCx,
@@ -880,13 +887,22 @@ public:
 class CreateIndexDeserializationTraits
 {
 public:
-  static JSObject* CreateAndWrapMutableFile(JSContext* aCx,
-                                            IDBDatabase* aDatabase,
-                                            StructuredCloneFile& aFile,
-                                            const MutableFileData& aData)
+  static bool CreateAndWrapMutableFile(JSContext* aCx,
+                                       IDBDatabase* aDatabase,
+                                       StructuredCloneFile& aFile,
+                                       const MutableFileData& aData,
+                                       JS::MutableHandle<JSObject*> aResult)
   {
     // MutableFile can't be used in index creation, so just make a dummy object.
-    return JS_NewObject(aCx, nullptr, JS::NullPtr(), JS::NullPtr());
+    JS::Rooted<JSObject*> obj(aCx,
+      JS_NewObject(aCx, nullptr, JS::NullPtr(), JS::NullPtr()));
+
+    if (NS_WARN_IF(!obj)) {
+      return false;
+    }
+
+    aResult.set(obj);
+    return true;
   }
 
   static JSObject* CreateAndWrapBlobOrFile(JSContext* aCx,
@@ -1487,7 +1503,7 @@ IDBObjectStore::ReadBlobOrFile(JSStructuredCloneReader* aReader,
 }
 
 // static
-template <class DeserializationTraits>
+template <class Traits>
 JSObject*
 IDBObjectStore::StructuredCloneReadCallback(JSContext* aCx,
                                             JSStructuredCloneReader* aReader,
@@ -1525,8 +1541,16 @@ IDBObjectStore::StructuredCloneReadCallback(JSContext* aCx,
         return nullptr;
       }
 
-      return DeserializationTraits::CreateAndWrapMutableFile(aCx, database,
-                                                             file, data);
+      JS::Rooted<JSObject*> result(aCx);
+      if (NS_WARN_IF(!Traits::CreateAndWrapMutableFile(aCx,
+                                                       database,
+                                                       file,
+                                                       data,
+                                                       &result))) {
+        return nullptr;
+      }
+
+      return result;
     }
 
     BlobOrFileData data;
@@ -1534,8 +1558,7 @@ IDBObjectStore::StructuredCloneReadCallback(JSContext* aCx,
       return nullptr;
     }
 
-    return DeserializationTraits::CreateAndWrapBlobOrFile(aCx, database,
-                                                          file, data);
+    return Traits::CreateAndWrapBlobOrFile(aCx, database, file, data);
   }
 
   const JSStructuredCloneCallbacks* runtimeCallbacks =
@@ -1571,13 +1594,13 @@ IDBObjectStore::StructuredCloneWriteCallback(JSContext* aCx,
   IDBTransaction* transaction = cloneWriteInfo->mTransaction;
   FileManager* fileManager = transaction->Database()->Manager();
 
-  MutableFile* mutableFile = nullptr;
-  if (NS_SUCCEEDED(UNWRAP_OBJECT(MutableFile, aObj, mutableFile))) {
+  IDBMutableFile* mutableFile = nullptr;
+  if (NS_SUCCEEDED(UNWRAP_OBJECT(IDBMutableFile, aObj, mutableFile))) {
     nsRefPtr<FileInfo> fileInfo = mutableFile->GetFileInfo();
+    MOZ_ASSERT(fileInfo);
 
-    // Throw when trying to store non IDB mutable files or IDB mutable files
-    // across databases.
-    if (!fileInfo || fileInfo->Manager() != fileManager) {
+    // Throw when trying to store mutable files across databases.
+    if (fileInfo->Manager() != fileManager) {
       return false;
     }
 

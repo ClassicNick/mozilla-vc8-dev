@@ -1014,6 +1014,8 @@ struct JSRuntime : public JS::shadow::Runtime,
 
     mozilla::ScopedDeletePtr<js::SourceHook> sourceHook;
 
+    js::AssertOnScriptEntryHook assertOnScriptEntryHook_;
+
     /* Per runtime debug hooks -- see js/OldDebugAPI.h. */
     JSDebugHooks        debugHooks;
 
