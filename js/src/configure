@@ -15808,6 +15808,7 @@ for moz_config_dir in intl/icu/source:intl/icu/host; do
   fi
   _save_cache_file="$cache_file"
   cache_file="$moz_config_dir/config.cache"
+  cache_file="$(cd $(dirname "$cache_file"); pwd -W 2>/dev/null || pwd)/$(basename "$cache_file")"
   
 
 
@@ -16051,6 +16052,7 @@ for moz_config_dir in intl/icu/source:intl/icu/target; do
   fi
   _save_cache_file="$cache_file"
   cache_file="$moz_config_dir/config.cache"
+  cache_file="$(cd $(dirname "$cache_file"); pwd -W 2>/dev/null || pwd)/$(basename "$cache_file")"
   
 
 
@@ -16171,12 +16173,12 @@ fi
 for ac_func in setlocale
 do
 echo $ac_n "checking for $ac_func""... $ac_c" 1>&6
-echo "configure:16175: checking for $ac_func" >&5
+echo "configure:16177: checking for $ac_func" >&5
 if eval "test \"`echo '$''{'ac_cv_func2_$ac_func'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
   cat > conftest.$ac_ext <<EOF
-#line 16180 "configure"
+#line 16182 "configure"
 #define $ac_func innocuous_$ac_func
 #include "confdefs.h"
 #undef $ac_func
@@ -16203,7 +16205,7 @@ $ac_func();
 
 ; return 0; }
 EOF
-if { (eval echo configure:16207: \"$ac_link\") 1>&5; (eval $ac_link) 2>&5; } && test -s conftest${ac_exeext}; then
+if { (eval echo configure:16209: \"$ac_link\") 1>&5; (eval $ac_link) 2>&5; } && test -s conftest${ac_exeext}; then
   rm -rf conftest*
   eval "ac_cv_func2_$ac_func=yes"
 else
@@ -16233,12 +16235,12 @@ done
 for ac_func in localeconv
 do
 echo $ac_n "checking for $ac_func""... $ac_c" 1>&6
-echo "configure:16237: checking for $ac_func" >&5
+echo "configure:16239: checking for $ac_func" >&5
 if eval "test \"`echo '$''{'ac_cv_func2_$ac_func'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
   cat > conftest.$ac_ext <<EOF
-#line 16242 "configure"
+#line 16244 "configure"
 #define $ac_func innocuous_$ac_func
 #include "confdefs.h"
 #undef $ac_func
@@ -16265,7 +16267,7 @@ $ac_func();
 
 ; return 0; }
 EOF
-if { (eval echo configure:16269: \"$ac_link\") 1>&5; (eval $ac_link) 2>&5; } && test -s conftest${ac_exeext}; then
+if { (eval echo configure:16271: \"$ac_link\") 1>&5; (eval $ac_link) 2>&5; } && test -s conftest${ac_exeext}; then
   rm -rf conftest*
   eval "ac_cv_func2_$ac_func=yes"
 else
@@ -16413,6 +16415,7 @@ for moz_config_dir in js/src/ctypes/libffi; do
   fi
   _save_cache_file="$cache_file"
   cache_file="$moz_config_dir/config.cache"
+  cache_file="$(cd $(dirname "$cache_file"); pwd -W 2>/dev/null || pwd)/$(basename "$cache_file")"
   
 
 

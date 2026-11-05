@@ -694,10 +694,11 @@ MarkValueInternal(JSTracer *trc, Value *v)
         void *thing = v->toGCThing();
         trc->setTracingLocation((void *)v);
         MarkKind(trc, &thing, v->gcKind());
-        if (v->isString())
+        if (v->isString()) {
             v->setString((JSString *)thing);
-        else
+        } else {
             v->setObjectOrNull((JSObject *)thing);
+        }
     } else {
         /* Unset realLocation manually if we do not call MarkInternal. */
         trc->unsetTracingLocation();
