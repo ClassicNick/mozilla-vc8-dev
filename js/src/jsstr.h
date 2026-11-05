@@ -141,11 +141,6 @@ extern jschar *
 js_strdup(js::ThreadSafeContext *cx, const jschar *s);
 
 namespace js {
-extern mozilla::UniquePtr<char[], JS::FreePolicy>
-DuplicateString(ThreadSafeContext *cx, const char *s);
-
-extern mozilla::UniquePtr<jschar[], JS::FreePolicy>
-DuplicateString(ThreadSafeContext *cx, const jschar *s);
 
 /*
  * Convert a non-string value to a string, returning null after reporting an
