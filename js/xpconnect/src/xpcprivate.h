@@ -112,6 +112,7 @@
 #include "nsIInterfaceInfo.h"
 #include "nsIXPCScriptable.h"
 #include "nsIJSRuntimeService.h"
+#include "nsIObserver.h"
 #include "nsWeakReference.h"
 #include "nsCOMPtr.h"
 #include "nsXPTCUtils.h"
@@ -1178,6 +1179,14 @@ protected:
     XPCWrappedNativeScope(); // not implemented
 
 private:
+    class ClearInterpositionsObserver MOZ_FINAL : public nsIObserver {
+        ~ClearInterpositionsObserver() {}
+
+      public:
+        NS_DECL_ISUPPORTS
+        NS_DECL_NSIOBSERVER
+    };
+
     static XPCWrappedNativeScope* gScopes;
     static XPCWrappedNativeScope* gDyingScopes;
 

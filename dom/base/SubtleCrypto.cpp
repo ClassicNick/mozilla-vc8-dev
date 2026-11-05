@@ -35,43 +35,91 @@ SubtleCrypto::WrapObject(JSContext* aCx)
   return SubtleCryptoBinding::Wrap(aCx, this);
 }
 
-#define SUBTLECRYPTO_METHOD_BODY2(Operation, a1, a2) \
-  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(mWindow); \
-  MOZ_ASSERT(global); \
-  nsRefPtr<Promise> p = new Promise(global); \
-  nsRefPtr<WebCryptoTask> task = WebCryptoTask::Operation ## Task(a1, a2); \
+#define SUBTLECRYPTO_METHOD_BODY1(Operation, aRv, a1)                   \
+  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(mWindow);        \
+  MOZ_ASSERT(global);                                                   \
+  nsRefPtr<Promise> p = Promise::Create(global, aRv);                   \
+  if (aRv.Failed()) {                                                   \
+    return nullptr;                                                     \
+  }                                                                     \
+  nsRefPtr<WebCryptoTask> task = WebCryptoTask::Create ## Operation ## Task(a1); \
   task->DispatchWithPromise(p); \
   return p.forget();
-
-#define SUBTLECRYPTO_METHOD_BODY3(Operation, a1, a2, a3) \
-  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(mWindow); \
-  MOZ_ASSERT(global); \
-  nsRefPtr<Promise> p = new Promise(global); \
-  nsRefPtr<WebCryptoTask> task = WebCryptoTask::Operation ## Task(a1, a2, a3); \
+  
+#define SUBTLECRYPTO_METHOD_BODY2(Operation, aRv, a1, a2)                   \
+  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(mWindow);        \
+  MOZ_ASSERT(global);                                                   \
+  nsRefPtr<Promise> p = Promise::Create(global, aRv);                   \
+  if (aRv.Failed()) {                                                   \
+    return nullptr;                                                     \
+  }                                                                     \
+  nsRefPtr<WebCryptoTask> task = WebCryptoTask::Create ## Operation ## Task(a1, a2); \
   task->DispatchWithPromise(p); \
   return p.forget();
-
-#define SUBTLECRYPTO_METHOD_BODY4(Operation, a1, a2, a3, a4) \
-  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(mWindow); \
-  MOZ_ASSERT(global); \
-  nsRefPtr<Promise> p = new Promise(global); \
-  nsRefPtr<WebCryptoTask> task = WebCryptoTask::Operation ## Task(a1, a2, a3, a4); \
+  
+#define SUBTLECRYPTO_METHOD_BODY3(Operation, aRv, a1, a2, a3)                   \
+  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(mWindow);        \
+  MOZ_ASSERT(global);                                                   \
+  nsRefPtr<Promise> p = Promise::Create(global, aRv);                   \
+  if (aRv.Failed()) {                                                   \
+    return nullptr;                                                     \
+  }                                                                     \
+  nsRefPtr<WebCryptoTask> task = WebCryptoTask::Create ## Operation ## Task(a1, a2, a3); \
   task->DispatchWithPromise(p); \
   return p.forget();
-
-#define SUBTLECRYPTO_METHOD_BODY5(Operation, a1, a2, a3, a4, a5) \
-  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(mWindow); \
-  MOZ_ASSERT(global); \
-  nsRefPtr<Promise> p = new Promise(global); \
-  nsRefPtr<WebCryptoTask> task = WebCryptoTask::Operation ## Task(a1, a2, a3, a4, a5); \
+  
+#define SUBTLECRYPTO_METHOD_BODY4(Operation, aRv, a1, a2, a3, a4)                   \
+  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(mWindow);        \
+  MOZ_ASSERT(global);                                                   \
+  nsRefPtr<Promise> p = Promise::Create(global, aRv);                   \
+  if (aRv.Failed()) {                                                   \
+    return nullptr;                                                     \
+  }                                                                     \
+  nsRefPtr<WebCryptoTask> task = WebCryptoTask::Create ## Operation ## Task(a1, a2, a3, a4); \
   task->DispatchWithPromise(p); \
   return p.forget();
-
-#define SUBTLECRYPTO_METHOD_BODY6(Operation, a1, a2, a3, a4, a5, a6) \
-  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(mWindow); \
-  MOZ_ASSERT(global); \
-  nsRefPtr<Promise> p = new Promise(global); \
-  nsRefPtr<WebCryptoTask> task = WebCryptoTask::Operation ## Task(a1, a2, a3, a4, a5, a6); \
+  
+#define SUBTLECRYPTO_METHOD_BODY5(Operation, aRv, a1, a2, a3, a4, a5)                   \
+  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(mWindow);        \
+  MOZ_ASSERT(global);                                                   \
+  nsRefPtr<Promise> p = Promise::Create(global, aRv);                   \
+  if (aRv.Failed()) {                                                   \
+    return nullptr;                                                     \
+  }                                                                     \
+  nsRefPtr<WebCryptoTask> task = WebCryptoTask::Create ## Operation ## Task(a1, a2, a3, a4, a5); \
+  task->DispatchWithPromise(p); \
+  return p.forget();
+  
+#define SUBTLECRYPTO_METHOD_BODY6(Operation, aRv, a1, a2, a3, a4, a5, a6)                   \
+  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(mWindow);        \
+  MOZ_ASSERT(global);                                                   \
+  nsRefPtr<Promise> p = Promise::Create(global, aRv);                   \
+  if (aRv.Failed()) {                                                   \
+    return nullptr;                                                     \
+  }                                                                     \
+  nsRefPtr<WebCryptoTask> task = WebCryptoTask::Create ## Operation ## Task(a1, a2, a3, a4, a5, a6); \
+  task->DispatchWithPromise(p); \
+  return p.forget();
+  
+#define SUBTLECRYPTO_METHOD_BODY7(Operation, aRv, a1, a2, a3, a4, a5, a6, a7)                   \
+  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(mWindow);        \
+  MOZ_ASSERT(global);                                                   \
+  nsRefPtr<Promise> p = Promise::Create(global, aRv);                   \
+  if (aRv.Failed()) {                                                   \
+    return nullptr;                                                     \
+  }                                                                     \
+  nsRefPtr<WebCryptoTask> task = WebCryptoTask::Create ## Operation ## Task(a1, a2, a3, a4, a5, a6, a7); \
+  task->DispatchWithPromise(p); \
+  return p.forget();
+  
+#define SUBTLECRYPTO_METHOD_BODY8(Operation, aRv, a1, a2, a3, a4, a5, a6, a7, a8)                   \
+  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(mWindow);        \
+  MOZ_ASSERT(global);                                                   \
+  nsRefPtr<Promise> p = Promise::Create(global, aRv);                   \
+  if (aRv.Failed()) {                                                   \
+    return nullptr;                                                     \
+  }                                                                     \
+  nsRefPtr<WebCryptoTask> task = WebCryptoTask::Create ## Operation ## Task(a1, a2, a3, a4, a5, a6, a7, a8); \
   task->DispatchWithPromise(p); \
   return p.forget();
 
@@ -79,27 +127,30 @@ already_AddRefed<Promise>
 SubtleCrypto::Encrypt(JSContext* cx,
                       const ObjectOrString& algorithm,
                       CryptoKey& key,
-                      const CryptoOperationData& data)
+                      const CryptoOperationData& data,
+                      ErrorResult& aRv)
 {
-  SUBTLECRYPTO_METHOD_BODY4(Encrypt, cx, algorithm, key, data)
+  SUBTLECRYPTO_METHOD_BODY4(Encrypt, aRv, cx, algorithm, key, data)
 }
 
 already_AddRefed<Promise>
 SubtleCrypto::Decrypt(JSContext* cx,
                       const ObjectOrString& algorithm,
                       CryptoKey& key,
-                      const CryptoOperationData& data)
+                      const CryptoOperationData& data,
+                      ErrorResult& aRv)
 {
-  SUBTLECRYPTO_METHOD_BODY4(Decrypt, cx, algorithm, key, data)
+  SUBTLECRYPTO_METHOD_BODY4(Decrypt, aRv, cx, algorithm, key, data)
 }
 
 already_AddRefed<Promise>
 SubtleCrypto::Sign(JSContext* cx,
                    const ObjectOrString& algorithm,
                    CryptoKey& key,
-                   const CryptoOperationData& data)
+                   const CryptoOperationData& data,
+                   ErrorResult& aRv)
 {
-  SUBTLECRYPTO_METHOD_BODY4(Sign, cx, algorithm, key, data)
+  SUBTLECRYPTO_METHOD_BODY4(Sign, aRv, cx, algorithm, key, data)
 }
 
 already_AddRefed<Promise>
@@ -107,44 +158,49 @@ SubtleCrypto::Verify(JSContext* cx,
                      const ObjectOrString& algorithm,
                      CryptoKey& key,
                      const CryptoOperationData& signature,
-                     const CryptoOperationData& data)
+                     const CryptoOperationData& data,
+                     ErrorResult& aRv)
 {
-  SUBTLECRYPTO_METHOD_BODY5(Verify, cx, algorithm, key, signature, data)
+  SUBTLECRYPTO_METHOD_BODY5(Verify, aRv, cx, algorithm, key, signature, data)
 }
 
 already_AddRefed<Promise>
 SubtleCrypto::Digest(JSContext* cx,
                      const ObjectOrString& algorithm,
-                     const CryptoOperationData& data)
+                     const CryptoOperationData& data,
+                     ErrorResult& aRv)
 {
-  SUBTLECRYPTO_METHOD_BODY3(Digest, cx, algorithm, data)
+  SUBTLECRYPTO_METHOD_BODY3(Digest, aRv, cx, algorithm, data)
 }
 
 
 already_AddRefed<Promise>
 SubtleCrypto::ImportKey(JSContext* cx,
                         const nsAString& format,
-                        const KeyData& keyData,
+                        JS::Handle<JSObject*> keyData,
                         const ObjectOrString& algorithm,
                         bool extractable,
-                        const Sequence<nsString>& keyUsages)
+                        const Sequence<nsString>& keyUsages,
+                        ErrorResult& aRv)
 {
-  SUBTLECRYPTO_METHOD_BODY6(ImportKey, cx, format, keyData, algorithm,
-                                      extractable, keyUsages)
+  SUBTLECRYPTO_METHOD_BODY6(ImportKey, aRv, cx, format, keyData, algorithm,
+                           extractable, keyUsages)
 }
 
 already_AddRefed<Promise>
 SubtleCrypto::ExportKey(const nsAString& format,
-                        CryptoKey& key)
+                        CryptoKey& key,
+                        ErrorResult& aRv)
 {
-  SUBTLECRYPTO_METHOD_BODY2(ExportKey, format, key)
+  SUBTLECRYPTO_METHOD_BODY2(ExportKey, aRv, format, key)
 }
 
 already_AddRefed<Promise>
 SubtleCrypto::GenerateKey(JSContext* cx, const ObjectOrString& algorithm,
-                          bool extractable, const Sequence<nsString>& keyUsages)
+                          bool extractable, const Sequence<nsString>& keyUsages,
+                          ErrorResult& aRv)
 {
-  SUBTLECRYPTO_METHOD_BODY4(GenerateKey, cx, algorithm, extractable, keyUsages)
+  SUBTLECRYPTO_METHOD_BODY4(GenerateKey, aRv, cx, algorithm, extractable, keyUsages)
 }
 
 already_AddRefed<Promise>
@@ -152,19 +208,48 @@ SubtleCrypto::DeriveKey(JSContext* cx,
                         const ObjectOrString& algorithm,
                         CryptoKey& baseKey,
                         const ObjectOrString& derivedKeyType,
-                        bool extractable, const Sequence<nsString>& keyUsages)
+                        bool extractable, const Sequence<nsString>& keyUsages,
+                        ErrorResult& aRv)
 {
-  SUBTLECRYPTO_METHOD_BODY6(DeriveKey, cx, algorithm, baseKey, derivedKeyType,
-                                      extractable, keyUsages)
+  SUBTLECRYPTO_METHOD_BODY6(DeriveKey, aRv, cx, algorithm, baseKey,
+                           derivedKeyType, extractable, keyUsages)
 }
 
 already_AddRefed<Promise>
 SubtleCrypto::DeriveBits(JSContext* cx,
                          const ObjectOrString& algorithm,
                          CryptoKey& baseKey,
-                         uint32_t length)
+                         uint32_t length,
+                         ErrorResult& aRv)
 {
-  SUBTLECRYPTO_METHOD_BODY4(DeriveBits, cx, algorithm, baseKey, length)
+  SUBTLECRYPTO_METHOD_BODY4(DeriveBits, aRv, cx, algorithm, baseKey, length)
+}
+
+already_AddRefed<Promise>
+SubtleCrypto::WrapKey(JSContext* cx,
+                      const nsAString& format,
+                      CryptoKey& key,
+                      CryptoKey& wrappingKey,
+                      const ObjectOrString& wrapAlgorithm,
+                      ErrorResult& aRv)
+{
+  SUBTLECRYPTO_METHOD_BODY5(WrapKey, aRv, cx, format, key, wrappingKey, wrapAlgorithm)
+}
+
+already_AddRefed<Promise>
+SubtleCrypto::UnwrapKey(JSContext* cx,
+                        const nsAString& format,
+                        const ArrayBufferViewOrArrayBuffer& wrappedKey,
+                        CryptoKey& unwrappingKey,
+                        const ObjectOrString& unwrapAlgorithm,
+                        const ObjectOrString& unwrappedKeyAlgorithm,
+                        bool extractable,
+                        const Sequence<nsString>& keyUsages,
+                        ErrorResult& aRv)
+{
+  SUBTLECRYPTO_METHOD_BODY8(UnwrapKey, aRv, cx, format, wrappedKey, unwrappingKey,
+                           unwrapAlgorithm, unwrappedKeyAlgorithm,
+                           extractable, keyUsages)
 }
 
 } // namespace dom
