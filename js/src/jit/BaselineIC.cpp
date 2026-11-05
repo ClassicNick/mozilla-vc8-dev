@@ -5968,7 +5968,7 @@ DoBindNameFallback(JSContext *cx, BaselineFrame *frame, ICBindName_Fallback *stu
     RootedPropertyName name(cx, frame->script()->getName(pc));
 
     RootedObject scope(cx);
-    if (!LookupNameWithGlobalDefault(cx, name, scopeChain, &scope))
+    if (!LookupNameUnqualified(cx, name, scopeChain, &scope))
         return false;
 
     res.setObject(*scope);

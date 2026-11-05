@@ -4378,6 +4378,27 @@ js::LookupNameWithGlobalDefault(JSContext *cx, HandlePropertyName name, HandleOb
     return true;
 }
 
+bool
+js::LookupNameUnqualified(JSContext *cx, HandlePropertyName name, HandleObject scopeChain,
+                          MutableHandleObject objp)
+{
+    RootedId id(cx, NameToId(name));
+
+    RootedObject pobj(cx);
+    RootedShape prop(cx);
+
+    RootedObject scope(cx, scopeChain);
+    for (; !scope->isUnqualifiedVarObj(); scope = scope->enclosingScope()) {
+        if (!JSObject::lookupGeneric(cx, scope, id, &pobj, &prop))
+            return false;
+        if (prop)
+            break;
+    }
+
+    objp.set(scope);
+    return true;
+}
+
 template <AllowGC allowGC>
 bool
 js::HasOwnProperty(JSContext *cx, LookupGenericOp lookup,
@@ -5032,7 +5053,7 @@ baseops::SetPropertyHelper(JSContext* cxArg,
         /* We should never add properties to lexical blocks. */
         JS_ASSERT(!obj->is<BlockObject>());
 
-        if (obj->is<GlobalObject>() && !qualified) {
+        if (obj->isUnqualifiedVarObj() && !qualified) {
             if (mode == ParallelExecution)
                 return false;
 
@@ -5836,7 +5857,8 @@ JSObject::dump()
     if (!obj->is<ProxyObject>() && !obj->nonProxyIsExtensible()) fprintf(stderr, " not_extensible");
     if (obj->isIndexed()) fprintf(stderr, " indexed");
     if (obj->isBoundFunction()) fprintf(stderr, " bound_function");
-    if (obj->isVarObj()) fprintf(stderr, " varobj");
+    if (obj->isQualifiedVarObj()) fprintf(stderr, " varobj");
+    if (obj->isUnqualifiedVarObj()) fprintf(stderr, " unqualified_varobj");
     if (obj->watched()) fprintf(stderr, " watched");
     if (obj->isIteratedSingleton()) fprintf(stderr, " iterated_singleton");
     if (obj->isNewTypeUnknown()) fprintf(stderr, " new_type_unknown");

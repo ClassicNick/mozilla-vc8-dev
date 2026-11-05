@@ -292,9 +292,14 @@ class JSObject : public js::ObjectImpl
     }
 
     /* See InterpreterFrame::varObj. */
-    inline bool isVarObj();
-    bool setVarObj(js::ExclusiveContext *cx) {
-        return setFlag(cx, js::BaseShape::VAROBJ);
+    inline bool isQualifiedVarObj();
+    bool setQualifiedVarObj(js::ExclusiveContext *cx) {
+        return setFlag(cx, js::BaseShape::QUALIFIED_VAROBJ);
+    }
+
+    inline bool isUnqualifiedVarObj();
+    bool setUnqualifiedVarObj(js::ExclusiveContext *cx) {
+        return setFlag(cx, js::BaseShape::UNQUALIFIED_VAROBJ);
     }
 
     /*
@@ -1434,7 +1439,7 @@ LookupNameNoGC(JSContext *cx, PropertyName *name, JSObject *scopeChain,
 
 /*
  * Like LookupName except returns the global object if 'name' is not found in
- * any preceding non-global scope.
+ * any preceding scope.
  *
  * Additionally, pobjp and propp are not needed by callers so they are not
  * returned.
@@ -1442,6 +1447,17 @@ LookupNameNoGC(JSContext *cx, PropertyName *name, JSObject *scopeChain,
 extern bool
 LookupNameWithGlobalDefault(JSContext *cx, HandlePropertyName name, HandleObject scopeChain,
                             MutableHandleObject objp);
+
+/*
+ * Like LookupName except returns the unqualified var object if 'name' is not found in
+ * any preceding scope. Normally the unqualified var object is the global.
+ *
+ * Additionally, pobjp and propp are not needed by callers so they are not
+ * returned.
+ */
+extern bool
+LookupNameUnqualified(JSContext *cx, HandlePropertyName name, HandleObject scopeChain,
+                      MutableHandleObject objp);
 
 }
 

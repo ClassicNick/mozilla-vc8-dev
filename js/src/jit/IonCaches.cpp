@@ -4165,7 +4165,7 @@ BindNameIC::update(JSContext *cx, size_t cacheIndex, HandleObject scopeChain)
     if (scopeChain->is<GlobalObject>()) {
         holder = scopeChain;
     } else {
-        if (!LookupNameWithGlobalDefault(cx, name, scopeChain, &holder))
+        if (!LookupNameUnqualified(cx, name, scopeChain, &holder))
             return nullptr;
     }
 
