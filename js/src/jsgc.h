@@ -681,10 +681,6 @@ class ArenaLists
     /* For each arena kind, a list of arenas remaining to be swept. */
     ArenaHeader *arenaListsToSweep[FINALIZE_LIMIT];
 
-    /* During incremental sweeping, a list of the arenas already swept. */
-    unsigned incrementalSweptArenaKind;
-    ArenaList incrementalSweptArenas;
-
     /* Shape arenas to be swept in the foreground. */
     ArenaHeader *gcShapeArenasToSweep;
 
@@ -696,7 +692,6 @@ class ArenaLists
             backgroundFinalizeState[i] = BFS_DONE;
         for (size_t i = 0; i != FINALIZE_LIMIT; ++i)
             arenaListsToSweep[i] = nullptr;
-        incrementalSweptArenaKind = FINALIZE_LIMIT;
         gcShapeArenasToSweep = nullptr;
     }
 
@@ -713,12 +708,6 @@ class ArenaLists
                 next = aheader->next;
                 aheader->chunk()->releaseArena(aheader);
             }
-        }
-        ArenaHeader *next;
-        for (ArenaHeader *aheader = incrementalSweptArenas.head(); aheader; aheader = next) {
-            // Copy aheader->next before releasing.
-            next = aheader->next;
-            aheader->chunk()->releaseArena(aheader);
         }
     }
 
@@ -737,12 +726,6 @@ class ArenaLists
 
     ArenaHeader *getFirstArenaToSweep(AllocKind thingKind) const {
         return arenaListsToSweep[thingKind];
-    }
-
-    ArenaHeader *getFirstSweptArena(AllocKind thingKind) const {
-        if (thingKind != incrementalSweptArenaKind)
-            return nullptr;
-        return incrementalSweptArenas.head();
     }
 
     ArenaHeader *getArenaAfterCursor(AllocKind thingKind) const {
