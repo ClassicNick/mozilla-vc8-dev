@@ -16967,13 +16967,6 @@ EOF
 
 sed 's/$/,/' >> $CONFIG_STATUS <<EOF
     (''' SHELL ''', r''' $SHELL ''')
-    (''' CFLAGS ''', r''' $CFLAGS ''')
-    (''' CPPFLAGS ''', r''' $CPPFLAGS ''')
-    (''' CXXFLAGS ''', r''' $CXXFLAGS ''')
-    (''' FFLAGS ''', r''' $FFLAGS ''')
-    (''' DEFS ''', r''' $DEFS ''')
-    (''' LDFLAGS ''', r''' $LDFLAGS ''')
-    (''' LIBS ''', r''' $LIBS ''')
     (''' exec_prefix ''', r''' $exec_prefix ''')
     (''' prefix ''', r''' $prefix ''')
     (''' program_transform_name ''', r''' $program_transform_name ''')

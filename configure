@@ -16469,7 +16469,7 @@ MOZ_PAY=
 MOZ_AUDIO_CHANNEL_MANAGER=
 NSS_NO_LIBPKIX=
 MOZ_CONTENT_SANDBOX=
-JSGC_USE_EXACT_ROOTING=
+JSGC_USE_EXACT_ROOTING=1
 JSGC_GENERATIONAL=
 
 case "$target_os" in
@@ -29061,13 +29061,6 @@ EOF
 
 sed 's/$/,/' >> $CONFIG_STATUS <<EOF
     (''' SHELL ''', r''' $SHELL ''')
-    (''' CFLAGS ''', r''' $CFLAGS ''')
-    (''' CPPFLAGS ''', r''' $CPPFLAGS ''')
-    (''' CXXFLAGS ''', r''' $CXXFLAGS ''')
-    (''' FFLAGS ''', r''' $FFLAGS ''')
-    (''' DEFS ''', r''' $DEFS ''')
-    (''' LDFLAGS ''', r''' $LDFLAGS ''')
-    (''' LIBS ''', r''' $LIBS ''')
     (''' exec_prefix ''', r''' $exec_prefix ''')
     (''' prefix ''', r''' $prefix ''')
     (''' program_transform_name ''', r''' $program_transform_name ''')

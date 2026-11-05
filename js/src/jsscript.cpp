@@ -1772,7 +1772,9 @@ ScriptSource::addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf,
         info->uncompressed += mallocSizeOf(uncompressedChars());
     else if (dataType == DataCompressed)
         info->compressed += mallocSizeOf(compressedData());
-    info->misc += mallocSizeOf(this) + mallocSizeOf(filename_);
+    info->misc += mallocSizeOf(this) +
+                  mallocSizeOf(filename_.get()) +
+                  mallocSizeOf(introducerFilename_.get());
     info->numScripts++;
 }
 
@@ -1976,18 +1978,16 @@ ScriptSource::initFromOptions(ExclusiveContext *cx, const ReadOnlyCompileOptions
                                                    options.introductionType);
         if (!formatted)
             return false;
-        filename_ = formatted;
+        filename_.reset(formatted);
     } else if (options.filename()) {
         if (!setFilename(cx, options.filename()))
             return false;
     }
 
     if (options.introducerFilename()) {
-        introducerFilename_ = js_strdup(cx, options.introducerFilename());
+        introducerFilename_ = DuplicateString(cx, options.introducerFilename());
         if (!introducerFilename_)
             return false;
-    } else {
-        introducerFilename_ = filename_;
     }
 
     return true;
@@ -1997,10 +1997,8 @@ bool
 ScriptSource::setFilename(ExclusiveContext *cx, const char *filename)
 {
     JS_ASSERT(!filename_);
-    filename_ = js_strdup(cx, filename);
-    if (!filename_)
-        return false;
-    return true;
+    filename_ = DuplicateString(cx, filename);
+    return filename_ != nullptr;
 }
 
 bool
@@ -2011,7 +2009,7 @@ ScriptSource::setDisplayURL(ExclusiveContext *cx, const jschar *displayURL)
         if (cx->isJSContext() &&
             !JS_ReportErrorFlagsAndNumber(cx->asJSContext(), JSREPORT_WARNING,
                                           js_GetErrorMessage, nullptr,
-                                          JSMSG_ALREADY_HAS_PRAGMA, filename_,
+                                          JSMSG_ALREADY_HAS_PRAGMA, filename_.get(),
                                           "//# sourceURL"))
         {
             return false;
@@ -2042,7 +2040,7 @@ ScriptSource::setSourceMapURL(ExclusiveContext *cx, const jschar *sourceMapURL)
         if (cx->isJSContext()) {
             JS_ReportErrorFlagsAndNumber(cx->asJSContext(), JSREPORT_WARNING,
                                          js_GetErrorMessage, nullptr,
-                                         JSMSG_ALREADY_HAS_PRAGMA, filename_,
+                                         JSMSG_ALREADY_HAS_PRAGMA, filename_.get(),
                                          "//# sourceMappingURL");
         }
 

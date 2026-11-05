@@ -37,7 +37,6 @@
 #include "nsURILoader.h"
 #include "nsIDocShell.h"
 #include "nsIContentViewer.h"
-#include "nsIMarkupDocumentViewer.h"
 #include "nsThreadUtils.h"
 #include "nsIScrollableFrame.h"
 #include "nsContentUtils.h"
@@ -771,9 +770,8 @@ ImageDocument::ResetZoomLevel()
 
     nsCOMPtr<nsIContentViewer> cv;
     docShell->GetContentViewer(getter_AddRefs(cv));
-    nsCOMPtr<nsIMarkupDocumentViewer> mdv = do_QueryInterface(cv);
-    if (mdv) {
-      mdv->SetFullZoom(mOriginalZoomLevel);
+    if (cv) {
+      cv->SetFullZoom(mOriginalZoomLevel);
     }
   }
 }
@@ -786,9 +784,8 @@ ImageDocument::GetZoomLevel()
   if (docShell) {
     nsCOMPtr<nsIContentViewer> cv;
     docShell->GetContentViewer(getter_AddRefs(cv));
-    nsCOMPtr<nsIMarkupDocumentViewer> mdv = do_QueryInterface(cv);
-    if (mdv) {
-      mdv->GetFullZoom(&zoomLevel);
+    if (cv) {
+      cv->GetFullZoom(&zoomLevel);
     }
   }
   return zoomLevel;

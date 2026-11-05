@@ -494,6 +494,7 @@ struct NewLayerEntry {
     , mLayerContentsVisibleRect(0, 0, -1, -1)
     , mHideAllLayersBelow(false)
     , mOpaqueForAnimatedGeometryRootParent(false)
+    , mPropagateComponentAlphaFlattening(true)
   {}
   // mLayer is null if the previous entry is for a ThebesLayer that hasn't
   // been optimized to some other form (yet).
@@ -518,6 +519,10 @@ struct NewLayerEntry {
   // content whose animated geometry root is the animated geometry root for
   // mAnimatedGeometryRoot->GetParent().
   bool mOpaqueForAnimatedGeometryRootParent;
+
+  // If true, then the content flags for this layer should contribute
+  // to our decision to flatten component alpha layers, false otherwise.
+  bool mPropagateComponentAlphaFlattening;
 };
 
 /**
@@ -1711,8 +1716,7 @@ static void
 SetOuterVisibleRegion(Layer* aLayer, nsIntRegion* aOuterVisibleRegion,
                       const nsIntRect* aLayerContentsVisibleRect = nullptr)
 {
-  gfx3DMatrix transform;
-  To3DMatrix(aLayer->GetTransform(), transform);
+  gfx3DMatrix transform = To3DMatrix(aLayer->GetTransform());
   gfxMatrix transform2D;
   if (transform.Is2D(&transform2D) && !transform2D.HasNonIntegerTranslation()) {
     aOuterVisibleRegion->MoveBy(-int(transform2D._31), -int(transform2D._32));
@@ -2678,12 +2682,10 @@ ContainerState::ProcessDisplayItems(nsDisplayList* aList,
 
     nsDisplayList* itemSameCoordinateSystemChildren
       = item->GetSameCoordinateSystemChildren();
-    if (itemSameCoordinateSystemChildren) {
-      if (item->ShouldFlattenAway(mBuilder)) {
-        aList->AppendToBottom(itemSameCoordinateSystemChildren);
-        item->~nsDisplayItem();
-        continue;
-      }
+    if (item->ShouldFlattenAway(mBuilder)) {
+      aList->AppendToBottom(itemSameCoordinateSystemChildren);
+      item->~nsDisplayItem();
+      continue;
     }
 
     savedItems.AppendToTop(item);
@@ -2871,6 +2873,13 @@ ContainerState::ProcessDisplayItems(nsDisplayList* aList,
       newLayerEntry->mLayer = ownLayer;
       newLayerEntry->mAnimatedGeometryRoot = animatedGeometryRoot;
       newLayerEntry->mFixedPosFrameForLayerData = fixedPosFrame;
+
+      // Don't attempt to flatten compnent alpha layers that are within
+      // a forced active layer, or an active transform;
+      if (itemType == nsDisplayItem::TYPE_TRANSFORM ||
+          layerState == LAYER_ACTIVE_FORCE) {
+        newLayerEntry->mPropagateComponentAlphaFlattening = false;
+      }
       // nsDisplayTransform::BuildLayer must set layerContentsVisibleRect.
       // We rely on this to ensure 3D transforms compute a reasonable
       // layer visible region.
@@ -3471,12 +3480,9 @@ ContainerState::Finish(uint32_t* aTextContentFlags, LayerManagerData* aData,
                                     Layer::CONTENT_COMPONENT_ALPHA_DESCENDANT);
 
       // Notify the parent of component alpha children unless it's coming from
-      // within a transformed child since we don't want flattening of component
-      // alpha layers to happen across transforms. Re-rendering the text during
-      // transform animations looks worse than losing subpixel-AA.
-      if ((layer->GetContentFlags() & Layer::CONTENT_COMPONENT_ALPHA) &&
-          (layer->GetType() != Layer::TYPE_CONTAINER ||
-           layer->GetBaseTransform().IsIdentity())) {
+      // within a child that has asked not to contribute to layer flattening.
+      if (mNewChildLayers[i].mPropagateComponentAlphaFlattening &&
+          (layer->GetContentFlags() & Layer::CONTENT_COMPONENT_ALPHA)) {
         aHasComponentAlphaChildren = true;
       }
     }
@@ -3647,9 +3653,7 @@ ChooseScaleAndSetTransform(FrameLayerBuilder* aLayerBuilder,
   }
 
   // Store the inverse of our resolution-scale on the layer
-  Matrix4x4 baseTransform;
-  ToMatrix4x4(transform, baseTransform);
-  aLayer->SetBaseTransform(baseTransform);
+  aLayer->SetBaseTransform(ToMatrix4x4(transform));
   aLayer->SetPreScale(1.0f/float(scale.width),
                       1.0f/float(scale.height));
   aLayer->SetInheritedScale(aIncomingScale.mXScale,
