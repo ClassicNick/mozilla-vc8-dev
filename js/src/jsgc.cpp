@@ -4185,8 +4185,14 @@ GCRuntime::beginSweepingZoneGroup()
     }
 
     if (sweepingAtoms) {
-        gcstats::AutoPhase ap(stats, gcstats::PHASE_SWEEP_ATOMS);
-        rt->sweepAtoms();
+        {
+            gcstats::AutoPhase ap(stats, gcstats::PHASE_SWEEP_ATOMS);
+            rt->sweepAtoms();
+        }
+        {
+            gcstats::AutoPhase ap(stats, gcstats::PHASE_SWEEP_SYMBOL_REGISTRY);
+            rt->symbolRegistry().sweep();
+        }
     }
 
     /* Prune out dead views from ArrayBuffer's view lists. */
@@ -5147,7 +5153,7 @@ GCRuntime::collect(bool incremental, int64_t budget, JSGCInvocationKind gckind,
                    JS::gcreason::Reason reason)
 {
     /* GC shouldn't be running in parallel execution mode */
-    JS_ASSERT(!InParallelSection());
+    MOZ_ASSERT(!InParallelSection());
 
     JS_AbortIfWrongThread(rt);
 

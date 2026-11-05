@@ -316,6 +316,9 @@ JSRuntime::init(uint32_t maxbytes, uint32_t maxNurseryBytes)
     atomsZone.forget();
     this->atomsCompartment_ = atomsCompartment.forget();
 
+    if (!symbolRegistry_.init())
+        return false;
+
     if (!scriptDataTable_.init())
         return false;
 
