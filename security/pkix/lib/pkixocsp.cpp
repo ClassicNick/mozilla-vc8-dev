@@ -504,7 +504,7 @@ ResponseData(Input& input, Context& context,
   //    byKey               [2] KeyHash }
   SECItem responderID;
   ResponderIDType responderIDType
-    = input.Peek(static_cast<uint8_t>(ResponderIDType::byName))
+    = input.Peek(static_cast<uint8_t>(byName))
     ? byName
     : byKey;
   rv = der::ExpectTagAndGetValue(input, static_cast<uint8_t>(responderIDType),

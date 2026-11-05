@@ -8,8 +8,8 @@
 #include "mozilla/layers/APZCTreeManager.h" // for AllowedTouchBehavior
 #include "gfxPrefs.h"                       // for gfxPrefs
 
-#define TBS_LOG(...)
-// #define TBS_LOG(...) printf_stderr("TBS: " __VA_ARGS__)
+#define TBS_LOG(a)
+// #define TBS_LOG(a) printf_stderr("TBS: " a)
 
 namespace mozilla {
 namespace layers {
@@ -18,10 +18,10 @@ namespace layers {
  * Default touch behavior (is used when no touch behavior is set).
  */
 static const TouchBlockState::TouchBehaviorFlags kDefaultTouchBehavior =
-    AllowedTouchBehavior::VERTICAL_PAN |
-    AllowedTouchBehavior::HORIZONTAL_PAN |
-    AllowedTouchBehavior::PINCH_ZOOM |
-    AllowedTouchBehavior::DOUBLE_TAP_ZOOM;
+    VERTICAL_PAN |
+    HORIZONTAL_PAN |
+    PINCH_ZOOM |
+    DOUBLE_TAP_ZOOM;
 
 TouchBlockState::TouchBlockState()
   : mAllowedTouchBehaviorSet(false)
@@ -154,7 +154,7 @@ TouchBlockState::TouchActionAllowsPinchZoom() const
   }
   // Pointer events specification requires that all touch points allow zoom.
   for (size_t i = 0; i < mAllowedTouchBehaviors.Length(); i++) {
-    if (!(mAllowedTouchBehaviors[i] & AllowedTouchBehavior::PINCH_ZOOM)) {
+    if (!(mAllowedTouchBehaviors[i] & PINCH_ZOOM)) {
       return false;
     }
   }
@@ -168,7 +168,7 @@ TouchBlockState::TouchActionAllowsDoubleTapZoom() const
     return true;
   }
   for (size_t i = 0; i < mAllowedTouchBehaviors.Length(); i++) {
-    if (!(mAllowedTouchBehaviors[i] & AllowedTouchBehavior::DOUBLE_TAP_ZOOM)) {
+    if (!(mAllowedTouchBehaviors[i] & DOUBLE_TAP_ZOOM)) {
       return false;
     }
   }
@@ -185,7 +185,7 @@ TouchBlockState::TouchActionAllowsPanningX() const
     return false;
   }
   TouchBehaviorFlags flags = mAllowedTouchBehaviors[0];
-  return (flags & AllowedTouchBehavior::HORIZONTAL_PAN);
+  return (flags & HORIZONTAL_PAN);
 }
 
 bool
@@ -198,7 +198,7 @@ TouchBlockState::TouchActionAllowsPanningY() const
     return false;
   }
   TouchBehaviorFlags flags = mAllowedTouchBehaviors[0];
-  return (flags & AllowedTouchBehavior::VERTICAL_PAN);
+  return (flags & VERTICAL_PAN);
 }
 
 bool
@@ -211,8 +211,8 @@ TouchBlockState::TouchActionAllowsPanningXY() const
     return false;
   }
   TouchBehaviorFlags flags = mAllowedTouchBehaviors[0];
-  return (flags & AllowedTouchBehavior::HORIZONTAL_PAN)
-      && (flags & AllowedTouchBehavior::VERTICAL_PAN);
+  return (flags & HORIZONTAL_PAN)
+      && (flags & VERTICAL_PAN);
 }
 
 } // namespace layers

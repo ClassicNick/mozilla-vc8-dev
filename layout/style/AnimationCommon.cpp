@@ -408,7 +408,7 @@ ComputedTimingFunction::GetValue(double aPortion) const
 const double ComputedTiming::kNullTimeFraction =
   mozilla::PositiveInfinity<double>();
 
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(ElementAnimation, mTimeline)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_1(ElementAnimation, mTimeline)
 
 NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(ElementAnimation, AddRef)
 NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(ElementAnimation, Release)

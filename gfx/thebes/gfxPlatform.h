@@ -62,10 +62,10 @@ BackendTypeBit(BackendType b)
 }
 }
 
-#define MOZ_PERFORMANCE_WARNING(module, ...) \
+#define MOZ_PERFORMANCE_WARNING(module, a) \
   do { \
     if (gfxPrefs::PerfWarnings()) { \
-      printf_stderr("[" module "] " __VA_ARGS__); \
+      printf_stderr("[" module "] " a); \
     } \
   } while (0)
 

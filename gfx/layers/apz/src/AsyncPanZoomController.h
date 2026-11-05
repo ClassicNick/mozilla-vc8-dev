@@ -720,7 +720,7 @@ private:
 private:
   // The queue of touch blocks that have not yet been processed by this APZC.
   // This member must only be accessed on the controller/UI thread.
-  nsTArray<UniquePtr<TouchBlockState>> mTouchBlockQueue;
+  nsTArray<nsAutoPtr<TouchBlockState> > mTouchBlockQueue;
 
   // This variable requires some explanation. Strap yourself in.
   //

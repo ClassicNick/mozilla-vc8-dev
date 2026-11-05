@@ -48,7 +48,7 @@ public:
 
     if (mMediaSource != dom::MediaSourceEnum::Camera && mAdvanced.WasPassed()) {
       // iterate through advanced, forcing mediaSource to match "root"
-      auto& array = mAdvanced.Value();
+      dom::Sequence<MediaTrackConstraintSet>& array = mAdvanced.Value();
       for (uint32_t i = 0; i < array.Length(); i++) {
         if (array[i].mMediaSource == dom::MediaSourceEnum::Camera) {
           array[i].mMediaSource = mMediaSource;

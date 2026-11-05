@@ -108,12 +108,12 @@ void InitGralloc() {
 class DeleteSharedBufferManagerParentTask : public Task
 {
 public:
-    DeleteSharedBufferManagerParentTask(UniquePtr<SharedBufferManagerParent> aSharedBufferManager)
-        : mSharedBufferManager(Move(aSharedBufferManager)) {
+    DeleteSharedBufferManagerParentTask(nsAutoPtr<SharedBufferManagerParent> aSharedBufferManager)
+        : mSharedBufferManager(aSharedBufferManager) {
     }
     virtual void Run() MOZ_OVERRIDE {}
 private:
-    UniquePtr<SharedBufferManagerParent> mSharedBufferManager;
+    nsAutoPtr<SharedBufferManagerParent> mSharedBufferManager;
 };
 
 SharedBufferManagerParent::SharedBufferManagerParent(Transport* aTransport, base::ProcessId aOwner, base::Thread* aThread)
@@ -161,7 +161,7 @@ SharedBufferManagerParent::ActorDestroy(ActorDestroyReason aWhy)
   mBuffers.clear();
 #endif
   DeleteSharedBufferManagerParentTask* task =
-    new DeleteSharedBufferManagerParentTask(UniquePtr<SharedBufferManagerParent>(this));
+    new DeleteSharedBufferManagerParentTask(nsAutoPtr<SharedBufferManagerParent>(this));
   mMainMessageLoop->PostTask(FROM_HERE, task);
 }
 

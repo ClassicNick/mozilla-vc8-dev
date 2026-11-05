@@ -27,7 +27,7 @@
 
 #include "pkix/nullptr.h"
 #include "pkix/Result.h"
-#include "stdint.h"
+#include "mozilla/StandardInteger.h"
 
 namespace mozilla { namespace pkix {
 
@@ -223,7 +223,7 @@ public:
     }
     item.type = type;
     item.data = const_cast<uint8_t*>(mark.mark);
-    item.len = static_cast<decltype(item.len)>(input - mark.mark);
+    item.len = input - mark.mark;
     return Success;
   }
 

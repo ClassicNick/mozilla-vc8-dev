@@ -1487,7 +1487,7 @@ MediaManager::GetUserMedia(bool aPrivileged,
   // deny screensharing request if support is disabled
   if (c.mVideo.IsMediaTrackConstraints() &&
       !Preferences::GetBool("media.getusermedia.screensharing.enabled", false)) {
-    auto& tc = c.mVideo.GetAsMediaTrackConstraints();
+    MediaTrackConstraints& tc = c.mVideo.GetAsMediaTrackConstraints();
     if (tc.mMediaSource != dom::MediaSourceEnum::Camera) {
       return runnable->Denied(NS_LITERAL_STRING("PERMISSION_DENIED"));
     }

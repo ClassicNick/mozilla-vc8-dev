@@ -30,9 +30,9 @@ namespace layers {
 #define ENABLE_TILING_LOG 0
 
 #if ENABLE_TILING_LOG
-#  define TILING_LOG(...) printf_stderr(__VA_ARGS__);
+#  define TILING_LOG(a) printf_stderr(a);
 #else
-#  define TILING_LOG(...)
+#  define TILING_LOG(a)
 #endif
 
 // An abstract implementation of a tile buffer. This code covers the logic of
