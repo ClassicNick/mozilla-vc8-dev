@@ -5312,8 +5312,6 @@ DebuggerObject_getOwnPropertyDescriptor(JSContext *cx, unsigned argc, Value *vp)
     {
         Maybe<AutoCompartment> ac;
         ac.construct(cx, obj);
-        if (!cx->compartment()->wrapId(cx, id.address()))
-            return false;
 
         ErrorCopier ec(ac);
         if (!GetOwnPropertyDescriptor(cx, obj, id, &desc))
@@ -5403,8 +5401,6 @@ DebuggerObject_defineProperty(JSContext *cx, unsigned argc, Value *vp)
     {
         Maybe<AutoCompartment> ac;
         ac.construct(cx, obj);
-        if (!cx->compartment()->wrapId(cx, id.address()))
-            return false;
         if (!cx->compartment()->wrap(cx, &desc))
             return false;
 
@@ -5446,8 +5442,6 @@ DebuggerObject_defineProperties(JSContext *cx, unsigned argc, Value *vp)
         Maybe<AutoCompartment> ac;
         ac.construct(cx, obj);
         for (size_t i = 0; i < n; i++) {
-            if (!cx->compartment()->wrapId(cx, ids[i].address()))
-                return false;
             if (!cx->compartment()->wrap(cx, descs[i]))
                 return false;
         }
@@ -5478,8 +5472,6 @@ DebuggerObject_deleteProperty(JSContext *cx, unsigned argc, Value *vp)
 
     Maybe<AutoCompartment> ac;
     ac.construct(cx, obj);
-    if (!cx->compartment()->wrapId(cx, id.address()))
-        return false;
 
     bool succeeded;
     ErrorCopier ec(ac);
@@ -6055,8 +6047,6 @@ DebuggerEnv_names(JSContext *cx, unsigned argc, Value *vp)
     for (size_t i = 0, len = keys.length(); i < len; i++) {
         id = keys[i];
         if (JSID_IS_ATOM(id) && IsIdentifier(JSID_TO_ATOM(id))) {
-            if (!cx->compartment()->wrapId(cx, id.address()))
-                return false;
             if (!NewbornArrayPush(cx, arr, StringValue(JSID_TO_STRING(id))))
                 return false;
         }
@@ -6078,8 +6068,6 @@ DebuggerEnv_find(JSContext *cx, unsigned argc, Value *vp)
     {
         Maybe<AutoCompartment> ac;
         ac.construct(cx, env);
-        if (!cx->compartment()->wrapId(cx, id.address()))
-            return false;
 
         /* This can trigger resolve hooks. */
         ErrorCopier ec(ac);
@@ -6110,8 +6098,6 @@ DebuggerEnv_getVariable(JSContext *cx, unsigned argc, Value *vp)
     {
         Maybe<AutoCompartment> ac;
         ac.construct(cx, env);
-        if (!cx->compartment()->wrapId(cx, id.address()))
-            return false;
 
         /* This can trigger getters. */
         ErrorCopier ec(ac);
@@ -6152,7 +6138,7 @@ DebuggerEnv_setVariable(JSContext *cx, unsigned argc, Value *vp)
     {
         Maybe<AutoCompartment> ac;
         ac.construct(cx, env);
-        if (!cx->compartment()->wrapId(cx, id.address()) || !cx->compartment()->wrap(cx, &v))
+        if (!cx->compartment()->wrap(cx, &v))
             return false;
 
         /* This can trigger setters. */
