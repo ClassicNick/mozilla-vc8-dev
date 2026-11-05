@@ -78,7 +78,7 @@ JSString::dumpChars(const CharT *s, size_t n, FILE *fp)
             n++;
     }
 
-    fputc('"', stderr);
+    fputc('"', fp);
     for (size_t i = 0; i < n; i++) {
         jschar c = s[i];
         if (c == '\n')
@@ -92,7 +92,7 @@ JSString::dumpChars(const CharT *s, size_t n, FILE *fp)
         else
             fprintf(fp, "\\u%04x", unsigned(c));
     }
-    fputc('"', stderr);
+    fputc('"', fp);
 }
 
 template void
