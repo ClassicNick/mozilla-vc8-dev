@@ -27,7 +27,7 @@ XPCWrappedNativeScope* XPCWrappedNativeScope::gScopes = nullptr;
 XPCWrappedNativeScope* XPCWrappedNativeScope::gDyingScopes = nullptr;
 XPCWrappedNativeScope::InterpositionMap* XPCWrappedNativeScope::gInterpositionMap = nullptr;
 
-NS_IMPL_ISUPPORTS(XPCWrappedNativeScope::ClearInterpositionsObserver, nsIObserver)
+NS_IMPL_ISUPPORTS1(XPCWrappedNativeScope::ClearInterpositionsObserver, nsIObserver)
 
 NS_IMETHODIMP
 XPCWrappedNativeScope::ClearInterpositionsObserver::Observe(nsISupports *subject,

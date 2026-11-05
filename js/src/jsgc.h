@@ -784,7 +784,9 @@ class ArenaLists
     void queueStringsForSweep(FreeOp *fop);
     void queueShapesForSweep(FreeOp *fop);
     void queueScriptsForSweep(FreeOp *fop);
+#ifdef JS_ION
     void queueJitCodeForSweep(FreeOp *fop);
+#endif
 
     bool foregroundFinalize(FreeOp *fop, AllocKind thingKind, SliceBudget &sliceBudget);
     static void backgroundFinalize(FreeOp *fop, ArenaHeader *listHead, bool onBackgroundThread);
