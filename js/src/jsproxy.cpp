@@ -243,6 +243,9 @@ BaseProxyHandler::keys(JSContext *cx, HandleObject proxy, AutoIdVector &props) c
     for (size_t j = 0, len = props.length(); j < len; j++) {
         JS_ASSERT(i <= j);
         id = props[j];
+        if (JSID_IS_SYMBOL(id))
+            continue;
+
         AutoWaivePolicy policy(cx, proxy, id, BaseProxyHandler::GET);
         if (!getOwnPropertyDescriptor(cx, proxy, id, &desc))
             return false;
@@ -426,7 +429,7 @@ DirectProxyHandler::getOwnPropertyNames(JSContext *cx, HandleObject proxy,
 {
     assertEnteredPolicy(cx, proxy, JSID_VOID, ENUMERATE);
     RootedObject target(cx, proxy->as<ProxyObject>().target());
-    return GetPropertyNames(cx, target, JSITER_OWNONLY | JSITER_HIDDEN, &props);
+    return GetPropertyNames(cx, target, JSITER_OWNONLY | JSITER_HIDDEN | JSITER_SYMBOLS, &props);
 }
 
 bool
@@ -1675,7 +1678,8 @@ ScriptedDirectProxyHandler::getOwnPropertyNames(JSContext *cx, HandleObject prox
 
     // Here we add a bunch of extra sanity checks. It is unclear if they will also appear in
     // the spec. See step 10-11
-    return ArrayToIdVector(cx, proxy, target, trapResult, props, JSITER_OWNONLY | JSITER_HIDDEN,
+    return ArrayToIdVector(cx, proxy, target, trapResult, props,
+                           JSITER_OWNONLY | JSITER_HIDDEN | JSITER_SYMBOLS,
                            cx->names().getOwnPropertyNames);
 }
 
