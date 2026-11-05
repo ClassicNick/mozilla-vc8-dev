@@ -796,8 +796,8 @@ HashableValue::setValue(JSContext *cx, HandleValue v)
         value = v;
     }
 
-    JS_ASSERT(value.isUndefined() || value.isNull() || value.isBoolean() ||
-              value.isNumber() || value.isString() || value.isObject());
+    JS_ASSERT(value.isUndefined() || value.isNull() || value.isBoolean() || value.isNumber() ||
+              value.isString() || value.isSymbol() || value.isObject());
     return true;
 }
 
