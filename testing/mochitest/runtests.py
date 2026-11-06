@@ -47,6 +47,18 @@ from mozlog.structured.structuredlog import StructuredLogger
 # not yet present in the mozharness environment
 from mozrunner.utils import findInPath as which
 
+
+# Necessary to set up the global logger in automationutils.py
+import logging
+log = logging.getLogger()
+def resetGlobalLog():
+   while log.handlers:
+       log.removeHandler(log.handlers[0])
+   handler = logging.StreamHandler(sys.stdout)
+   log.setLevel(logging.INFO)
+   log.addHandler(handler)
+resetGlobalLog()
+
 ###########################
 # Option for NSPR logging #
 ###########################
@@ -1904,7 +1916,7 @@ class Mochitest(MochitestUtilsMixin):
       if message['action'] == 'test_start': #by default make the result key equal to pass.
         key = message['test'].split('/')[-1].strip()
         self.harness.result[key] = "PASS"
-      elif message['action'] in ['test_end', 'test_status']:
+      elif message['action'] == 'test_status':
         if 'expected' in message:
           key = message['test'].split('/')[-1].strip()
           self.harness.result[key] = "FAIL"
@@ -1914,10 +1926,10 @@ class Mochitest(MochitestUtilsMixin):
       return message
 
     def first_error(self, message):
-      if 'expected' in message and message['status'] == 'FAIL':
+      if message['action'] == 'test_status' and 'expected' in message and message['status'] == 'FAIL':
         key = message['test'].split('/')[-1].strip()
         if key not in self.harness.expectedError:
-          self.harness.expectedError[key] = message['message'].strip()
+          self.harness.expectedError[key] = message.get('message', message['subtest']).strip()
       return message
 
     def countline(self, message):

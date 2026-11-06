@@ -10,7 +10,7 @@
 #include "nsScriptSecurityManager.h"
 #include "jsfriendapi.h"
 #include "prprf.h"
-#ifdef MOZ_PROFILER_SPS
+#ifdef MOZ_THREADSTACKHELPER_NATIVE
 #include "shared-libraries.h"
 #endif
 
@@ -22,11 +22,13 @@
 #include "mozilla/Move.h"
 #include "mozilla/Scoped.h"
 
+#ifdef MOZ_THREADSTACKHELPER_NATIVE
 #include "google_breakpad/processor/call_stack.h"
 #include "google_breakpad/processor/basic_source_line_resolver.h"
 #include "google_breakpad/processor/stack_frame_cpu.h"
 #include "processor/basic_code_module.h"
 #include "processor/basic_code_modules.h"
+#endif
 
 #if defined(MOZ_THREADSTACKHELPER_X86)
 #include "processor/stackwalker_x86.h"
@@ -67,12 +69,14 @@
 #endif
 #endif
 
+#ifdef MOZ_THREADSTACKHELPER_NATIVE
 #if defined(MOZ_THREADSTACKHELPER_X86) || \
     defined(MOZ_THREADSTACKHELPER_X64) || \
     defined(MOZ_THREADSTACKHELPER_ARM)
 // On these architectures, the stack grows downwards (toward lower addresses).
 #define MOZ_THREADSTACKHELPER_STACK_GROWS_DOWN
 #endif
+#endif // MOZ_THREADSTACKHELPER_NATIVE
 
 namespace mozilla {
 
@@ -117,12 +121,12 @@ ThreadStackHelper::ThreadStackHelper()
   : mStackToFill(nullptr)
 #ifdef MOZ_THREADSTACKHELPER_PSEUDO
   , mPseudoStack(mozilla_get_pseudo_stack())
-#endif
 #ifdef MOZ_THREADSTACKHELPER_NATIVE
   , mContextToFill(nullptr)
 #endif
   , mMaxStackSize(Stack::sMaxInlineStorage)
   , mMaxBufferSize(0)
+#endif
 {
 #if defined(XP_LINUX)
   MOZ_ALWAYS_TRUE(!::sem_init(&mSem, 0, 0));
