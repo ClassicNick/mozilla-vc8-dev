@@ -498,8 +498,8 @@ public:
       APZC_LOG("%p ending fling animation. overscrolled=%d\n", &mApzc, mApzc.IsOverscrolled());
       // This APZC or an APZC further down the handoff chain may be be overscrolled.
       // Start a snap-back animation on the overscrolled APZC.
-      mDeferredTasks.append(NewRunnableMethod(&mApzc,
-          &AsyncPanZoomController::CallSnapBackOverscrolledApzc));
+      mDeferredTasks.append(mozilla::OldMove(NewRunnableMethod(&mApzc,
+          &AsyncPanZoomController::CallSnapBackOverscrolledApzc)));
       return false;
     }
 

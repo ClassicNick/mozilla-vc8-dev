@@ -9,14 +9,13 @@ endif
 ifeq (android,$(MOZ_WIDGET_TOOLKIT))
 WRAP_LDFLAGS =
 else
-LIBS += \
-  $(XPCOM_LIBS) \
+EXTRA_LIBS += \
   $(NSPR_LIBS) \
   $(NULL)
 endif
 
 ifeq (gonk,$(MOZ_WIDGET_TOOLKIT))
-LIBS += \
+OS_LIBS += \
   -lbinder \
   -lutils \
   $(NULL)

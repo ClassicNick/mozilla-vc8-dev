@@ -301,7 +301,7 @@ ContainerPrepare(ContainerT* aContainer,
                  LayerManagerComposite* aManager,
                  const nsIntRect& aClipRect)
 {
-  aContainer->mPrepared = MakeUnique<PreparedData>();
+  aContainer->mPrepared = new PreparedData();
 
   /**
    * Determine which layers to draw.

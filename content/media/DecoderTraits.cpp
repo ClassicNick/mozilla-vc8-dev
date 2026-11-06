@@ -44,7 +44,7 @@
 #include "MediaOmxReader.h"
 #include "nsIPrincipal.h"
 #include "mozilla/dom/HTMLMediaElement.h"
-#if ANDROID_VERSION >= 16
+#if ANDROID_VERSION >= 18
 #include "MediaCodecDecoder.h"
 #include "MediaCodecReader.h"
 #endif
@@ -545,7 +545,7 @@ InstantiateDecoder(const nsACString& aType, MediaDecoderOwner* aOwner)
         return nullptr;
       }
     }
-#if ANDROID_VERSION >= 16
+#if ANDROID_VERSION >= 18
     decoder = MediaDecoder::IsOmxAsyncEnabled()
       ? static_cast<MediaDecoder*>(new MediaCodecDecoder())
       : static_cast<MediaDecoder*>(new MediaOmxDecoder());
@@ -643,7 +643,7 @@ MediaDecoderReader* DecoderTraits::CreateReader(const nsACString& aType, Abstrac
 #endif
 #ifdef MOZ_OMX_DECODER
   if (IsOmxSupportedType(aType)) {
-#if ANDROID_VERSION >= 16
+#if ANDROID_VERSION >= 18
     decoderReader = MediaDecoder::IsOmxAsyncEnabled()
       ? static_cast<MediaDecoderReader*>(new MediaCodecReader(aDecoder))
       : static_cast<MediaDecoderReader*>(new MediaOmxReader(aDecoder));

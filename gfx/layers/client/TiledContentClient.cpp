@@ -834,31 +834,31 @@ void PadDrawTargetOutFromRegion(RefPtr<DrawTarget> drawTarget, nsIntRegion &regi
     static void visitor(void *closure, VisitSide side, int x1, int y1, int x2, int y2) {
       LockedBits *lb = static_cast<LockedBits*>(closure);
       uint8_t *bitmap = lb->data;
-      const int bpp = gfx::BytesPerPixel(lb->format);
+      const int bpp = mozilla::gfx::BytesPerPixel(lb->format);
       const int stride = lb->stride;
       const int width = lb->size.width;
       const int height = lb->size.height;
 
-      if (side == VisitSide::TOP) {
+      if (side = VisitSide::TOP) {
 	if (y1 > 0) {
 	  x1 = clamp(x1, 0, width - 1);
 	  x2 = clamp(x2, 0, width - 1);
 	  memcpy(&bitmap[x1*bpp + (y1-1) * stride], &bitmap[x1*bpp + y1 * stride], (x2 - x1) * bpp);
 	}
-      } else if (side == VisitSide::BOTTOM) {
+      } else if (side = VisitSide::BOTTOM) {
 	if (y1 < height) {
 	  x1 = clamp(x1, 0, width - 1);
 	  x2 = clamp(x2, 0, width - 1);
 	  memcpy(&bitmap[x1*bpp + y1 * stride], &bitmap[x1*bpp + (y1-1) * stride], (x2 - x1) * bpp);
 	}
-      } else if (side == VisitSide::LEFT) {
+      } else if (side = VisitSide::LEFT) {
 	if (x1 > 0) {
 	  while (y1 != y2) {
 	    memcpy(&bitmap[(x1-1)*bpp + y1 * stride], &bitmap[x1*bpp + y1*stride], bpp);
 	    y1++;
 	  }
 	}
-      } else if (side == VisitSide::RIGHT) {
+      } else if (side = VisitSide::RIGHT) {
 	if (x1 < width) {
 	  while (y1 != y2) {
 	    memcpy(&bitmap[x1*bpp + y1 * stride], &bitmap[(x1-1)*bpp + y1*stride], bpp);

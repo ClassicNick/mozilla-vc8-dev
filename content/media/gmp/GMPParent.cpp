@@ -15,9 +15,7 @@
 #include "mozIGeckoMediaPluginService.h"
 #include "mozilla/unused.h"
 #include "nsIObserverService.h"
-#ifdef MOZ_WEBRTC
-#include "mtransport/runnable_utils.h"
-#endif
+#include "runnable_utils.h"
 
 #include "mozilla/dom/CrashReporterParent.h"
 using mozilla::dom::CrashReporterParent;
@@ -323,7 +321,6 @@ GMPParent::GetCrashID(nsString& aResult)
   GetIDFromMinidump(dumpFile, aResult);
   cr->GenerateCrashReportForMinidump(dumpFile, &notes);
 }
-#endif
 
 static void
 GMPNotifyObservers(nsAString& aData)
@@ -334,6 +331,7 @@ GMPNotifyObservers(nsAString& aData)
     obs->NotifyObservers(nullptr, "gmp-plugin-crash", temp.get());
   }
 }
+#endif
 
 void
 GMPParent::ActorDestroy(ActorDestroyReason aWhy)

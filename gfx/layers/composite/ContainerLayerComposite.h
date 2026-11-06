@@ -8,7 +8,7 @@
 
 #include "Layers.h"                     // for Layer (ptr only), etc
 #include "mozilla/Attributes.h"         // for MOZ_OVERRIDE
-#include "mozilla/UniquePtr.h"          // for UniquePtr
+#include "nsAutoPtr.h"          // for nsAutoPtr
 #include "mozilla/layers/LayerManagerComposite.h"
 
 struct nsIntPoint;
@@ -82,7 +82,7 @@ public:
   CompositableHost* GetCompositableHost() MOZ_OVERRIDE { return nullptr; }
 
   virtual const char* Name() const MOZ_OVERRIDE { return "ContainerLayerComposite"; }
-  UniquePtr<PreparedData> mPrepared;
+  nsAutoPtr<PreparedData> mPrepared;
 };
 
 class RefLayerComposite : public RefLayer,
@@ -146,7 +146,7 @@ public:
   CompositableHost* GetCompositableHost() MOZ_OVERRIDE { return nullptr; }
 
   virtual const char* Name() const MOZ_OVERRIDE { return "RefLayerComposite"; }
-  UniquePtr<PreparedData> mPrepared;
+  nsAutoPtr<PreparedData> mPrepared;
 };
 
 } /* layers */

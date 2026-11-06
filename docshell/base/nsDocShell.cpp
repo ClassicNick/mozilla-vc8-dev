@@ -22,6 +22,7 @@
 #include "mozilla/Telemetry.h"
 #include "mozilla/unused.h"
 #include "mozilla/VisualEventTracer.h"
+#include "URIUtils.h"
 
 #ifdef MOZ_LOGGING
 // so we can get logging even in release builds (but only for some things)
@@ -34,7 +35,6 @@
 #include "nsIDOMDocument.h"
 #include "nsIDOMElement.h"
 #include "nsIDOMStorage.h"
-#include "nsPIDOMStorage.h"
 #include "nsIContentViewer.h"
 #include "nsIDocumentLoaderFactory.h"
 #include "nsCURILoader.h"
@@ -2789,20 +2789,27 @@ nsDocShell::GetSessionStorageForPrincipal(nsIPrincipal* aPrincipal,
         return NS_ERROR_UNEXPECTED;
     }
 
+    nsCOMPtr<nsIDOMWindow> domWin = do_GetInterface(GetAsSupports(this));
+
     if (aCreate) {
-        return manager->CreateStorage(aPrincipal, aDocumentURI,
+        return manager->CreateStorage(domWin, aPrincipal, aDocumentURI,
                                       mInPrivateBrowsing, aStorage);
     }
 
-    return manager->GetStorage(aPrincipal, mInPrivateBrowsing, aStorage);
+    return manager->GetStorage(domWin, aPrincipal, mInPrivateBrowsing,
+                               aStorage);
 }
 
 nsresult
 nsDocShell::AddSessionStorage(nsIPrincipal* aPrincipal,
                               nsIDOMStorage* aStorage)
 {
-    nsCOMPtr<nsPIDOMStorage> pistorage = do_QueryInterface(aStorage);
-    nsIPrincipal* storagePrincipal = pistorage->GetPrincipal();
+    nsRefPtr<DOMStorage> storage = static_cast<DOMStorage*>(aStorage);
+    if (!storage) {
+        return NS_ERROR_UNEXPECTED;
+    }
+
+    nsIPrincipal* storagePrincipal = storage->GetPrincipal();
     if (storagePrincipal != aPrincipal) {
         NS_ERROR("Wanting to add a sessionStorage for different principal");
         return NS_ERROR_DOM_SECURITY_ERR;
@@ -4558,16 +4565,24 @@ nsDocShell::DisplayLoadError(nsresult aError, nsIURI *aURI,
 
                 // if this is a Strict-Transport-Security host and the cert
                 // is bad, don't allow overrides (STS Spec section 7.3).
-                nsCOMPtr<nsISiteSecurityService> sss =
-                          do_GetService(NS_SSSERVICE_CONTRACTID, &rv);
-                NS_ENSURE_SUCCESS(rv, rv);
-                uint32_t flags =
-                  mInPrivateBrowsing ? nsISocketProvider::NO_PERMANENT_STORAGE : 0;
-                
+                uint32_t type = nsISiteSecurityService::HEADER_HSTS;
+                uint32_t flags = mInPrivateBrowsing
+                                 ? nsISocketProvider::NO_PERMANENT_STORAGE
+                                 : 0;
                 bool isStsHost = false;
-                rv = sss->IsSecureURI(nsISiteSecurityService::HEADER_HSTS,
-                                      aURI, flags, &isStsHost);
-                NS_ENSURE_SUCCESS(rv, rv);
+                if (XRE_GetProcessType() == GeckoProcessType_Default) {
+                  nsCOMPtr<nsISiteSecurityService> sss =
+                            do_GetService(NS_SSSERVICE_CONTRACTID, &rv);
+                  NS_ENSURE_SUCCESS(rv, rv);
+                  rv = sss->IsSecureURI(type, aURI, flags, &isStsHost);
+                  NS_ENSURE_SUCCESS(rv, rv);
+                } else {
+                  mozilla::dom::ContentChild* cc =
+                    mozilla::dom::ContentChild::GetSingleton();
+                  mozilla::ipc::URIParams uri;
+                  SerializeURI(aURI, uri);
+                  cc->SendIsSecureURI(type, uri, flags, &isStsHost);
+                }
 
                 uint32_t bucketId;
                 if (isStsHost) {

@@ -439,19 +439,30 @@ MakeBevelColor(mozilla::css::Side whichSide, uint8_t style,
 static bool
 GetRadii(nsIFrame* aForFrame, const nsStyleBorder& aBorder,
          const nsRect& aOrigBorderArea, const nsRect& aBorderArea,
-         gfxCornerSizes* aBgRadii)
+         nscoord aRadii[8])
 {
-  nscoord radii[8];
   bool haveRoundedCorners;
   nsSize sz = aBorderArea.Size();
   nsSize frameSize = aForFrame->GetSize();
   if (&aBorder == aForFrame->StyleBorder() &&
       frameSize == aOrigBorderArea.Size()) {
-    haveRoundedCorners = aForFrame->GetBorderRadii(sz, sz, Sides(), radii);
+    haveRoundedCorners = aForFrame->GetBorderRadii(sz, sz, Sides(), aRadii);
    } else {
     haveRoundedCorners =
-      nsIFrame::ComputeBorderRadii(aBorder.mBorderRadius, frameSize, sz, Sides(), radii);
+      nsIFrame::ComputeBorderRadii(aBorder.mBorderRadius, frameSize, sz, Sides(), aRadii);
   }
+
+  return haveRoundedCorners;
+}
+
+static bool
+GetRadii(nsIFrame* aForFrame, const nsStyleBorder& aBorder,
+         const nsRect& aOrigBorderArea, const nsRect& aBorderArea,
+         gfxCornerSizes* aBgRadii)
+{
+  nscoord radii[8];
+  bool haveRoundedCorners = GetRadii(aForFrame, aBorder, aOrigBorderArea, aBorderArea, radii);
+
   if (haveRoundedCorners) {
     auto d2a = aForFrame->PresContext()->AppUnitsPerDevPixel();
     nsCSSRendering::ComputePixelRadii(radii, d2a, aBgRadii);
@@ -1598,45 +1609,6 @@ nsCSSRendering::PaintBackground(nsPresContext* aPresContext,
                         aBGClipRect, aLayer);
 }
 
-void
-nsCSSRendering::PaintBackgroundColor(gfxRGBA aColor,
-                                     nsPresContext* aPresContext,
-                                     nsRenderingContext& aRenderingContext,
-                                     nsIFrame* aForFrame,
-                                     const nsRect& aDirtyRect,
-                                     const nsRect& aBorderArea,
-                                     uint32_t aFlags)
-{
-  PROFILER_LABEL("nsCSSRendering", "PaintBackgroundColor",
-    js::ProfileEntry::Category::GRAPHICS);
-
-  NS_PRECONDITION(aForFrame,
-                  "Frame is expected to be provided to PaintBackground");
-
-  nsStyleContext *sc;
-  if (!FindBackground(aForFrame, &sc)) {
-    // We don't want to bail out if moz-appearance is set on a root
-    // node. If it has a parent content node, bail because it's not
-    // a root, other wise keep going in order to let the theme stuff
-    // draw the background. The canvas really should be drawing the
-    // bg, but there's no way to hook that up via css.
-    if (!aForFrame->StyleDisplay()->mAppearance) {
-      return;
-    }
-
-    nsIContent* content = aForFrame->GetContent();
-    if (!content || content->GetParent()) {
-      return;
-    }
-
-    sc = aForFrame->StyleContext();
-  }
-
-  PaintBackgroundColorWithSC(aColor, aPresContext, aRenderingContext, aForFrame,
-                             aDirtyRect, aBorderArea, sc,
-                             *aForFrame->StyleBorder(), aFlags);
-}
-
 static bool
 IsOpaqueBorderEdge(const nsStyleBorder& aBorder, mozilla::css::Side aSide)
 {
@@ -1703,35 +1675,39 @@ SetupDirtyRects(const nsRect& aBGClipArea, const nsRect& aCallerDirtyRect,
                     "second should be empty if first is");
 }
 
-struct BackgroundClipState {
-  nsRect mBGClipArea;  // Affected by mClippedRadii
-  nsRect mAdditionalBGClipArea;  // Not affected by mClippedRadii
-  nsRect mDirtyRect;
-  gfxRect mDirtyRectGfx;
-
-  gfxCornerSizes mClippedRadii;
-  bool mHasAdditionalBGClipArea;
-
-  // Whether we are being asked to draw with a caller provided background
-  // clipping area. If this is true we also disable rounded corners.
-  bool mCustomClip;
-};
-
-static void
-GetBackgroundClip(gfxContext *aCtx, uint8_t aBackgroundClip,
-                  uint8_t aBackgroundAttachment,
-                  nsIFrame* aForFrame, const nsRect& aBorderArea,
-                  const nsRect& aCallerDirtyRect, bool aHaveRoundedCorners,
-                  const gfxCornerSizes& aBGRadii, nscoord aAppUnitsPerPixel,
-                  /* out */ BackgroundClipState* aClipState)
+/* static */ void
+nsCSSRendering::GetBackgroundClip(const nsStyleBackground::Layer& aLayer,
+                                  nsIFrame* aForFrame, const nsStyleBorder& aBorder,
+                                  const nsRect& aBorderArea, const nsRect& aCallerDirtyRect,
+                                  bool aWillPaintBorder, nscoord aAppUnitsPerPixel,
+                                  /* out */ BackgroundClipState* aClipState)
 {
+  // Compute the outermost boundary of the area that might be painted.
+  // Same coordinate space as aBorderArea.
+  nsRect clipBorderArea =
+    ::BoxDecorationRectForBorder(aForFrame, aBorderArea, &aBorder);
+
+  bool haveRoundedCorners = GetRadii(aForFrame, aBorder, aBorderArea,
+                                     clipBorderArea, aClipState->mRadii);
+
+  uint8_t backgroundClip = aLayer.mClip;
+
+  bool isSolidBorder =
+      aWillPaintBorder && IsOpaqueBorder(aBorder);
+  if (isSolidBorder && backgroundClip == NS_STYLE_BG_CLIP_BORDER) {
+    // If we have rounded corners, we need to inflate the background
+    // drawing area a bit to avoid seams between the border and
+    // background.
+    backgroundClip = haveRoundedCorners ?
+      NS_STYLE_BG_CLIP_MOZ_ALMOST_PADDING : NS_STYLE_BG_CLIP_PADDING;
+  }
+
   aClipState->mBGClipArea = aBorderArea;
   aClipState->mHasAdditionalBGClipArea = false;
   aClipState->mCustomClip = false;
-  aClipState->mClippedRadii = aBGRadii;
 
   if (aForFrame->GetType() == nsGkAtoms::scrollFrame &&
-        NS_STYLE_BG_ATTACHMENT_LOCAL == aBackgroundAttachment) {
+      NS_STYLE_BG_ATTACHMENT_LOCAL == aLayer.mAttachment) {
     // As of this writing, this is still in discussion in the CSS Working Group
     // http://lists.w3.org/Archives/Public/www-style/2013Jul/0250.html
 
@@ -1739,7 +1715,7 @@ GetBackgroundClip(gfxContext *aCtx, uint8_t aBackgroundClip,
     // but the background is also clipped at a non-scrolling 'padding-box'
     // like the content. (See below.)
     // Therefore, only 'content-box' makes a difference here.
-    if (aBackgroundClip == NS_STYLE_BG_CLIP_CONTENT) {
+    if (backgroundClip == NS_STYLE_BG_CLIP_CONTENT) {
       nsIScrollableFrame* scrollableFrame = do_QueryFrame(aForFrame);
       // Clip at a rectangle attached to the scrolled content.
       aClipState->mHasAdditionalBGClipArea = true;
@@ -1759,12 +1735,12 @@ GetBackgroundClip(gfxContext *aCtx, uint8_t aBackgroundClip,
 
     // Also clip at a non-scrolling, rounded-corner 'padding-box',
     // same as the scrolled content because of the 'overflow' property.
-    aBackgroundClip = NS_STYLE_BG_CLIP_PADDING;
+    backgroundClip = NS_STYLE_BG_CLIP_PADDING;
   }
 
-  if (aBackgroundClip != NS_STYLE_BG_CLIP_BORDER) {
+  if (backgroundClip != NS_STYLE_BG_CLIP_BORDER) {
     nsMargin border = aForFrame->GetUsedBorder();
-    if (aBackgroundClip == NS_STYLE_BG_CLIP_MOZ_ALMOST_PADDING) {
+    if (backgroundClip == NS_STYLE_BG_CLIP_MOZ_ALMOST_PADDING) {
       // Reduce |border| by 1px (device pixels) on all sides, if
       // possible, so that we don't get antialiasing seams between the
       // background and border.
@@ -1772,27 +1748,29 @@ GetBackgroundClip(gfxContext *aCtx, uint8_t aBackgroundClip,
       border.right = NS_MAX(0, border.right - aAppUnitsPerPixel);
       border.bottom = NS_MAX(0, border.bottom - aAppUnitsPerPixel);
       border.left = NS_MAX(0, border.left - aAppUnitsPerPixel);
-    } else if (aBackgroundClip != NS_STYLE_BG_CLIP_PADDING) {
-      NS_ASSERTION(aBackgroundClip == NS_STYLE_BG_CLIP_CONTENT,
+    } else if (backgroundClip != NS_STYLE_BG_CLIP_PADDING) {
+      NS_ASSERTION(backgroundClip == NS_STYLE_BG_CLIP_CONTENT,
                    "unexpected background-clip");
       border += aForFrame->GetUsedPadding();
     }
     border.ApplySkipSides(aForFrame->GetSkipSides());
     aClipState->mBGClipArea.Deflate(border);
 
-    if (aHaveRoundedCorners) {
-      gfxFloat borderSizes[4] = {
-        gfxFloat(border.top / aAppUnitsPerPixel),
-        gfxFloat(border.right / aAppUnitsPerPixel),
-        gfxFloat(border.bottom / aAppUnitsPerPixel),
-        gfxFloat(border.left / aAppUnitsPerPixel)
-      };
-      nsCSSBorderRenderer::ComputeInnerRadii(aBGRadii, borderSizes,
-                                             &aClipState->mClippedRadii);
+    if (haveRoundedCorners) {
+      nsIFrame::InsetBorderRadii(aClipState->mRadii, border);
     }
   }
 
-  if (!aHaveRoundedCorners && aClipState->mHasAdditionalBGClipArea) {
+  if (haveRoundedCorners) {
+    auto d2a = aForFrame->PresContext()->AppUnitsPerDevPixel();
+    nsCSSRendering::ComputePixelRadii(aClipState->mRadii, d2a, &aClipState->mClippedRadii);
+    aClipState->mHasRoundedCorners = true;
+  } else {
+    aClipState->mHasRoundedCorners = false;
+  }
+
+
+  if (!haveRoundedCorners && aClipState->mHasAdditionalBGClipArea) {
     // Do the intersection here to account for the fast path(?) below.
     aClipState->mBGClipArea =
       aClipState->mBGClipArea.Intersect(aClipState->mAdditionalBGClipArea);
@@ -1804,8 +1782,8 @@ GetBackgroundClip(gfxContext *aCtx, uint8_t aBackgroundClip,
 }
 
 static void
-SetupBackgroundClip(BackgroundClipState& aClipState, gfxContext *aCtx,
-                    bool aHaveRoundedCorners, nscoord aAppUnitsPerPixel,
+SetupBackgroundClip(nsCSSRendering::BackgroundClipState& aClipState,
+                    gfxContext *aCtx, nscoord aAppUnitsPerPixel,
                     gfxContextAutoSaveRestore* aAutoSR)
 {
   if (aClipState.mDirtyRectGfx.IsEmpty()) {
@@ -1839,7 +1817,7 @@ SetupBackgroundClip(BackgroundClipState& aClipState, gfxContext *aCtx,
     aCtx->Clip();
   }
 
-  if (aHaveRoundedCorners) {
+  if (aClipState.mHasRoundedCorners) {
     gfxRect bgAreaGfx =
       nsLayoutUtils::RectToGfxRect(aClipState.mBGClipArea, aAppUnitsPerPixel);
     bgAreaGfx.Round();
@@ -1862,8 +1840,8 @@ SetupBackgroundClip(BackgroundClipState& aClipState, gfxContext *aCtx,
 }
 
 static void
-DrawBackgroundColor(BackgroundClipState& aClipState, gfxContext *aCtx,
-                    bool aHaveRoundedCorners, nscoord aAppUnitsPerPixel)
+DrawBackgroundColor(nsCSSRendering::BackgroundClipState& aClipState,
+                    gfxContext *aCtx, nscoord aAppUnitsPerPixel)
 {
   if (aClipState.mDirtyRectGfx.IsEmpty()) {
     // Our caller won't draw anything under this condition, so no need
@@ -1873,7 +1851,7 @@ DrawBackgroundColor(BackgroundClipState& aClipState, gfxContext *aCtx,
 
   // We don't support custom clips and rounded corners, arguably a bug, but
   // table painting seems to depend on it.
-  if (!aHaveRoundedCorners || aClipState.mCustomClip) {
+  if (!aClipState.mHasRoundedCorners || aClipState.mCustomClip) {
     aCtx->NewPath();
     aCtx->Rectangle(aClipState.mDirtyRectGfx, true);
     aCtx->Fill();
@@ -2712,9 +2690,6 @@ nsCSSRendering::PaintBackgroundWithSC(nsPresContext* aPresContext,
     ::BoxDecorationRectForBackground(aForFrame, aBorderArea, &aBorder);
   nsRect clipBorderArea =
     ::BoxDecorationRectForBorder(aForFrame, aBorderArea, &aBorder);
-  gfxCornerSizes bgRadii;
-  bool haveRoundedCorners =
-    ::GetRadii(aForFrame, aBorder, aBorderArea, clipBorderArea, &bgRadii);
 
   // The 'bgClipArea' (used only by the image tiling logic, far below)
   // is the caller-provided aBGClipRect if any, or else the area
@@ -2725,36 +2700,15 @@ nsCSSRendering::PaintBackgroundWithSC(nsPresContext* aPresContext,
   gfxContext* ctx = aRenderingContext.ThebesContext();
   nscoord appUnitsPerPixel = aPresContext->AppUnitsPerDevPixel();
   BackgroundClipState clipState;
-  uint8_t currentBackgroundClip;
-  bool isSolidBorder;
   if (aBGClipRect) {
     clipState.mBGClipArea = *aBGClipRect;
     clipState.mCustomClip = true;
     SetupDirtyRects(clipState.mBGClipArea, aDirtyRect, appUnitsPerPixel,
                     &clipState.mDirtyRect, &clipState.mDirtyRectGfx);
   } else {
-    // The background is rendered over the 'background-clip' area,
-    // which is normally equal to the border area but may be reduced
-    // to the padding area by CSS.  Also, if the border is solid, we
-    // don't need to draw outside the padding area.  In either case,
-    // if the borders are rounded, make sure we use the same inner
-    // radii as the border code will.
-    // The background-color is drawn based on the bottom
-    // background-clip.
-    currentBackgroundClip = bg->BottomLayer().mClip;
-    isSolidBorder =
-      (aFlags & PAINTBG_WILL_PAINT_BORDER) && IsOpaqueBorder(aBorder);
-    if (isSolidBorder && currentBackgroundClip == NS_STYLE_BG_CLIP_BORDER) {
-      // If we have rounded corners, we need to inflate the background
-      // drawing area a bit to avoid seams between the border and
-      // background.
-      currentBackgroundClip = haveRoundedCorners ?
-        NS_STYLE_BG_CLIP_MOZ_ALMOST_PADDING : NS_STYLE_BG_CLIP_PADDING;
-    }
-
-    GetBackgroundClip(ctx, currentBackgroundClip, bg->BottomLayer().mAttachment,
-                      aForFrame, clipBorderArea,
-                      aDirtyRect, haveRoundedCorners, bgRadii, appUnitsPerPixel,
+    GetBackgroundClip(bg->BottomLayer(),
+                      aForFrame, aBorder, aBorderArea,
+                      aDirtyRect, (aFlags & PAINTBG_WILL_PAINT_BORDER), appUnitsPerPixel,
                       &clipState);
   }
 
@@ -2771,7 +2725,7 @@ nsCSSRendering::PaintBackgroundWithSC(nsPresContext* aPresContext,
   // this far.)
   if (!drawBackgroundImage) {
     if (!isCanvasFrame) {
-      DrawBackgroundColor(clipState, ctx, haveRoundedCorners, appUnitsPerPixel);
+      DrawBackgroundColor(clipState, ctx, appUnitsPerPixel);
     }
     return;
   }
@@ -2802,34 +2756,29 @@ nsCSSRendering::PaintBackgroundWithSC(nsPresContext* aPresContext,
   // The background color is rendered over the entire dirty area,
   // even if the image isn't.
   if (drawBackgroundColor && !isCanvasFrame) {
-    DrawBackgroundColor(clipState, ctx, haveRoundedCorners, appUnitsPerPixel);
+    DrawBackgroundColor(clipState, ctx, appUnitsPerPixel);
   }
 
   if (drawBackgroundImage) {
     bool clipSet = false;
+    uint8_t currentBackgroundClip = NS_STYLE_BG_CLIP_BORDER;
     NS_FOR_VISIBLE_BACKGROUND_LAYERS_BACK_TO_FRONT_WITH_RANGE(i, bg, bg->mImageCount - 1,
                                                               nLayers + (bg->mImageCount -
                                                                          startLayer - 1)) {
       const nsStyleBackground::Layer &layer = bg->mLayers[i];
       if (!aBGClipRect) {
-        uint8_t newBackgroundClip = layer.mClip;
-        if (isSolidBorder && newBackgroundClip == NS_STYLE_BG_CLIP_BORDER) {
-          newBackgroundClip = haveRoundedCorners ?
-            NS_STYLE_BG_CLIP_MOZ_ALMOST_PADDING : NS_STYLE_BG_CLIP_PADDING;
-        }
-        if (currentBackgroundClip != newBackgroundClip || !clipSet) {
-          currentBackgroundClip = newBackgroundClip;
+        if (currentBackgroundClip != layer.mClip || !clipSet) {
+          currentBackgroundClip = layer.mClip;
           // If clipSet is false that means this is the bottom layer and we
           // already called GetBackgroundClip above and it stored its results
           // in clipState.
           if (clipSet) {
             autoSR.Restore(); // reset the previous one
-            GetBackgroundClip(ctx, currentBackgroundClip, layer.mAttachment, aForFrame,
-                              clipBorderArea, aDirtyRect, haveRoundedCorners,
-                              bgRadii, appUnitsPerPixel, &clipState);
+            GetBackgroundClip(layer, aForFrame,
+                              aBorder, aBorderArea, aDirtyRect, (aFlags & PAINTBG_WILL_PAINT_BORDER),
+                              appUnitsPerPixel, &clipState);
           }
-          SetupBackgroundClip(clipState, ctx, haveRoundedCorners,
-                              appUnitsPerPixel, &autoSR);
+          SetupBackgroundClip(clipState, ctx, appUnitsPerPixel, &autoSR);
           clipSet = true;
           if (!clipBorderArea.IsEqualEdges(aBorderArea)) {
             // We're drawing the background for the joined continuation boxes
@@ -2864,92 +2813,6 @@ nsCSSRendering::PaintBackgroundWithSC(nsPresContext* aPresContext,
       }
     }
   }
-}
-
-void
-nsCSSRendering::PaintBackgroundColorWithSC(gfxRGBA aColor,
-                                           nsPresContext* aPresContext,
-                                           nsRenderingContext& aRenderingContext,
-                                           nsIFrame* aForFrame,
-                                           const nsRect& aDirtyRect,
-                                           const nsRect& aBorderArea,
-                                           nsStyleContext* aBackgroundSC,
-                                           const nsStyleBorder& aBorder,
-                                           uint32_t aFlags)
-{
-  NS_PRECONDITION(aForFrame,
-                  "Frame is expected to be provided to PaintBackground");
-
-  // Check to see if we have an appearance defined.  If so, we let the theme
-  // renderer draw the background and bail out.
-  const nsStyleDisplay* displayData = aForFrame->StyleDisplay();
-  if (displayData->mAppearance) {
-    nsITheme *theme = aPresContext->GetTheme();
-    if (theme && theme->ThemeSupportsWidget(aPresContext, aForFrame,
-                                            displayData->mAppearance)) {
-      NS_ERROR("Shouldn't be trying to paint a background color if we are themed!");
-      return;
-    }
-  }
-
-  NS_ASSERTION(!IsCanvasFrame(aForFrame), "Should not be trying to paint a background color for canvas frames!");
-
-  // Determine whether we are drawing background images and/or
-  // background colors.
-  bool drawBackgroundImage;
-  bool drawBackgroundColor;
-  DetermineBackgroundColor(aPresContext,
-                           aBackgroundSC,
-                           aForFrame,
-                           drawBackgroundImage,
-                           drawBackgroundColor);
-
-  NS_ASSERTION(drawBackgroundImage || drawBackgroundColor,
-               "Should not be trying to paint a background if we don't have one");
-  if (!drawBackgroundColor) {
-    return;
-  }
-
-  // Compute the outermost boundary of the area that might be painted.
-  // Same coordinate space as aBorderArea.
-  nsRect clipBorderArea =
-    ::BoxDecorationRectForBorder(aForFrame, aBorderArea, &aBorder);
-  gfxCornerSizes bgRadii;
-  bool haveRoundedCorners =
-    ::GetRadii(aForFrame, aBorder, aBorderArea, clipBorderArea, &bgRadii);
-
-  // The background is rendered over the 'background-clip' area,
-  // which is normally equal to the border area but may be reduced
-  // to the padding area by CSS.  Also, if the border is solid, we
-  // don't need to draw outside the padding area.  In either case,
-  // if the borders are rounded, make sure we use the same inner
-  // radii as the border code will.
-  // The background-color is drawn based on the bottom
-  // background-clip.
-  gfxContext* ctx = aRenderingContext.ThebesContext();
-  nscoord appUnitsPerPixel = aPresContext->AppUnitsPerDevPixel();
-  const nsStyleBackground *bg = aBackgroundSC->StyleBackground();
-  uint8_t currentBackgroundClip = bg->BottomLayer().mClip;
-  bool isSolidBorder =
-    (aFlags & PAINTBG_WILL_PAINT_BORDER) && IsOpaqueBorder(aBorder);
-  if (isSolidBorder && currentBackgroundClip == NS_STYLE_BG_CLIP_BORDER) {
-    // If we have rounded corners, we need to inflate the background
-    // drawing area a bit to avoid seams between the border and
-    // background.
-    currentBackgroundClip = haveRoundedCorners ?
-      NS_STYLE_BG_CLIP_MOZ_ALMOST_PADDING : NS_STYLE_BG_CLIP_PADDING;
-  }
-
-  BackgroundClipState clipState;
-  GetBackgroundClip(ctx, currentBackgroundClip, bg->BottomLayer().mAttachment,
-                    aForFrame, clipBorderArea,
-                    aDirtyRect, haveRoundedCorners, bgRadii, appUnitsPerPixel,
-                    &clipState);
-
-  ctx->SetColor(aColor);
-
-  gfxContextAutoSaveRestore autoSR;
-  DrawBackgroundColor(clipState, ctx, haveRoundedCorners, appUnitsPerPixel);
 }
 
 static inline bool
