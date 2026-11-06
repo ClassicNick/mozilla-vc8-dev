@@ -729,7 +729,7 @@ MediaStreamGraphImpl::UpdateStreamOrder()
         mStreams[mFirstCycleBreaker] = ns;
       }
     }
-    AudioNodeStream* after_scc = next;
+    MediaStream* after_scc = next;
     while ((next = sccStack.getFirst()) != after_scc) {
       next->remove();
       ProcessedMediaStream* removed = static_cast<ProcessedMediaStream*>(next);
@@ -2074,7 +2074,7 @@ MediaStream::Destroy()
     virtual void Run()
     {
       mStream->RemoveAllListenersImpl();
-      auto graph = mStream->GraphImpl();
+      MediaStreamGraphImpl* graph = mStream->GraphImpl();
       mStream->DestroyImpl();
       graph->RemoveStream(mStream);
     }
@@ -2388,7 +2388,7 @@ SourceMediaStream::AddTrack(TrackID aID, TrackRate aRate, TrackTicks aStart,
   data->mCommands = TRACK_CREATE;
   data->mData = aSegment;
   data->mHaveEnough = false;
-  if (auto graph = GraphImpl()) {
+  if (MediaStreamGraphImpl* graph = GraphImpl()) {
     graph->EnsureNextIteration();
   }
 }
@@ -2431,7 +2431,7 @@ SourceMediaStream::AppendToTrack(TrackID aID, MediaSegment* aSegment, MediaSegme
   MutexAutoLock lock(mMutex);
   // ::EndAllTrackAndFinished() can end these before the sources notice
   bool appended = false;
-  auto graph = GraphImpl();
+  MediaStreamGraphImpl* graph = GraphImpl();
   if (!mFinished && graph) {
     TrackData *track = FindDataForTrack(aID);
     if (track) {
@@ -2552,7 +2552,7 @@ SourceMediaStream::EndTrack(TrackID aID)
       track->mCommands |= TRACK_END;
     }
   }
-  if (auto graph = GraphImpl()) {
+  if (MediaStreamGraphImpl* graph = GraphImpl()) {
     graph->EnsureNextIteration();
   }
 }
@@ -2563,7 +2563,7 @@ SourceMediaStream::AdvanceKnownTracksTime(StreamTime aKnownTime)
   MutexAutoLock lock(mMutex);
   MOZ_ASSERT(aKnownTime >= mUpdateKnownTracksTime);
   mUpdateKnownTracksTime = aKnownTime;
-  if (auto graph = GraphImpl()) {
+  if (MediaStreamGraphImpl* graph = GraphImpl()) {
     graph->EnsureNextIteration();
   }
 }
@@ -2573,7 +2573,7 @@ SourceMediaStream::FinishWithLockHeld()
 {
   mMutex.AssertCurrentThreadOwns();
   mUpdateFinished = true;
-  if (auto graph = GraphImpl()) {
+  if (MediaStreamGraphImpl* graph = GraphImpl()) {
     graph->EnsureNextIteration();
   }
 }

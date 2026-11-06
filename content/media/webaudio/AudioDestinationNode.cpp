@@ -277,7 +277,7 @@ public:
       return NS_OK;
     }
 
-    auto node = static_cast<AudioDestinationNode*>(listener.get());
+    AudioDestinationNode* node = static_cast<AudioDestinationNode*>(listener.get());
     return node->HandleEvent(aEvent);
   }
 
@@ -288,10 +288,10 @@ private:
   nsWeakPtr mWeakNode;
 };
 
-NS_IMPL_ISUPPORTS(EventProxyHandler, nsIDOMEventListener)
+NS_IMPL_ISUPPORTS1(EventProxyHandler, nsIDOMEventListener)
 
-NS_IMPL_CYCLE_COLLECTION_INHERITED2(AudioDestinationNode, AudioNode,
-                                    mAudioChannelAgent, mEventProxyHelper)
+NS_IMPL_CYCLE_COLLECTION_INHERITED_2(AudioDestinationNode, AudioNode,
+                                     mAudioChannelAgent, mEventProxyHelper)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(AudioDestinationNode)
   NS_INTERFACE_MAP_ENTRY(nsIDOMEventListener)

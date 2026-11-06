@@ -2066,7 +2066,7 @@ CreateJSHangStack(JSContext* cx, const Telemetry::HangStack& stack)
   }
   for (size_t i = 0; i < stack.length(); i++) {
     JS::RootedString string(cx, JS_NewStringCopyZ(cx, stack[i]));
-    if (!JS_SetElement(cx, ret, i, string)) {
+    if (!JS_SetElement(cx, ret, i, (JS::HandleString) string)) {
       return nullptr;
     }
   }
@@ -2095,7 +2095,7 @@ CreateJSHangHistogram(JSContext* cx, const Telemetry::HangHistogram& hang)
   if (!hang.GetNativeStack().empty()) {
     JS::RootedObject native(cx, CreateJSHangStack(cx, hang.GetNativeStack()));
     if (!native ||
-        !JS_DefineProperty(cx, ret, "nativeStack", native, JSPROP_ENUMERATE)) {
+        !JS_DefineProperty(cx, ret, "nativeStack", (JS::HandleObject) native, JSPROP_ENUMERATE)) {
       return nullptr;
     }
   }

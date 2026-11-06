@@ -455,7 +455,7 @@ private:
     nsContentUtils::RegisterShutdownObserver(this);
 
     already_AddRefed<Session> session(this); // addref in MediaRecorder::Start
-    nsRefPtr<nsIRunnable> event = new ExtractRunnable(Move(session));
+    nsRefPtr<nsIRunnable> event = new ExtractRunnable(session);
     if (NS_FAILED(mReadThread->Dispatch(event, NS_DISPATCH_NORMAL))) {
       NS_WARNING("Failed to dispatch ExtractRunnable at beginning");
     }
@@ -474,7 +474,7 @@ private:
     }
     // Destroy this session object in main thread.
     already_AddRefed<Session> session(this); // addref in MediaRecorder::Start
-    if (NS_FAILED(NS_DispatchToMainThread(new DestroyRunnable(Move(session))))) {
+    if (NS_FAILED(NS_DispatchToMainThread(new DestroyRunnable(session)))) {
       MOZ_ASSERT(false, "NS_DispatchToMainThread DestroyRunnable failed");
     }
   }
