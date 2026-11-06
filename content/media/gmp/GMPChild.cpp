@@ -54,7 +54,6 @@ GMPChild::Init(const std::string& aPluginPath,
 #endif
 
   return LoadPluginLibrary(aPluginPath);
->>>>>>> 1c83a33
 }
 
 bool
