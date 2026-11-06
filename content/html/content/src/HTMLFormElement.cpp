@@ -1708,7 +1708,7 @@ HTMLFormElement::ImplicitSubmissionIsDisabled() const
       numDisablingControlsFound++;
     }
   }
-  return numDisablingControlsFound > 1;
+  return numDisablingControlsFound != 1;
 }
 
 NS_IMETHODIMP

@@ -101,6 +101,10 @@ class Compositor;
 struct TextureFactoryIdentifier;
 struct EffectMask;
 
+namespace layerscope {
+class LayersPacket;
+}
+
 #define MOZ_LAYER_DECL_NAME(n, e)                           \
   virtual const char* Name() const { return n; }            \
   virtual LayerType GetType() const { return e; }
@@ -592,6 +596,12 @@ public:
   }
 
   /**
+   * Dump information about this layer manager and its managed tree to
+   * layerscope packet.
+   */
+  void Dump(layerscope::LayersPacket* aPacket);
+
+  /**
    * Log information about this layer manager and its managed tree to
    * the NSPR log (if enabled for "Layers").
    */
@@ -678,6 +688,10 @@ protected:
   // Print interesting information about this into aStreamo.  Internally
   // used to implement Dump*() and Log*().
   virtual void PrintInfo(std::stringstream& aStream, const char* aPrefix);
+
+  // Print interesting information about this into layerscope packet.
+  // Internally used to implement Dump().
+  virtual void DumpPacket(layerscope::LayersPacket* aPacket);
 
   static void InitLog();
   static PRLogModuleInfo* sLog;
@@ -1367,6 +1381,12 @@ public:
   void DumpSelf(std::stringstream& aStream, const char* aPrefix="");
 
   /**
+   * Dump information about this layer and its child & sibling layers to
+   * layerscope packet.
+   */
+  void Dump(layerscope::LayersPacket* aPacket, const void* aParent);
+
+  /**
    * Log information about this layer manager and its managed tree to
    * the NSPR log (if enabled for "Layers").
    */
@@ -1383,6 +1403,10 @@ public:
   // an implementation that first calls the base implementation then
   // appends additional info to aTo.
   virtual void PrintInfo(std::stringstream& aStream, const char* aPrefix);
+
+  // Just like PrintInfo, but this function dump information into layerscope packet,
+  // instead of a StringStream. It is also internally used to implement Dump();
+  virtual void DumpPacket(layerscope::LayersPacket* aPacket, const void* aParent);
 
   static bool IsLogEnabled() { return LayerManager::IsLogEnabled(); }
 
@@ -1620,6 +1644,8 @@ protected:
 
   virtual void PrintInfo(std::stringstream& aStream, const char* aPrefix);
 
+  virtual void DumpPacket(layerscope::LayersPacket* aPacket, const void* aParent);
+
   /**
    * ComputeEffectiveTransforms snaps the ideal transform to get mEffectiveTransform.
    * mResidualTranslation is the translation that should be applied *before*
@@ -1839,6 +1865,8 @@ protected:
 
   virtual void PrintInfo(std::stringstream& aStream, const char* aPrefix);
 
+  virtual void DumpPacket(layerscope::LayersPacket* aPacket, const void* aParent);
+
   Layer* mFirstChild;
   Layer* mLastChild;
   FrameMetrics mFrameMetrics;
@@ -1913,6 +1941,8 @@ protected:
   {}
 
   virtual void PrintInfo(std::stringstream& aStream, const char* aPrefix);
+
+  virtual void DumpPacket(layerscope::LayersPacket* aPacket, const void* aParent);
 
   nsIntRect mBounds;
   gfxRGBA mColor;
@@ -2073,6 +2103,8 @@ protected:
 
   virtual void PrintInfo(std::stringstream& aStream, const char* aPrefix);
 
+  virtual void DumpPacket(layerscope::LayersPacket* aPacket, const void* aParent);
+
   void FireDidTransactionCallback()
   {
     if (mPostTransCallback) {
@@ -2189,6 +2221,8 @@ protected:
   {}
 
   virtual void PrintInfo(std::stringstream& aStream, const char* aPrefix);
+
+  virtual void DumpPacket(layerscope::LayersPacket* aPacket, const void* aParent);
 
   Layer* mTempReferent;
   // 0 is a special value that means "no ID".
