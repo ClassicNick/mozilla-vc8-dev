@@ -22,6 +22,13 @@ using mozilla::dom::CrashReporterChild;
 #include <unistd.h> // for _exit()
 #endif
 
+#if defined(XP_WIN) && defined(MOZ_CONTENT_SANDBOX)
+#define TARGET_SANDBOX_EXPORTS
+#include "mozilla/sandboxTarget.h"
+#elif defined(XP_LINUX) && defined(MOZ_GMP_SANDBOX)
+#include "mozilla/Sandbox.h"
+#endif
+
 namespace mozilla {
 namespace gmp {
 
@@ -92,6 +99,13 @@ GMPChild::LoadPluginLibrary(const std::string& aPluginPath)
 
   nsAutoCString nativePath;
   libFile->GetNativePath(nativePath);
+
+#if defined(XP_LINUX) && defined(MOZ_GMP_SANDBOX)
+  // Enable sandboxing here -- we know the plugin file's path, but
+  // this process's execution hasn't been affected by its content yet.
+  mozilla::SetMediaPluginSandbox(nativePath.get());
+#endif
+
   mLib = PR_LoadLibrary(nativePath.get());
   if (!mLib) {
     return false;
