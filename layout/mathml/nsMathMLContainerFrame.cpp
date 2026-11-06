@@ -885,11 +885,13 @@ nsMathMLContainerFrame::Reflow(nsPresContext*           aPresContext,
   // Asking each child to cache its bounding metrics
 
   nsReflowStatus childStatus;
-  nsSize availSize(aReflowState.ComputedWidth(), NS_UNCONSTRAINEDSIZE);
   nsIFrame* childFrame = mFrames.FirstChild();
   while (childFrame) {
     nsHTMLReflowMetrics childDesiredSize(aReflowState, // ???
                                          aDesiredSize.mFlags);
+    WritingMode wm = childFrame->GetWritingMode();
+    LogicalSize availSize = aReflowState.ComputedSize(wm);
+    availSize.BSize(wm) = NS_UNCONSTRAINEDSIZE;
     nsHTMLReflowState childReflowState(aPresContext, aReflowState,
                                        childFrame, availSize);
     ReflowChild(childFrame, aPresContext, childDesiredSize,
@@ -967,7 +969,7 @@ nsMathMLContainerFrame::GetMinWidth(nsRenderingContext *aRenderingContext)
   // Include the additional width added by FixInterFrameSpacing to ensure
   // consistent width calculations.
   AddInterFrameSpacingToSize(desiredSize, this);
-  result = desiredSize.Width();
+  result = desiredSize.ISize(GetWritingMode());
   return result;
 }
 
@@ -982,7 +984,7 @@ nsMathMLContainerFrame::GetPrefWidth(nsRenderingContext *aRenderingContext)
   // Include the additional width added by FixInterFrameSpacing to ensure
   // consistent width calculations.
   AddInterFrameSpacingToSize(desiredSize, this);
-  result = desiredSize.Width();
+  result = desiredSize.ISize(GetWritingMode());
   return result;
 }
 

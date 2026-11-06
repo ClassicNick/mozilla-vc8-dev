@@ -311,8 +311,9 @@ class UniquePtr
     void reset(Pointer p = Pointer()) {
       Pointer old = ptr();
       ptr() = p;
-      if (old != nullptr)
+      if (old != nullptr) {
         getDeleter()(old);
+      }
     }
 
     void swap(UniquePtr& other) {
@@ -453,8 +454,9 @@ class UniquePtr<T[], D>
     void reset(Pointer p = Pointer()) {
       Pointer old = tuple.first();
       tuple.first() = p;
-      if (old != nullptr)
+      if (old != nullptr) {
         tuple.second()(old);
+      }
     }
 
   private:
@@ -675,13 +677,6 @@ typename detail::UniqueSelector<T>::SingleObject
 MakeConstUnique(const A1& a1, const A2& a2, const A3& a3, const A4& a4, const A5& a5)
 {
   return UniquePtr<T>(new T(a1, a2, a3, a4, a5));
-}
-
-template<typename T, typename A1, typename A2, typename A3, typename A4, typename A5>
-typename detail::UniqueSelector<T>::SingleObject
-MakeUnique(A1&& a1, A2&& a2, A3&& a3, A4&& a4, A5&& a5)
-{
-  return UniquePtr<T>(new T(Forward<A1>(a1), Forward<A2>(a2), Forward<A3>(a3), Forward<A4>(a4), Forward<A5>(a5)));
 }
 
 template<typename T>

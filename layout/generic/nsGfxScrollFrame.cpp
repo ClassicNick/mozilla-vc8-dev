@@ -427,10 +427,12 @@ nsHTMLScrollFrame::ReflowScrolledFrame(ScrollReflowState* aState,
   nsPresContext* presContext = PresContext();
 
   // Pass false for aInit so we can pass in the correct padding.
-  nsHTMLReflowState kidReflowState(presContext, aState->mReflowState,
-                                   mHelper.mScrolledFrame,
-                                   nsSize(availWidth, NS_UNCONSTRAINEDSIZE),
-                                   -1, -1, nsHTMLReflowState::CALLER_WILL_INIT);
+  nsHTMLReflowState
+    kidReflowState(presContext, aState->mReflowState,
+                   mHelper.mScrolledFrame,
+                   LogicalSize(mHelper.mScrolledFrame->GetWritingMode(),
+                               nsSize(availWidth, NS_UNCONSTRAINEDSIZE)),
+                   -1, -1, nsHTMLReflowState::CALLER_WILL_INIT);
   kidReflowState.Init(presContext, -1, -1, nullptr,
                       &padding);
   kidReflowState.mFlags.mAssumingHScrollbar = aAssumeHScroll;
@@ -1604,6 +1606,24 @@ ScrollFrameHelper::ScrollFrameHelper(nsContainerFrame* aOuter,
   }
 
   EnsureImageVisPrefsCached();
+
+#ifndef MOZ_WIDGET_ANDROID
+  if (mScrollingActive &&
+      gfxPrefs::LayersTilesEnabled() &&
+      !gfxPrefs::AsyncPanZoomEnabled() &&
+      mOuter->GetContent()) {
+    // If we have tiling but no APZ, then set a 0-margin display port on
+    // active scroll containers so that we paint by whole tile increments
+    // when scrolling.
+    nsLayoutUtils::SetDisplayPortMargins(mOuter->GetContent(),
+                                         mOuter->PresContext()->PresShell(),
+                                         LayerMargin(),
+                                         gfxPrefs::LayersTileWidth(), gfxPrefs::LayersTileHeight(),
+                                         0,
+                                         nsLayoutUtils::RepaintMode::DoNotRepaint);
+  }
+#endif
+
 }
 
 ScrollFrameHelper::~ScrollFrameHelper()
@@ -2431,13 +2451,18 @@ ScrollFrameHelper::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
     // If we are a root scroll frame that has a display port we want to add
     // scrollbars, they will be children of the scrollable layer, but they get
     // adjusted by the APZC automatically.
-    bool addScrollBars = mIsRoot &&
-      nsLayoutUtils::GetDisplayPort(mOuter->GetContent()) &&
-      !aBuilder->IsForEventDelivery();
+    bool usingDisplayPort = nsLayoutUtils::GetDisplayPort(mOuter->GetContent());
+    bool addScrollBars = mIsRoot && usingDisplayPort && !aBuilder->IsForEventDelivery();
+
+    nsRect scrollbarDirty = aDirtyRect;
+    if (usingDisplayPort) {
+      // Make sure we include the scrollbars.
+      scrollbarDirty.Inflate(GetActualScrollbarSizes());
+    }
 
     if (addScrollBars) {
       // Add classic scrollbars.
-      AppendScrollPartsTo(aBuilder, aDirtyRect, aLists, createLayersForScrollbars,
+      AppendScrollPartsTo(aBuilder, scrollbarDirty, aLists, createLayersForScrollbars,
                           false);
     }
 
@@ -2449,22 +2474,12 @@ ScrollFrameHelper::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
 
     if (addScrollBars) {
       // Add overlay scrollbars.
-      AppendScrollPartsTo(aBuilder, aDirtyRect, aLists,
+      AppendScrollPartsTo(aBuilder, scrollbarDirty, aLists,
                           createLayersForScrollbars, true);
     }
 
     return;
   }
-
-  // Now display the scrollbars and scrollcorner. These parts are drawn
-  // in the border-background layer, on top of our own background and
-  // borders and underneath borders and backgrounds of later elements
-  // in the tree.
-  // Note that this does not apply for overlay scrollbars; those are drawn
-  // in the positioned-elements layer on top of everything else by the call
-  // to AppendScrollPartsTo(..., true) further down.
-  AppendScrollPartsTo(aBuilder, aDirtyRect, aLists, createLayersForScrollbars,
-                      false);
 
   // Overflow clipping can never clip frames outside our subtree, so there
   // is no need to worry about whether we are a moving frame that might clip
@@ -2511,6 +2526,22 @@ ScrollFrameHelper::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
       dirtyRect = displayPort;
     }
   }
+
+  nsRect scrollbarDirty = aDirtyRect;
+  if (usingDisplayport) {
+    // Make sure we include the scrollbars.
+    scrollbarDirty.Inflate(GetActualScrollbarSizes());
+  }
+
+  // Now display the scrollbars and scrollcorner. These parts are drawn
+  // in the border-background layer, on top of our own background and
+  // borders and underneath borders and backgrounds of later elements
+  // in the tree.
+  // Note that this does not apply for overlay scrollbars; those are drawn
+  // in the positioned-elements layer on top of everything else by the call
+  // to AppendScrollPartsTo(..., true) further down.
+  AppendScrollPartsTo(aBuilder, scrollbarDirty, aLists, createLayersForScrollbars,
+                      false);
 
   if (aBuilder->IsForImageVisibility()) {
     // We expand the dirty rect to catch images just outside of the scroll port.
@@ -2648,7 +2679,7 @@ ScrollFrameHelper::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
     }
   }
   // Now display overlay scrollbars and the resizer, if we have one.
-  AppendScrollPartsTo(aBuilder, aDirtyRect, scrolledContent,
+  AppendScrollPartsTo(aBuilder, scrollbarDirty, scrolledContent,
                       createLayersForScrollbars, true);
   scrolledContent.MoveTo(aLists);
 }
