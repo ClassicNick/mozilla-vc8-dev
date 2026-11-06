@@ -870,4 +870,6 @@ MarkCalleeToken(JSTracer *trc, CalleeToken token);
 } /* namespace jit */
 } /* namespace js */
 
+#endif // JS_ION
+
 #endif /* jit_IonFrames_h */

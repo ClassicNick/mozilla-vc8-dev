@@ -2575,6 +2575,7 @@ js::array_splice_impl(JSContext *cx, unsigned argc, Value *vp, bool returnValueI
     return true;
 }
 
+#ifdef JS_ION
 bool
 js::array_concat_dense(JSContext *cx, Handle<ArrayObject*> arr1, Handle<ArrayObject*> arr2,
                        Handle<ArrayObject*> result)
@@ -2599,6 +2600,7 @@ js::array_concat_dense(JSContext *cx, Handle<ArrayObject*> arr1, Handle<ArrayObj
     result->setLengthInt32(len);
     return true;
 }
+#endif /* JS_ION */
 
 /*
  * Python-esque sequence operations.

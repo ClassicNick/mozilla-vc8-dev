@@ -204,7 +204,9 @@
 #include "gc/GCTrace.h"
 #include "gc/Marking.h"
 #include "gc/Memory.h"
-#include "jit/BaselineJIT.h"
+#ifdef JS_ION
+# include "jit/BaselineJIT.h"
+#endif
 #include "jit/IonCode.h"
 #include "js/SliceBudget.h"
 #include "vm/Debugger.h"
@@ -331,27 +333,35 @@ static const AllocKind FinalizePhaseScripts[] = {
     FINALIZE_LAZY_SCRIPT
 };
 
+#ifdef JS_ION
 static const AllocKind FinalizePhaseJitCode[] = {
     FINALIZE_JITCODE
 };
+#endif
 
 static const AllocKind * const FinalizePhases[] = {
     FinalizePhaseStrings,
     FinalizePhaseScripts,
-    FinalizePhaseJitCode
+#ifdef JS_ION
+    FinalizePhaseJitCode,
+#endif
 };
 static const int FinalizePhaseCount = sizeof(FinalizePhases) / sizeof(AllocKind*);
 
 static const int FinalizePhaseLength[] = {
     sizeof(FinalizePhaseStrings) / sizeof(AllocKind),
     sizeof(FinalizePhaseScripts) / sizeof(AllocKind),
-    sizeof(FinalizePhaseJitCode) / sizeof(AllocKind)
+#ifdef JS_ION
+    sizeof(FinalizePhaseJitCode) / sizeof(AllocKind),
+#endif
 };
 
 static const gcstats::Phase FinalizePhaseStatsPhase[] = {
     gcstats::PHASE_SWEEP_STRING,
     gcstats::PHASE_SWEEP_SCRIPT,
-    gcstats::PHASE_SWEEP_JITCODE
+#ifdef JS_ION
+    gcstats::PHASE_SWEEP_JITCODE,
+#endif
 };
 
 /*
@@ -597,12 +607,14 @@ FinalizeArenas(FreeOp *fop,
       case FINALIZE_SYMBOL:
         return FinalizeTypedArenas<JS::Symbol>(fop, src, dest, thingKind, budget);
       case FINALIZE_JITCODE:
+#ifdef JS_ION
       {
         // JitCode finalization may release references on an executable
         // allocator that is accessed when requesting interrupts.
         JSRuntime::AutoLockForInterrupt lock(fop->runtime());
         return FinalizeTypedArenas<jit::JitCode>(fop, src, dest, thingKind, budget);
       }
+#endif
       default:
         MOZ_CRASH("Invalid alloc kind");
     }
@@ -2093,12 +2105,14 @@ ArenaLists::queueScriptsForSweep(FreeOp *fop)
     queueForForegroundSweep(fop, FINALIZE_LAZY_SCRIPT);
 }
 
+#ifdef JS_ION
 void
 ArenaLists::queueJitCodeForSweep(FreeOp *fop)
 {
     gcstats::AutoPhase ap(fop->runtime()->gc.stats, gcstats::PHASE_SWEEP_JITCODE);
     queueForForegroundSweep(fop, FINALIZE_JITCODE);
 }
+#endif
 
 void
 ArenaLists::queueShapesForSweep(FreeOp *fop)
@@ -3003,8 +3017,10 @@ GCRuntime::shouldPreserveJITCode(JSCompartment *comp, int64_t currentTime,
     if (reason == JS::gcreason::DEBUG_GC)
         return true;
 
+#ifdef JS_ION
     if (comp->jitCompartment() && comp->jitCompartment()->hasRecentParallelActivity())
         return true;
+#endif
 
     return false;
 }
@@ -3152,8 +3168,10 @@ GCRuntime::beginMarkPhase(JS::gcreason::Reason reason)
     }
 
     if (!rt->gc.cleanUpEverything) {
+#ifdef JS_ION
         if (JSCompartment *comp = jit::TopmostIonActivationCompartment(rt))
             comp->zone()->setPreservingCode(true);
+#endif
     }
 
     /*
@@ -4184,10 +4202,12 @@ GCRuntime::beginSweepingZoneGroup()
         gcstats::AutoSCC scc(stats, zoneGroupIndex);
         zone->allocator.arenas.queueScriptsForSweep(&fop);
     }
+#ifdef JS_ION
     for (GCZoneGroupIter zone(rt); !zone.done(); zone.next()) {
         gcstats::AutoSCC scc(stats, zoneGroupIndex);
         zone->allocator.arenas.queueJitCodeForSweep(&fop);
     }
+#endif
     for (GCZoneGroupIter zone(rt); !zone.done(); zone.next()) {
         gcstats::AutoSCC scc(stats, zoneGroupIndex);
         zone->allocator.arenas.queueShapesForSweep(&fop);
@@ -4391,11 +4411,12 @@ GCRuntime::endSweepPhase(JSGCInvocationKind gckind, bool lastGC)
         /* Clear out any small pools that we're hanging on to. */
         if (JSC::ExecutableAllocator *execAlloc = rt->maybeExecAlloc())
             execAlloc->purge();
-
+#ifdef JS_ION
         if (rt->jitRuntime() && rt->jitRuntime()->hasIonAlloc()) {
             JSRuntime::AutoLockForInterrupt lock(rt);
             rt->jitRuntime()->ionAlloc(rt)->purge();
         }
+#endif
 
         /*
          * This removes compartments from rt->compartment, so we do it last to make
@@ -5564,25 +5585,27 @@ void PreventGCDuringInteractiveDebug()
 void
 js::ReleaseAllJITCode(FreeOp *fop)
 {
-#ifdef JSGC_GENERATIONAL
+#ifdef JS_ION
+
+# ifdef JSGC_GENERATIONAL
     /*
      * Scripts can entrain nursery things, inserting references to the script
      * into the store buffer. Clear the store buffer before discarding scripts.
      */
     MinorGC(fop->runtime(), JS::gcreason::EVICT_NURSERY);
-#endif
+# endif
 
     for (ZonesIter zone(fop->runtime(), SkipAtoms); !zone.done(); zone.next()) {
         if (!zone->jitZone())
             continue;
 
-#ifdef DEBUG
+# ifdef DEBUG
         /* Assert no baseline scripts are marked as active. */
         for (ZoneCellIter i(zone, FINALIZE_SCRIPT); !i.done(); i.next()) {
             JSScript *script = i.get<JSScript>();
             JS_ASSERT_IF(script->hasBaselineScript(), !script->baselineScript()->active());
         }
-#endif
+# endif
 
         /* Mark baseline scripts on the stack as active. */
         jit::MarkActiveBaselineScripts(zone);
@@ -5603,17 +5626,20 @@ js::ReleaseAllJITCode(FreeOp *fop)
 
         zone->jitZone()->optimizedStubSpace()->free();
     }
+#endif
 }
 
 void
 js::PurgeJITCaches(Zone *zone)
 {
+#ifdef JS_ION
     for (ZoneCellIterUnderGC i(zone, FINALIZE_SCRIPT); !i.done(); i.next()) {
         JSScript *script = i.get<JSScript>();
 
         /* Discard Ion caches. */
         jit::PurgeCaches(script);
     }
+#endif
 }
 
 void
