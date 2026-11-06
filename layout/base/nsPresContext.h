@@ -687,10 +687,6 @@ public:
   /**
    * Getter and setter for OMTA time counters
    */
-  bool ThrottledTransitionStyleIsUpToDate() const;
-  void TickLastUpdateThrottledTransitionStyle();
-  bool ThrottledAnimationStyleIsUpToDate() const;
-  void TickLastUpdateThrottledAnimationStyle();
   bool StyleUpdateForAllAnimationsIsUpToDate();
   void TickLastStyleUpdateForAllAnimations();
 
@@ -1281,10 +1277,6 @@ protected:
 
   mozilla::TimeStamp    mReflowStartTime;
 
-  // last time animations styles were flushed to their primary frames
-  mozilla::TimeStamp    mLastUpdateThrottledAnimationStyle;
-  // last time transition styles were flushed to their primary frames
-  mozilla::TimeStamp    mLastUpdateThrottledTransitionStyle;
   // last time we did a full style flush
   mozilla::TimeStamp    mLastStyleUpdateForAllAnimations;
 

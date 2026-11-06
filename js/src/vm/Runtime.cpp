@@ -232,7 +232,6 @@ JSRuntime::JSRuntime(JSRuntime *parentRuntime)
     /* Initialize infallibly first, so we can goto bad and JS_DestroyRuntime. */
     JS_INIT_CLIST(&onNewGlobalObjectWatchers);
 
-    PodZero(&debugHooks);
     PodArrayZero(nativeStackQuota);
     PodZero(&asmJSCacheOps);
 }
@@ -371,7 +370,6 @@ JSRuntime::~JSRuntime()
 
         /* Clear debugging state to remove GC roots. */
         for (CompartmentsIter comp(this, SkipAtoms); !comp.done(); comp.next()) {
-            comp->clearTraps(defaultFreeOp());
             if (WatchpointMap *wpmap = comp->watchpointMap)
                 wpmap->clear();
         }

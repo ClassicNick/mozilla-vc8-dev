@@ -1779,102 +1779,6 @@ GetScriptAndPCArgs(JSContext *cx, unsigned argc, jsval *argv, MutableHandleScrip
     return true;
 }
 
-static JSTrapStatus
-TrapHandler(JSContext *cx, JSScript *, jsbytecode *pc, jsval *rvalArg,
-            jsval closure)
-{
-    RootedString str(cx, closure.toString());
-    RootedValue rval(cx, *rvalArg);
-
-    ScriptFrameIter iter(cx);
-    JS_ASSERT(!iter.done());
-
-    /* Debug-mode currently disables Ion compilation. */
-    JSAbstractFramePtr frame(iter.abstractFramePtr().raw(), iter.pc());
-    RootedScript script(cx, iter.script());
-
-    AutoStableStringChars stableChars(cx);
-    if (!stableChars.initTwoByte(cx, str))
-        return JSTRAP_ERROR;
-
-    mozilla::Range<const jschar> chars = stableChars.twoByteRange();
-    if (!frame.evaluateUCInStackFrame(cx, chars.start().get(), chars.length(),
-                                      script->filename(),
-                                      script->lineno(),
-                                      &rval))
-    {
-        *rvalArg = rval;
-        return JSTRAP_ERROR;
-    }
-    *rvalArg = rval;
-    if (!rval.isUndefined())
-        return JSTRAP_RETURN;
-    return JSTRAP_CONTINUE;
-}
-
-static bool
-Trap(JSContext *cx, unsigned argc, jsval *vp)
-{
-    CallArgs args = CallArgsFromVp(argc, vp);
-    RootedScript script(cx);
-    int32_t i;
-
-    if (args.length() == 0) {
-        JS_ReportErrorNumber(cx, my_GetErrorMessage, nullptr, JSSMSG_TRAP_USAGE);
-        return false;
-    }
-    argc = args.length() - 1;
-    RootedString str(cx, JS::ToString(cx, args[argc]));
-    if (!str)
-        return false;
-    args[argc].setString(str);
-    if (!GetScriptAndPCArgs(cx, argc, args.array(), &script, &i))
-        return false;
-    args.rval().setUndefined();
-    RootedValue strValue(cx, StringValue(str));
-    return JS_SetTrap(cx, script, script->offsetToPC(i), TrapHandler, strValue);
-}
-
-static bool
-Untrap(JSContext *cx, unsigned argc, jsval *vp)
-{
-    CallArgs args = CallArgsFromVp(argc, vp);
-    RootedScript script(cx);
-    int32_t i;
-
-    if (!GetScriptAndPCArgs(cx, args.length(), args.array(), &script, &i))
-        return false;
-    JS_ClearTrap(cx, script, script->offsetToPC(i), nullptr, nullptr);
-    args.rval().setUndefined();
-    return true;
-}
-
-static JSTrapStatus
-DebuggerAndThrowHandler(JSContext *cx, JSScript *script, jsbytecode *pc, jsval *rval,
-                        void *closure)
-{
-    return TrapHandler(cx, script, pc, rval, STRING_TO_JSVAL((JSString *)closure));
-}
-
-static bool
-SetDebuggerHandler(JSContext *cx, unsigned argc, jsval *vp)
-{
-    CallArgs args = CallArgsFromVp(argc, vp);
-    if (args.length() == 0) {
-        JS_ReportErrorNumber(cx, my_GetErrorMessage, nullptr,
-                             JSSMSG_NOT_ENOUGH_ARGS, "setDebuggerHandler");
-        return false;
-    }
-
-    JSString *str = JS::ToString(cx, args[0]);
-    if (!str)
-        return false;
-
-    JS_SetDebuggerHandler(cx->runtime(), DebuggerAndThrowHandler, str);
-    args.rval().setUndefined();
-    return true;
-}
-
 static bool
 LineToPC(JSContext *cx, unsigned argc, jsval *vp)
 {
@@ -3319,6 +3223,28 @@ SetInterruptCallback(JSContext *cx, unsigned argc, Value *vp)
 }
 
 static bool
+StackDump(JSContext *cx, unsigned argc, Value *vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+
+    bool showArgs = ToBoolean(args.get(0));
+    bool showLocals = ToBoolean(args.get(1));
+    bool showThisProps = ToBoolean(args.get(2));
+
+    char *buf = JS::FormatStackDump(cx, nullptr, showArgs, showLocals, showThisProps);
+    if (!buf) {
+        fputs("Failed to format JavaScript stack for dump\n", gOutFile);
+    } else {
+        fputs(buf, gOutFile);
+        JS_smprintf_free(buf);
+    }
+
+    args.rval().setUndefined();
+    return true;
+}
+
+
+static bool
 Elapsed(JSContext *cx, unsigned argc, jsval *vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
@@ -4529,10 +4455,6 @@ static const JSFunctionSpecWithHelp shell_functions[] = {
 "setDebug(debug)",
 "  Set debug mode."),
 
-    JS_FN_HELP("setDebuggerHandler", SetDebuggerHandler, 1, 0,
-"setDebuggerHandler(f)",
-"  Set handler for debugger keyword to f."),
-
     JS_FN_HELP("throwError", ThrowError, 0, 0,
 "throwError()",
 "  Throw an error from JS_ReportError."),
@@ -4560,6 +4482,11 @@ static const JSFunctionSpecWithHelp shell_functions[] = {
     JS_FN_HELP("notes", Notes, 1, 0,
 "notes([fun])",
 "  Show source notes for functions."),
+
+    JS_FN_HELP("stackDump", StackDump, 3, 0,
+"stackDump(showArgs, showLocals, showThisProps)",
+"  Tries to print a lot of information about the current stack. \n"
+"  Similar to the DumpJSStack() function in the browser."),
 
     JS_FN_HELP("findReferences", FindReferences, 1, 0,
 "findReferences(target)",
@@ -4844,17 +4771,9 @@ static const JSFunctionSpecWithHelp fuzzing_unsafe_functions[] = {
 "  arguments[0] (of the call to nestedShell) will be argv[1], arguments[1] will\n"
 "  be argv[2], etc."),
 
-    JS_FN_HELP("trap", Trap, 3, 0,
-"trap([fun, [pc,]] exp)",
-"  Trap bytecode execution."),
-
     JS_FN_HELP("assertFloat32", testingFunc_assertFloat32, 2, 0,
 "assertFloat32(value, isFloat32)",
 "  In IonMonkey only, asserts that value has (resp. hasn't) the MIRType_Float32 if isFloat32 is true (resp. false)."),
-
-    JS_FN_HELP("untrap", Untrap, 2, 0,
-"untrap(fun[, pc])",
-"  Remove a trap."),
 
     JS_FN_HELP("withSourceHook", WithSourceHook, 1, 0,
 "withSourceHook(hook, fun)",

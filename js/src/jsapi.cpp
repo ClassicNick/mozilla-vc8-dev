@@ -12,6 +12,7 @@
 
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/PodOperations.h"
+#include "mozilla/UniquePtr.h"
 
 #include <ctype.h>
 #include <stdarg.h>
@@ -101,6 +102,7 @@ using namespace js::types;
 using mozilla::Maybe;
 using mozilla::PodCopy;
 using mozilla::PodZero;
+using mozilla::UniquePtr;
 
 using JS::AutoGCRooter;
 
@@ -939,15 +941,6 @@ JS_EnterCompartment(JSContext *cx, JSObject *target)
     JSCompartment *oldCompartment = cx->compartment();
     cx->enterCompartment(target->compartment());
     return oldCompartment;
-}
-
-JS_PUBLIC_API(JSCompartment *)
-JS_EnterCompartmentOfScript(JSContext *cx, JSScript *target)
-{
-    AssertHeapIsIdle(cx);
-    CHECK_REQUEST(cx);
-    GlobalObject &global = target->global();
-    return JS_EnterCompartment(cx, &global);
 }
 
 JS_PUBLIC_API(void)
@@ -3594,49 +3587,6 @@ JS_DeleteProperty(JSContext *cx, HandleObject obj, const char *name)
     return JS_DeleteProperty2(cx, obj, name, &junk);
 }
 
-static Shape *
-LastConfigurableShape(JSObject *obj)
-{
-    for (Shape::Range<NoGC> r(obj->lastProperty()); !r.empty(); r.popFront()) {
-        Shape *shape = &r.front();
-        if (shape->configurable())
-            return shape;
-    }
-    return nullptr;
-}
-
-JS_PUBLIC_API(void)
-JS_ClearNonGlobalObject(JSContext *cx, HandleObject obj)
-{
-    AssertHeapIsIdle(cx);
-    CHECK_REQUEST(cx);
-    assertSameCompartment(cx, obj);
-
-    JS_ASSERT(!obj->is<GlobalObject>());
-
-    if (!obj->isNative())
-        return;
-
-    /* Remove all configurable properties from obj. */
-    RootedShape shape(cx);
-    while ((shape = LastConfigurableShape(obj))) {
-        if (!obj->removeProperty(cx, shape->propid()))
-            return;
-    }
-
-    /* Set all remaining writable plain data properties to undefined. */
-    for (Shape::Range<NoGC> r(obj->lastProperty()); !r.empty(); r.popFront()) {
-        Shape *shape = &r.front();
-        if (shape->isDataDescriptor() &&
-            shape->writable() &&
-            shape->hasDefaultSetter() &&
-            shape->hasSlot())
-        {
-            obj->nativeSetSlot(shape->slot(), UndefinedValue());
-        }
-    }
-}
-
 JS_PUBLIC_API(void)
 JS_SetAllNonReservedSlotsToUndefined(JSContext *cx, JSObject *objArg)
 {
@@ -4435,9 +4385,9 @@ JS::OwningCompileOptions::setFileAndLine(JSContext *cx, const char *f, unsigned 
 bool
 JS::OwningCompileOptions::setSourceMapURL(JSContext *cx, const jschar *s)
 {
-    jschar *copy = nullptr;
+    UniquePtr<jschar[], JS::FreePolicy> copy;
     if (s) {
-        copy = js_strdup(cx, s);
+        copy = DuplicateString(cx, s);
         if (!copy)
             return false;
     }
@@ -4445,7 +4395,7 @@ JS::OwningCompileOptions::setSourceMapURL(JSContext *cx, const jschar *s)
     // OwningCompileOptions always owns sourceMapURL_, so this cast is okay.
     js_free(const_cast<jschar *>(sourceMapURL_));
 
-    sourceMapURL_ = copy;
+    sourceMapURL_ = copy.release();
     return true;
 }
 
