@@ -2073,7 +2073,7 @@ CreateJSHangHistogram(JSContext* cx, const Telemetry::HangHistogram& hang)
   }
   for (size_t i = 0; i < hangStack.length(); i++) {
     JS::RootedString string(cx, JS_NewStringCopyZ(cx, hangStack[i]));
-    if (!JS_SetElement(cx, stack, i, string)) {
+    if (!JS_SetElement(cx, stack, i, (JS::HandleString) string)) {
       return nullptr;
     }
   }

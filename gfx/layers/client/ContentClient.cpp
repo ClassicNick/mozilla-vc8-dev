@@ -231,14 +231,14 @@ ContentClientRemoteBuffer::CreateBackBuffer(const nsIntRect& aBufferRect)
   mTextureClient = CreateTextureClientForDrawing(
     mSurfaceFormat, mSize, gfx::BackendType::NONE,
     mTextureInfo.mTextureFlags,
-    TextureAllocationFlags::ALLOC_CLEAR_BUFFER
+    ALLOC_CLEAR_BUFFER
   );
   if (!mTextureClient) {
     // try with ALLOC_FALLBACK
     mTextureClient = CreateTextureClientForDrawing(
       mSurfaceFormat, mSize, gfx::BackendType::NONE,
       mTextureInfo.mTextureFlags | TextureFlags::ALLOC_FALLBACK,
-      TextureAllocationFlags::ALLOC_CLEAR_BUFFER
+      ALLOC_CLEAR_BUFFER
     );
   }
 
@@ -250,7 +250,7 @@ ContentClientRemoteBuffer::CreateBackBuffer(const nsIntRect& aBufferRect)
   if (mTextureInfo.mTextureFlags & TextureFlags::COMPONENT_ALPHA) {
     mTextureClientOnWhite = mTextureClient->CreateSimilar(
       mTextureInfo.mTextureFlags,
-      TextureAllocationFlags::ALLOC_CLEAR_BUFFER_WHITE
+      ALLOC_CLEAR_BUFFER_WHITE
     );
     if (!mTextureClientOnWhite || !AddTextureClient(mTextureClientOnWhite)) {
       AbortTextureClientCreation();
