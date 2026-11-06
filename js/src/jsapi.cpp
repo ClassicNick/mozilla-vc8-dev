@@ -585,10 +585,8 @@ JS_Init(void)
     if (!TlsPerThreadData.initialized() && !TlsPerThreadData.init())
         return false;
 
-#if defined(JS_ION)
     if (!jit::InitializeIon())
         return false;
-#endif
 
     if (!ForkJoinContext::initializeTls())
         return false;
@@ -2061,7 +2059,6 @@ js::RecomputeStackLimit(JSRuntime *rt, StackKind kind)
     // Note that, for now, we use the untrusted limit for ion. This is fine,
     // because it's the most conservative limit, and if we hit it, we'll bail
     // out of ion into the interpeter, which will do a proper recursion check.
-#ifdef JS_ION
     if (kind == StackForUntrustedScript) {
         JSRuntime::AutoLockForInterrupt lock(rt);
         if (rt->mainThread.jitStackLimit != uintptr_t(-1)) {
@@ -2071,7 +2068,6 @@ js::RecomputeStackLimit(JSRuntime *rt, StackKind kind)
 #endif
         }
     }
-#endif
 }
 
 JS_PUBLIC_API(void)
@@ -6200,24 +6196,18 @@ JS_ScheduleGC(JSContext *cx, uint32_t count)
 JS_PUBLIC_API(void)
 JS_SetParallelParsingEnabled(JSRuntime *rt, bool enabled)
 {
-#ifdef JS_ION
     rt->setParallelParsingEnabled(enabled);
-#endif
 }
 
 JS_PUBLIC_API(void)
 JS_SetOffthreadIonCompilationEnabled(JSRuntime *rt, bool enabled)
 {
-#ifdef JS_ION
     rt->setOffthreadIonCompilationEnabled(enabled);
-#endif
 }
 
 JS_PUBLIC_API(void)
 JS_SetGlobalJitCompilerOption(JSRuntime *rt, JSJitCompilerOption opt, uint32_t value)
 {
-#ifdef JS_ION
-
     switch (opt) {
       case JSJITCOMPILER_BASELINE_USECOUNT_TRIGGER:
         if (value == uint32_t(-1)) {
@@ -6274,7 +6264,6 @@ JS_SetGlobalJitCompilerOption(JSRuntime *rt, JSJitCompilerOption opt, uint32_t v
       default:
         break;
     }
-#endif
 }
 
 JS_PUBLIC_API(int)

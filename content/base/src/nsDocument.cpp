@@ -1515,7 +1515,7 @@ struct nsIDocument::FrameRequest
   int32_t mHandle;
 };
 
-static already_AddRefed<mozilla::dom::NodeInfo> nullNodeInfo(nullptr);
+static already_AddRefed<mozilla::dom::NodeInfo> nullNodeInfo;
 
 // ==================================================================
 // =

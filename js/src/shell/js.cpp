@@ -3852,7 +3852,7 @@ EscapeForShell(AutoCStringVector &argv)
 
 static Vector<const char*, 4, js::SystemAllocPolicy> sPropagatedFlags;
 
-#if defined(DEBUG) && defined(JS_ION) && (defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_X64))
+#if defined(DEBUG) && (defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_X64))
 static bool
 PropagateFlagToNestedShells(const char *flag)
 {
@@ -4263,28 +4263,14 @@ SingleStepCallback(void *arg, jit::Simulator *sim, void *pc)
     state.sp = (void*)sim->get_register(jit::Simulator::sp);
     state.lr = (void*)sim->get_register(jit::Simulator::lr);
 
+    DebugOnly<void*> lastStackAddress = nullptr;
     StackChars stack;
     for (JS::ProfilingFrameIterator i(rt, state); !i.done(); ++i) {
-        switch (i.kind()) {
-          case JS::ProfilingFrameIterator::Function: {
-            JS::AutoCheckCannotGC nogc;
-            JSAtom *atom = i.functionDisplayAtom();
-            if (atom->hasLatin1Chars())
-                stack.append(atom->latin1Chars(nogc), atom->length());
-            else
-                stack.append(atom->twoByteChars(nogc), atom->length());
-            break;
-          }
-          case JS::ProfilingFrameIterator::AsmJSTrampoline: {
-            stack.append('*');
-            break;
-          }
-          case JS::ProfilingFrameIterator::CppFunction: {
-            const char *desc = i.nonFunctionDescription();
-            stack.append(desc, strlen(desc));
-            break;
-          }
-        }
+        JS_ASSERT(i.stackAddress() != nullptr);
+        JS_ASSERT(lastStackAddress <= i.stackAddress());
+        lastStackAddress = i.stackAddress();
+        const char *label = i.label();
+        stack.append(label, strlen(label));
     }
 
     // Only append the stack if it differs from the last stack.
@@ -5672,17 +5658,12 @@ BindScriptArgs(JSContext *cx, JSObject *obj_, OptionParser *op)
     return true;
 }
 
-// This function is currently only called from "#if defined(JS_ION)" chunks,
-// so we're guarding the function definition with an #ifdef, too, to avoid
-// build warning for unused function in non-ion-enabled builds:
-#if defined(JS_ION)
 static bool
 OptionFailure(const char *option, const char *str)
 {
     fprintf(stderr, "Unrecognized option for %s: %s\n", option, str);
     return false;
 }
-#endif /* JS_ION */
 
 static int
 ProcessArgs(JSContext *cx, JSObject *obj_, OptionParser *op)
@@ -5743,7 +5724,6 @@ ProcessArgs(JSContext *cx, JSObject *obj_, OptionParser *op)
 static bool
 SetRuntimeOptions(JSRuntime *rt, const OptionParser &op)
 {
-#if defined(JS_ION)
     bool enableBaseline = !op.getBoolOption("no-baseline");
     bool enableIon = !op.getBoolOption("no-ion");
     bool enableAsmJS = !op.getBoolOption("no-asmjs");
@@ -5878,8 +5858,6 @@ SetRuntimeOptions(JSRuntime *rt, const OptionParser &op)
         fprintf(stderr, "--ion-parallel-compile is deprecated. Please use --ion-offthread-compile instead.\n");
         return false;
     }
-
-#endif // JS_ION
 
 #if defined(JS_CODEGEN_ARM)
     if (const char *str = op.getStringOption("arm-hwcap"))
@@ -6167,12 +6145,12 @@ main(int argc, char **argv, char **envp)
      */
     OOM_printAllocationCount = op.getBoolOption('O');
 
-#if defined(JS_CODEGEN_X86) && defined(JS_ION)
+#ifdef JS_CODEGEN_X86
     if (op.getBoolOption("no-fpu"))
         JSC::MacroAssembler::SetFloatingPointDisabled();
 #endif
 
-#if (defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_X64)) && defined(JS_ION)
+#if defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_X64)
     if (op.getBoolOption("no-sse3")) {
         JSC::MacroAssembler::SetSSE3Disabled();
         PropagateFlagToNestedShells("--no-sse3");

@@ -8,6 +8,7 @@ DIRS += [
   'encoder',
   'gmp',
   'mediasource',
+  'systemservices',
   'webaudio',
   'webvtt'
 ]
