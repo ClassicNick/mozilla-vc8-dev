@@ -18,7 +18,7 @@ FixedTableLayoutStrategy::FixedTableLayoutStrategy(nsTableFrame *aTableFrame)
   : nsITableLayoutStrategy(nsITableLayoutStrategy::Fixed)
   , mTableFrame(aTableFrame)
 {
-    MarkIntrinsicWidthsDirty();
+    MarkIntrinsicISizesDirty();
 }
 
 /* virtual */
@@ -27,7 +27,7 @@ FixedTableLayoutStrategy::~FixedTableLayoutStrategy()
 }
 
 /* virtual */ nscoord
-FixedTableLayoutStrategy::GetMinWidth(nsRenderingContext* aRenderingContext)
+FixedTableLayoutStrategy::GetMinISize(nsRenderingContext* aRenderingContext)
 {
     DISPLAY_MIN_WIDTH(mTableFrame, mMinWidth);
     if (mMinWidth != NS_INTRINSIC_WIDTH_UNKNOWN)
@@ -38,7 +38,7 @@ FixedTableLayoutStrategy::GetMinWidth(nsRenderingContext* aRenderingContext)
     // intrinsic widths inside the first row and then reverse the
     // algorithm to find the narrowest width that would hold all of
     // those intrinsic widths), but it wouldn't be compatible with other
-    // browsers, or with the use of GetMinWidth by
+    // browsers, or with the use of GetMinISize by
     // nsTableFrame::ComputeSize to determine the width of a fixed
     // layout table, since CSS2.1 says:
     //   The width of the table is then the greater of the value of the
@@ -90,7 +90,7 @@ FixedTableLayoutStrategy::GetMinWidth(nsRenderingContext* aRenderingContext)
                      (styleWidth->GetIntValue() == NS_STYLE_WIDTH_MAX_CONTENT ||
                       styleWidth->GetIntValue() == NS_STYLE_WIDTH_MIN_CONTENT))) {
                     nscoord cellWidth = nsLayoutUtils::IntrinsicForContainer(
-                        aRenderingContext, cellFrame, nsLayoutUtils::MIN_WIDTH);
+                        aRenderingContext, cellFrame, nsLayoutUtils::MIN_ISIZE);
                     if (colSpan > 1) {
                         // If a column-spanning cell is in the first
                         // row, split up the space evenly.  (XXX This
@@ -116,7 +116,7 @@ FixedTableLayoutStrategy::GetMinWidth(nsRenderingContext* aRenderingContext)
 }
 
 /* virtual */ nscoord
-FixedTableLayoutStrategy::GetPrefWidth(nsRenderingContext* aRenderingContext,
+FixedTableLayoutStrategy::GetPrefISize(nsRenderingContext* aRenderingContext,
                                        bool aComputingSize)
 {
     // It's theoretically possible to do something much better here that
@@ -131,7 +131,7 @@ FixedTableLayoutStrategy::GetPrefWidth(nsRenderingContext* aRenderingContext,
 }
 
 /* virtual */ void
-FixedTableLayoutStrategy::MarkIntrinsicWidthsDirty()
+FixedTableLayoutStrategy::MarkIntrinsicISizesDirty()
 {
     mMinWidth = NS_INTRINSIC_WIDTH_UNKNOWN;
     mLastCalcWidth = nscoord_MIN;
@@ -236,18 +236,18 @@ FixedTableLayoutStrategy::ComputeColumnWidths(const nsHTMLReflowState& aReflowSt
                      (styleWidth->GetIntValue() == NS_STYLE_WIDTH_MAX_CONTENT ||
                       styleWidth->GetIntValue() == NS_STYLE_WIDTH_MIN_CONTENT))) {
                     // XXX This should use real percentage padding
-                    // Note that the difference between MIN_WIDTH and
-                    // PREF_WIDTH shouldn't matter for any of these
-                    // values of styleWidth; use MIN_WIDTH for symmetry
-                    // with GetMinWidth above, just in case there is a
+                    // Note that the difference between MIN_ISIZE and
+                    // PREF_ISIZE shouldn't matter for any of these
+                    // values of styleWidth; use MIN_ISIZE for symmetry
+                    // with GetMinISize above, just in case there is a
                     // difference.
                     colWidth = nsLayoutUtils::IntrinsicForContainer(
                                  aReflowState.rendContext,
-                                 cellFrame, nsLayoutUtils::MIN_WIDTH);
+                                 cellFrame, nsLayoutUtils::MIN_ISIZE);
                 } else if (styleWidth->GetUnit() == eStyleUnit_Percent) {
                     // XXX This should use real percentage padding
-                    nsIFrame::IntrinsicWidthOffsetData offsets =
-                        cellFrame->IntrinsicWidthOffsets(aReflowState.rendContext);
+                    nsIFrame::IntrinsicISizeOffsetData offsets =
+                        cellFrame->IntrinsicISizeOffsets(aReflowState.rendContext);
                     float pct = styleWidth->GetPercentValue();
                     colWidth = NSToCoordFloor(pct * float(tableWidth));
 

@@ -262,8 +262,8 @@ nsFieldSetFrame::PaintBorderBackground(nsRenderingContext& aRenderingContext,
 }
 
 nscoord
-nsFieldSetFrame::GetIntrinsicWidth(nsRenderingContext* aRenderingContext,
-                                   nsLayoutUtils::IntrinsicWidthType aType)
+nsFieldSetFrame::GetIntrinsicISize(nsRenderingContext* aRenderingContext,
+                                   nsLayoutUtils::IntrinsicISizeType aType)
 {
   nscoord legendWidth = 0;
   nscoord contentWidth = 0;
@@ -286,22 +286,22 @@ nsFieldSetFrame::GetIntrinsicWidth(nsRenderingContext* aRenderingContext,
 
 
 nscoord
-nsFieldSetFrame::GetMinWidth(nsRenderingContext* aRenderingContext)
+nsFieldSetFrame::GetMinISize(nsRenderingContext* aRenderingContext)
 {
   nscoord result = 0;
   DISPLAY_MIN_WIDTH(this, result);
 
-  result = GetIntrinsicWidth(aRenderingContext, nsLayoutUtils::MIN_WIDTH);
+  result = GetIntrinsicISize(aRenderingContext, nsLayoutUtils::MIN_ISIZE);
   return result;
 }
 
 nscoord
-nsFieldSetFrame::GetPrefWidth(nsRenderingContext* aRenderingContext)
+nsFieldSetFrame::GetPrefISize(nsRenderingContext* aRenderingContext)
 {
   nscoord result = 0;
   DISPLAY_PREF_WIDTH(this, result);
 
-  result = GetIntrinsicWidth(aRenderingContext, nsLayoutUtils::PREF_WIDTH);
+  result = GetIntrinsicISize(aRenderingContext, nsLayoutUtils::PREF_ISIZE);
   return result;
 }
 
@@ -321,7 +321,7 @@ nsFieldSetFrame::ComputeSize(nsRenderingContext *aRenderingContext,
   // wrapping inside of us should not apply font size inflation.
   AutoMaybeDisableFontInflation an(this);
 
-  nscoord minWidth = GetMinWidth(aRenderingContext);
+  nscoord minWidth = GetMinISize(aRenderingContext);
   if (minWidth > result.width)
     result.width = minWidth;
 
@@ -376,13 +376,13 @@ nsFieldSetFrame::Reflow(nsPresContext*           aPresContext,
   NS_ASSERTION(!inner ||
       nsLayoutUtils::IntrinsicForContainer(aReflowState.rendContext,
                                            inner,
-                                           nsLayoutUtils::MIN_WIDTH) <=
+                                           nsLayoutUtils::MIN_ISIZE) <=
                innerAvailSize.ISize(innerWM),
                "Bogus availSize.ISize; should be bigger");
   NS_ASSERTION(!legend ||
       nsLayoutUtils::IntrinsicForContainer(aReflowState.rendContext,
                                            legend,
-                                           nsLayoutUtils::MIN_WIDTH) <=
+                                           nsLayoutUtils::MIN_ISIZE) <=
                legendAvailSize.ISize(legendWM),
                "Bogus availSize.ISize; should be bigger");
 

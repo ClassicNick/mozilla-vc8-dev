@@ -74,7 +74,7 @@ nsTableCaptionFrame::ComputeAutoSize(nsRenderingContext *aRenderingContext,
   uint8_t captionSide = StyleTableBorder()->mCaptionSide;
   if (captionSide == NS_STYLE_CAPTION_SIDE_LEFT ||
       captionSide == NS_STYLE_CAPTION_SIDE_RIGHT) {
-    result.width = GetMinWidth(aRenderingContext);
+    result.width = GetMinISize(aRenderingContext);
   } else if (captionSide == NS_STYLE_CAPTION_SIDE_TOP ||
              captionSide == NS_STYLE_CAPTION_SIDE_BOTTOM) {
     // The outer frame constrains our available width to the width of
@@ -82,7 +82,7 @@ nsTableCaptionFrame::ComputeAutoSize(nsRenderingContext *aRenderingContext,
     // larger than the containing block width.  (It would really be nice
     // to transmit that information another way, so we could grow up to
     // the table's available width, but that's harder.)
-    nscoord min = GetMinWidth(aRenderingContext);
+    nscoord min = GetMinISize(aRenderingContext);
     if (min > aCBSize.width)
       min = aCBSize.width;
     if (min > result.width)
@@ -393,16 +393,16 @@ GetContainingBlockSize(const nsHTMLReflowState& aOuterRS)
 }
 
 /* virtual */ nscoord
-nsTableOuterFrame::GetMinWidth(nsRenderingContext *aRenderingContext)
+nsTableOuterFrame::GetMinISize(nsRenderingContext *aRenderingContext)
 {
   nscoord width = nsLayoutUtils::IntrinsicForContainer(aRenderingContext,
-                    InnerTableFrame(), nsLayoutUtils::MIN_WIDTH);
+                    InnerTableFrame(), nsLayoutUtils::MIN_ISIZE);
   DISPLAY_MIN_WIDTH(this, width);
   if (mCaptionFrames.NotEmpty()) {
     nscoord capWidth =
       nsLayoutUtils::IntrinsicForContainer(aRenderingContext,
                                            mCaptionFrames.FirstChild(),
-                                           nsLayoutUtils::MIN_WIDTH);
+                                           nsLayoutUtils::MIN_ISIZE);
     if (HasSideCaption()) {
       width += capWidth;
     } else {
@@ -415,13 +415,13 @@ nsTableOuterFrame::GetMinWidth(nsRenderingContext *aRenderingContext)
 }
 
 /* virtual */ nscoord
-nsTableOuterFrame::GetPrefWidth(nsRenderingContext *aRenderingContext)
+nsTableOuterFrame::GetPrefISize(nsRenderingContext *aRenderingContext)
 {
   nscoord maxWidth;
   DISPLAY_PREF_WIDTH(this, maxWidth);
 
   maxWidth = nsLayoutUtils::IntrinsicForContainer(aRenderingContext,
-               InnerTableFrame(), nsLayoutUtils::PREF_WIDTH);
+               InnerTableFrame(), nsLayoutUtils::PREF_ISIZE);
   if (mCaptionFrames.NotEmpty()) {
     uint8_t captionSide = GetCaptionSide();
     switch(captionSide) {
@@ -431,23 +431,23 @@ nsTableOuterFrame::GetPrefWidth(nsRenderingContext *aRenderingContext)
         nscoord capMin =
           nsLayoutUtils::IntrinsicForContainer(aRenderingContext,
                                                mCaptionFrames.FirstChild(),
-                                               nsLayoutUtils::MIN_WIDTH);
+                                               nsLayoutUtils::MIN_ISIZE);
         maxWidth += capMin;
       }
       break;
     default:
       {
-        nsLayoutUtils::IntrinsicWidthType iwt;
+        nsLayoutUtils::IntrinsicISizeType iwt;
         if (captionSide == NS_STYLE_CAPTION_SIDE_TOP ||
             captionSide == NS_STYLE_CAPTION_SIDE_BOTTOM) {
           // Don't let the caption's pref width expand the table's pref
           // width.
-          iwt = nsLayoutUtils::MIN_WIDTH;
+          iwt = nsLayoutUtils::MIN_ISIZE;
         } else {
           NS_ASSERTION(captionSide == NS_STYLE_CAPTION_SIDE_TOP_OUTSIDE ||
                        captionSide == NS_STYLE_CAPTION_SIDE_BOTTOM_OUTSIDE,
                        "unexpected caption side");
-          iwt = nsLayoutUtils::PREF_WIDTH;
+          iwt = nsLayoutUtils::PREF_ISIZE;
         }
         nscoord capPref =
           nsLayoutUtils::IntrinsicForContainer(aRenderingContext,
@@ -503,8 +503,8 @@ nsTableOuterFrame::ComputeAutoSize(nsRenderingContext *aRenderingContext,
 
   // When we're shrink-wrapping, our auto size needs to wrap around the
   // actual size of the table, which (if it is specified as a percent)
-  // could be something that is not reflected in our GetMinWidth and
-  // GetPrefWidth.  See bug 349457 for an example.
+  // could be something that is not reflected in our GetMinISize and
+  // GetPrefISize.  See bug 349457 for an example.
 
   // Match the availableWidth logic in Reflow.
   uint8_t captionSide = GetCaptionSide();

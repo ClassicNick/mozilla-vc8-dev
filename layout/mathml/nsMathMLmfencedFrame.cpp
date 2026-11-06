@@ -554,7 +554,7 @@ GetMaxCharWidth(nsPresContext*       aPresContext,
 }
 
 /* virtual */ void
-nsMathMLmfencedFrame::GetIntrinsicWidthMetrics(nsRenderingContext* aRenderingContext, nsHTMLReflowMetrics& aDesiredSize)
+nsMathMLmfencedFrame::GetIntrinsicISizeMetrics(nsRenderingContext* aRenderingContext, nsHTMLReflowMetrics& aDesiredSize)
 {
   nscoord width = 0;
 
@@ -578,7 +578,7 @@ nsMathMLmfencedFrame::GetIntrinsicWidthMetrics(nsRenderingContext* aRenderingCon
     // margin, so we may end up with too much space, but, with stretchy
     // characters, this is an approximation anyway.
     width += nsLayoutUtils::IntrinsicForContainer(aRenderingContext, childFrame,
-                                                  nsLayoutUtils::PREF_WIDTH);
+                                                  nsLayoutUtils::PREF_ISIZE);
 
     if (i < mSeparatorsCount) {
       width +=

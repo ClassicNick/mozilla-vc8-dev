@@ -354,7 +354,7 @@ nsMathMLmrootFrame::Reflow(nsPresContext*          aPresContext,
 }
 
 /* virtual */ void
-nsMathMLmrootFrame::GetIntrinsicWidthMetrics(nsRenderingContext* aRenderingContext, nsHTMLReflowMetrics& aDesiredSize)
+nsMathMLmrootFrame::GetIntrinsicISizeMetrics(nsRenderingContext* aRenderingContext, nsHTMLReflowMetrics& aDesiredSize)
 {
   nsIFrame* baseFrame = mFrames.FirstChild();
   nsIFrame* indexFrame = nullptr;
@@ -367,10 +367,10 @@ nsMathMLmrootFrame::GetIntrinsicWidthMetrics(nsRenderingContext* aRenderingConte
 
   nscoord baseWidth =
     nsLayoutUtils::IntrinsicForContainer(aRenderingContext, baseFrame,
-                                         nsLayoutUtils::PREF_WIDTH);
+                                         nsLayoutUtils::PREF_ISIZE);
   nscoord indexWidth =
     nsLayoutUtils::IntrinsicForContainer(aRenderingContext, indexFrame,
-                                         nsLayoutUtils::PREF_WIDTH);
+                                         nsLayoutUtils::PREF_ISIZE);
   nscoord sqrWidth = mSqrChar.GetMaxWidth(PresContext(), *aRenderingContext);
 
   nscoord dxSqr;

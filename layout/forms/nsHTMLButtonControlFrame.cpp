@@ -131,7 +131,7 @@ nsHTMLButtonControlFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
 }
 
 nscoord
-nsHTMLButtonControlFrame::GetMinWidth(nsRenderingContext* aRenderingContext)
+nsHTMLButtonControlFrame::GetMinISize(nsRenderingContext* aRenderingContext)
 {
   nscoord result;
   DISPLAY_MIN_WIDTH(this, result);
@@ -139,7 +139,7 @@ nsHTMLButtonControlFrame::GetMinWidth(nsRenderingContext* aRenderingContext)
   nsIFrame* kid = mFrames.FirstChild();
   result = nsLayoutUtils::IntrinsicForContainer(aRenderingContext,
                                                 kid,
-                                                nsLayoutUtils::MIN_WIDTH);
+                                                nsLayoutUtils::MIN_ISIZE);
 
   result += mRenderer.GetAddedButtonBorderAndPadding().LeftRight();
 
@@ -147,7 +147,7 @@ nsHTMLButtonControlFrame::GetMinWidth(nsRenderingContext* aRenderingContext)
 }
 
 nscoord
-nsHTMLButtonControlFrame::GetPrefWidth(nsRenderingContext* aRenderingContext)
+nsHTMLButtonControlFrame::GetPrefISize(nsRenderingContext* aRenderingContext)
 {
   nscoord result;
   DISPLAY_PREF_WIDTH(this, result);
@@ -155,7 +155,7 @@ nsHTMLButtonControlFrame::GetPrefWidth(nsRenderingContext* aRenderingContext)
   nsIFrame* kid = mFrames.FirstChild();
   result = nsLayoutUtils::IntrinsicForContainer(aRenderingContext,
                                                 kid,
-                                                nsLayoutUtils::PREF_WIDTH);
+                                                nsLayoutUtils::PREF_ISIZE);
   result += mRenderer.GetAddedButtonBorderAndPadding().LeftRight();
   return result;
 }
@@ -257,7 +257,7 @@ nsHTMLButtonControlFrame::ReflowButtonContents(nsPresContext* aPresContext,
   // offset to allow the kid to spill left into our padding.
   nscoord xoffset = focusPadding.left +
     aButtonReflowState.ComputedPhysicalBorderPadding().left;
-  nscoord extrawidth = GetMinWidth(aButtonReflowState.rendContext) -
+  nscoord extrawidth = GetMinISize(aButtonReflowState.rendContext) -
     aButtonReflowState.ComputedWidth();
   if (extrawidth > 0) {
     nscoord extraleft = extrawidth / 2;

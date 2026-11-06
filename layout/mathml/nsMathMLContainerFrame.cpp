@@ -959,12 +959,12 @@ static nscoord AddInterFrameSpacingToSize(nsHTMLReflowMetrics&    aDesiredSize,
                                           nsMathMLContainerFrame* aFrame);
 
 /* virtual */ nscoord
-nsMathMLContainerFrame::GetMinWidth(nsRenderingContext *aRenderingContext)
+nsMathMLContainerFrame::GetMinISize(nsRenderingContext *aRenderingContext)
 {
   nscoord result;
   DISPLAY_MIN_WIDTH(this, result);
   nsHTMLReflowMetrics desiredSize(GetWritingMode());
-  GetIntrinsicWidthMetrics(aRenderingContext, desiredSize);
+  GetIntrinsicISizeMetrics(aRenderingContext, desiredSize);
 
   // Include the additional width added by FixInterFrameSpacing to ensure
   // consistent width calculations.
@@ -974,12 +974,12 @@ nsMathMLContainerFrame::GetMinWidth(nsRenderingContext *aRenderingContext)
 }
 
 /* virtual */ nscoord
-nsMathMLContainerFrame::GetPrefWidth(nsRenderingContext *aRenderingContext)
+nsMathMLContainerFrame::GetPrefISize(nsRenderingContext *aRenderingContext)
 {
   nscoord result;
   DISPLAY_PREF_WIDTH(this, result);
   nsHTMLReflowMetrics desiredSize(GetWritingMode());
-  GetIntrinsicWidthMetrics(aRenderingContext, desiredSize);
+  GetIntrinsicISizeMetrics(aRenderingContext, desiredSize);
 
   // Include the additional width added by FixInterFrameSpacing to ensure
   // consistent width calculations.
@@ -989,7 +989,7 @@ nsMathMLContainerFrame::GetPrefWidth(nsRenderingContext *aRenderingContext)
 }
 
 /* virtual */ void
-nsMathMLContainerFrame::GetIntrinsicWidthMetrics(nsRenderingContext* aRenderingContext, nsHTMLReflowMetrics& aDesiredSize)
+nsMathMLContainerFrame::GetIntrinsicISizeMetrics(nsRenderingContext* aRenderingContext, nsHTMLReflowMetrics& aDesiredSize)
 {
   // Get child widths
   nsIFrame* childFrame = mFrames.FirstChild();
@@ -998,7 +998,7 @@ nsMathMLContainerFrame::GetIntrinsicWidthMetrics(nsRenderingContext* aRenderingC
 
     nsMathMLContainerFrame* containerFrame = do_QueryFrame(childFrame);
     if (containerFrame) {
-      containerFrame->GetIntrinsicWidthMetrics(aRenderingContext,
+      containerFrame->GetIntrinsicISizeMetrics(aRenderingContext,
                                                childDesiredSize);
     } else {
       // XXX This includes margin while Reflow currently doesn't consider
@@ -1006,7 +1006,7 @@ nsMathMLContainerFrame::GetIntrinsicWidthMetrics(nsRenderingContext* aRenderingC
       // characters, this is an approximation anyway.
       nscoord width =
         nsLayoutUtils::IntrinsicForContainer(aRenderingContext, childFrame,
-                                             nsLayoutUtils::PREF_WIDTH);
+                                             nsLayoutUtils::PREF_ISIZE);
 
       childDesiredSize.Width() = width;
       childDesiredSize.mBoundingMetrics.width = width;

@@ -25,7 +25,7 @@
 namespace mozilla {
 namespace dom {
 
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(DOMStorage, mManager, mPrincipal, mWindow)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_3(DOMStorage, mManager, mPrincipal, mWindow)
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(DOMStorage)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(DOMStorage)
