@@ -10,7 +10,9 @@
 #include "nsScriptSecurityManager.h"
 #include "jsfriendapi.h"
 #include "prprf.h"
+#ifdef MOZ_PROFILER_SPS
 #include "shared-libraries.h"
+#endif
 
 #include "js/OldDebugAPI.h"
 
@@ -70,8 +72,6 @@
     defined(MOZ_THREADSTACKHELPER_ARM)
 // On these architectures, the stack grows downwards (toward lower addresses).
 #define MOZ_THREADSTACKHELPER_STACK_GROWS_DOWN
-#else
-#error "Unsupported architecture"
 #endif
 
 namespace mozilla {

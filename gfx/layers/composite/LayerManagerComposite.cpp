@@ -437,10 +437,10 @@ LayerManagerComposite::Render()
   if (LayerScope::CheckSendable()) {
     // Create a LayersPacket, dump Layers into it and transfer the
     // packet('s ownership) to LayerScope.
-    auto packet = MakeUnique<layerscope::Packet>();
+    nsAutoPtr<layerscope::Packet> packet = new layerscope::Packet();
     layerscope::LayersPacket* layersPacket = packet->mutable_layers();
     this->Dump(layersPacket);
-    LayerScope::SendLayerDump(Move(packet));
+    LayerScope::SendLayerDump(packet);
   }
 
   if (!mTarget && composer2D && composer2D->TryRender(mRoot, mWorldMatrix, mGeometryChanged)) {

@@ -5355,14 +5355,14 @@ def getWrapTemplateForType(type, descriptorProvider, result, successCode,
             {
               JS::Rooted<JS::Value> tmp(cx);
               for (size_t idx = 0; idx < keys.Length(); ++idx) {
-                auto& ${valueName} = ${result}.Get(keys[idx]);
+                const nsCString& ${valueName} = ${result}.Get(keys[idx]);
                 // Control block to let us common up the JS_DefineUCProperty calls when there
                 // are different ways to succeed at wrapping the value.
                 do {
                   $*{innerTemplate}
                 } while (0);
                 if (!JS_DefineUCProperty(cx, returnObj, keys[idx].get(),
-                                         keys[idx].Length(), tmp,
+                                         keys[idx].Length(), (JS::HandleValue) tmp,
                                          JSPROP_ENUMERATE)) {
                   $*{exceptionCode}
                 }

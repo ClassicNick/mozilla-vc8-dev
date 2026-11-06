@@ -548,9 +548,9 @@ protected:
 
 class DebugGLLayersData : public DebugGLData {
 public:
-    DebugGLLayersData(UniquePtr<Packet> aPacket)
+    DebugGLLayersData(nsAutoPtr<Packet> aPacket)
         : DebugGLData(Packet::LAYERS),
-          mPacket(Move(aPacket))
+          mPacket(aPacket)
     { }
 
     virtual bool Write() MOZ_OVERRIDE {
@@ -562,7 +562,7 @@ public:
     }
 
 protected:
-    UniquePtr<Packet> mPacket;
+    nsAutoPtr<Packet> mPacket;
 };
 
 class DebugListener : public nsIServerSocketListener
@@ -953,14 +953,14 @@ LayerScope::SendLayer(LayerComposite* aLayer,
 }
 
 void
-LayerScope::SendLayerDump(UniquePtr<Packet> aPacket)
+LayerScope::SendLayerDump(nsAutoPtr<Packet> aPacket)
 {
     // Protect this public function
     if (!CheckSendable()) {
         return;
     }
     WebSocketHelper::GetSocketManager()->AppendDebugData(
-        new DebugGLLayersData(Move(aPacket)));
+        new DebugGLLayersData(aPacket));
 }
 
 bool

@@ -21,7 +21,7 @@ namespace dom {
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(Headers)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(Headers)
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(Headers, mOwner)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_1(Headers, mOwner)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(Headers)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
@@ -275,7 +275,7 @@ Headers::Fill(const Headers& aInit, ErrorResult&)
 }
 
 void
-Headers::Fill(const Sequence<Sequence<nsCString>>& aInit, ErrorResult& aRv)
+Headers::Fill(const Sequence<Sequence<nsCString> >& aInit, ErrorResult& aRv)
 {
   for (uint32_t i = 0; i < aInit.Length() && !aRv.Failed(); ++i) {
     const Sequence<nsCString>& tuple = aInit[i];

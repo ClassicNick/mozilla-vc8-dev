@@ -102,7 +102,7 @@ private:
   }
 
   void Fill(const Headers& aInit, ErrorResult& aRv);
-  void Fill(const Sequence<Sequence<nsCString>>& aInit, ErrorResult& aRv);
+  void Fill(const Sequence<Sequence<nsCString> >& aInit, ErrorResult& aRv);
   void Fill(const MozMap<nsCString>& aInit, ErrorResult& aRv);
 };
 

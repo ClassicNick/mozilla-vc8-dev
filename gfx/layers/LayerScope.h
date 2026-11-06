@@ -7,7 +7,7 @@
 #define GFX_LAYERSCOPE_H
 
 #include "mozilla/StandardInteger.h"
-#include <mozilla/UniquePtr.h>
+#include "nsAutoPtr.h"
 
 struct nsIntSize;
 
@@ -33,7 +33,7 @@ public:
     static void SendLayer(LayerComposite* aLayer,
                           int aWidth,
                           int aHeight);
-    static void SendLayerDump(UniquePtr<layerscope::Packet> aPacket);
+    static void SendLayerDump(nsAutoPtr<layerscope::Packet> aPacket);
     static bool CheckSendable();
     static void CleanLayer();
 };
