@@ -1593,7 +1593,6 @@ CASE(JSOP_UNUSED51)
 CASE(JSOP_UNUSED52)
 CASE(JSOP_UNUSED57)
 CASE(JSOP_UNUSED83)
-CASE(JSOP_UNUSED101)
 CASE(JSOP_UNUSED102)
 CASE(JSOP_UNUSED103)
 CASE(JSOP_UNUSED104)
@@ -2739,6 +2738,23 @@ CASE(JSOP_OBJECT)
     }
 }
 END_CASE(JSOP_OBJECT)
+
+CASE(JSOP_CALLSITEOBJ)
+{
+
+    RootedObject &cso = rootObject0;
+    cso = script->getObject(REGS.pc);
+    RootedObject &raw = rootObject1;
+    raw = script->getObject(GET_UINT32_INDEX(REGS.pc) + 1);
+    RootedValue &rawValue = rootValue0;
+    rawValue.setObject(*raw);
+
+    if (!ProcessCallSiteObjOperation(cx, cso, raw, rawValue))
+        goto error;
+
+    PUSH_OBJECT(*cso);
+}
+END_CASE(JSOP_CALLSITEOBJ)
 
 CASE(JSOP_REGEXP)
 {

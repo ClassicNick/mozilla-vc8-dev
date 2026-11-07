@@ -14,15 +14,6 @@
 namespace mozilla {
 namespace layers {
 
-/**
- * Default touch behavior (is used when no touch behavior is set).
- */
-static const TouchBlockState::TouchBehaviorFlags kDefaultTouchBehavior =
-    VERTICAL_PAN |
-    HORIZONTAL_PAN |
-    PINCH_ZOOM |
-    DOUBLE_TAP_ZOOM;
-
 TouchBlockState::TouchBlockState()
   : mAllowedTouchBehaviorSet(false)
   , mPreventDefault(false)
