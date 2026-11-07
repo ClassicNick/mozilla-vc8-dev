@@ -1011,10 +1011,6 @@ struct JSRuntime : public JS::shadow::Runtime,
 
     mozilla::ScopedDeletePtr<js::SourceHook> sourceHook;
 
-#ifdef NIGHTLY_BUILD
-    js::AssertOnScriptEntryHook assertOnScriptEntryHook_;
-#endif
-
     /* If true, new compartments are initially in debug mode. */
     bool                debugMode;
 

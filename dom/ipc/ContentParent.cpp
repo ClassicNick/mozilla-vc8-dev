@@ -920,8 +920,8 @@ private:
 StaticAutoPtr<LinkedList<SystemMessageHandledListener> >
     SystemMessageHandledListener::sListeners;
 
-NS_IMPL_ISUPPORTS(SystemMessageHandledListener,
-                  nsITimerCallback)
+NS_IMPL_ISUPPORTS1(SystemMessageHandledListener,
+                   nsITimerCallback)
 
 } // anonymous namespace
 
