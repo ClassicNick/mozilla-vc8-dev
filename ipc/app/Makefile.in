@@ -37,6 +37,10 @@ include $(topsrcdir)/config/config.mk
 
 include $(topsrcdir)/config/rules.mk
 
+ifneq ($(MOZ_WIDGET_TOOLKIT),android)
+#LIBS += ../contentproc/$(LIB_PREFIX)plugin-container.$(LIB_SUFFIX)
+endif
+
 ifeq ($(OS_ARCH),WINNT) #{
 
 ifdef MOZ_CONTENT_SANDBOX

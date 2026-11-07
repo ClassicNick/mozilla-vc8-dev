@@ -185,7 +185,8 @@ TouchBlockState::TouchActionAllowsPanningX() const
     return true;
   }
   if (mAllowedTouchBehaviors.IsEmpty()) {
-    return false;
+    // Default to allowed
+    return true;
   }
   TouchBehaviorFlags flags = mAllowedTouchBehaviors[0];
   return (flags & HORIZONTAL_PAN);
@@ -198,7 +199,8 @@ TouchBlockState::TouchActionAllowsPanningY() const
     return true;
   }
   if (mAllowedTouchBehaviors.IsEmpty()) {
-    return false;
+    // Default to allowed
+    return true;
   }
   TouchBehaviorFlags flags = mAllowedTouchBehaviors[0];
   return (flags & VERTICAL_PAN);
@@ -211,7 +213,8 @@ TouchBlockState::TouchActionAllowsPanningXY() const
     return true;
   }
   if (mAllowedTouchBehaviors.IsEmpty()) {
-    return false;
+    // Default to allowed
+    return true;
   }
   TouchBehaviorFlags flags = mAllowedTouchBehaviors[0];
   return (flags & HORIZONTAL_PAN)
