@@ -8,6 +8,7 @@
 
 #include "GMPProcessParent.h"
 #include "GMPService.h"
+#include "GMPAudioDecoderParent.h"
 #include "GMPVideoDecoderParent.h"
 #include "GMPVideoEncoderParent.h"
 #include "mozilla/gmp/PGMPParent.h"
@@ -83,6 +84,10 @@ public:
   void VideoDecoderDestroyed(GMPVideoDecoderParent* aDecoder);
   nsresult GetGMPVideoEncoder(GMPVideoEncoderParent** aGMPVE);
   void VideoEncoderDestroyed(GMPVideoEncoderParent* aEncoder);
+
+  nsresult GetGMPAudioDecoder(GMPAudioDecoderParent** aGMPAD);
+  void AudioDecoderDestroyed(GMPAudioDecoderParent* aDecoder);
+
   GMPState State() const;
 #ifdef DEBUG
   nsIThread* GMPThread();
@@ -134,6 +139,9 @@ private:
   virtual PGMPVideoEncoderParent* AllocPGMPVideoEncoderParent() MOZ_OVERRIDE;
   virtual bool DeallocPGMPVideoEncoderParent(PGMPVideoEncoderParent* aActor) MOZ_OVERRIDE;
 
+  virtual PGMPAudioDecoderParent* AllocPGMPAudioDecoderParent() MOZ_OVERRIDE;
+  virtual bool DeallocPGMPAudioDecoderParent(PGMPAudioDecoderParent* aActor) MOZ_OVERRIDE;
+
   GMPState mState;
   nsCOMPtr<nsIFile> mDirectory; // plugin directory on disk
   nsString mName; // base name of plugin on disk, UTF-16 because used for paths
@@ -147,6 +155,7 @@ private:
 
   nsTArray<nsRefPtr<GMPVideoDecoderParent> > mVideoDecoders;
   nsTArray<nsRefPtr<GMPVideoEncoderParent> > mVideoEncoders;
+  nsTArray<nsRefPtr<GMPAudioDecoderParent> > mAudioDecoders;
 #ifdef DEBUG
   nsCOMPtr<nsIThread> mGMPThread;
 #endif

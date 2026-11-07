@@ -9,6 +9,8 @@
 
 #include "nsIServiceManager.h"
 #include "nsMathUtils.h"
+#include "SVGPreserveAspectRatio.h"
+#include "SVGImageContext.h"
 
 #include "nsContentUtils.h"
 
@@ -3437,7 +3439,7 @@ CanvasRenderingContext2D::DrawImage(const HTMLImageOrCanvasOrVideoElement& image
                   DrawOptions(CurrentState().globalAlpha, UsedOperation()));
   } else {
     DrawDirectlyToCanvas(drawInfo, &bounds, dx, dy, dw, dh,
-                         sx, sy, sw, sh, imgSize);
+                         sx, sy, sw, sh, imgSize, CurrentState().globalAlpha);
   }
 
   RedrawUser(gfxRect(dx, dy, dw, dh));
@@ -3448,7 +3450,8 @@ CanvasRenderingContext2D::DrawDirectlyToCanvas(
                           const nsLayoutUtils::DirectDrawInfo& image,
                           mozilla::gfx::Rect* bounds, double dx, double dy,
                           double dw, double dh, double sx, double sy,
-                          double sw, double sh, gfxIntSize imgSize)
+                          double sw, double sh, gfxIntSize imgSize,
+                          gfxFloat opacity)
 {
   gfxMatrix contextMatrix;
 
@@ -3474,12 +3477,14 @@ CanvasRenderingContext2D::DrawDirectlyToCanvas(
   // FLAG_CLAMP is added for increased performance
   uint32_t modifiedFlags = image.mDrawingFlags | imgIContainer::FLAG_CLAMP;
 
+  SVGImageContext svgContext(SVGPreserveAspectRatio(), opacity);
+
   nsresult rv = image.mImgContainer->
     Draw(context, GraphicsFilter::FILTER_GOOD, transformMatrix,
          gfxRect(gfxPoint(dx, dy), gfxIntSize(dw, dh)),
          nsIntRect(nsIntPoint(0, 0), gfxIntSize(imgSize.width, imgSize.height)),
-         gfxIntSize(imgSize.width, imgSize.height), nullptr, image.mWhichFrame,
-         modifiedFlags);
+         gfxIntSize(imgSize.width, imgSize.height),
+         &svgContext, image.mWhichFrame, modifiedFlags);
 
   NS_ENSURE_SUCCESS_VOID(rv);
 }

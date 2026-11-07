@@ -15835,143 +15835,39 @@ if test -z "$BUILDING_JS" -o -n "$JS_STANDALONE"; then
          export LDFLAGS="$HOST_LDFLAGS"
          ac_configure_args="$HOST_ICU_BUILD_OPTS"
          ac_configure_args="$ac_configure_args --enable-static --disable-shared --enable-extras=no --enable-icuio=no --enable-layout=no --enable-tests=no --enable-samples=no"
-         trap '' EXIT
-for moz_config_dir in intl/icu/source:intl/icu/host; do
+         for moz_config_dir in intl/icu/source:intl/icu/host; do
+  _CONFIG_SHELL=${CONFIG_SHELL-/bin/sh}
   case "$moz_config_dir" in
   *:*)
-    moz_config_srcdir=$(echo $moz_config_dir | awk -F: '{print $1}')
-    moz_config_dir=$(echo $moz_config_dir | awk -F: '{print $2}')
+    objdir=$(echo $moz_config_dir | awk -F: '{print $2}')
     ;;
   *)
-    moz_config_srcdir=$moz_config_dir
+    objdir=$moz_config_dir
     ;;
   esac
-  _CONFIG_SHELL=${CONFIG_SHELL-/bin/sh}
+
+  dumpenv="true | "
   case "$host" in
   *-mingw*)
     _CONFIG_SHELL=$(cd $(dirname $_CONFIG_SHELL); pwd -W)/$(basename $_CONFIG_SHELL)
     if test ! -e "$_CONFIG_SHELL" -a -e "${_CONFIG_SHELL}.exe"; then
         _CONFIG_SHELL="${_CONFIG_SHELL}.exe"
     fi
+                        dumpenv="$PERL $srcdir/build/win32/dumpenv4python.pl $ac_configure_args | "
     ;;
   esac
 
-  if test -d "$moz_config_dir"; then
-    (cd "$moz_config_dir"; eval $PYTHON $_topsrcdir/build/subconfigure.py dump "$_CONFIG_SHELL" $ac_configure_args)
-  else
-    mkdir -p "$moz_config_dir"
+  eval $dumpenv $PYTHON $_topsrcdir/build/subconfigure.py --prepare "$srcdir" "$moz_config_dir" "$_CONFIG_SHELL" $ac_configure_args 
+
+    if test "$no_recursion" != yes; then
+    trap '' EXIT
+    if ! $PYTHON $_topsrcdir/build/subconfigure.py "$objdir"; then
+        exit 1
+    fi
+    trap '[ "$?" != 0 ] && echo "------ config.log ------" && tail -n 25 config.log' EXIT
+
   fi
-  _save_cache_file="$cache_file"
-  cache_file="$moz_config_dir/config.cache"
-  cache_file="$(cd $(dirname "$cache_file"); pwd -W 2>/dev/null || pwd)/$(basename "$cache_file")"
-  
-
-
-if test "$no_recursion" != yes; then
-
-  # Remove --cache-file and --srcdir arguments so they do not pile up.
-  ac_sub_configure_args=
-  ac_prev=
-  for ac_arg in $ac_configure_args; do
-    if test -n "$ac_prev"; then
-      ac_prev=
-      continue
-    fi
-    case "$ac_arg" in
-    -cache-file | --cache-file | --cache-fil | --cache-fi \
-    | --cache-f | --cache- | --cache | --cach | --cac | --ca | --c)
-      ac_prev=cache_file ;;
-    -cache-file=* | --cache-file=* | --cache-fil=* | --cache-fi=* \
-    | --cache-f=* | --cache-=* | --cache=* | --cach=* | --cac=* | --ca=* | --c=*)
-      ;;
-    -srcdir | --srcdir | --srcdi | --srcd | --src | --sr)
-      ac_prev=srcdir ;;
-    -srcdir=* | --srcdir=* | --srcdi=* | --srcd=* | --src=* | --sr=*)
-      ;;
-    *) ac_sub_configure_args="$ac_sub_configure_args $ac_arg" ;;
-    esac
-  done
-
-  for ac_config_dir in $moz_config_dir; do
-
-    # Do not complain, so a configure script can configure whichever
-    # parts of a large source tree are present.
-    if test ! -d $srcdir/$moz_config_srcdir; then
-      continue
-    fi
-
-    echo configuring in $ac_config_dir
-
-    case "$srcdir" in
-    .) ;;
-    *)
-      if test -d ./$ac_config_dir || mkdir ./$ac_config_dir; then :;
-      else
-        { echo "configure: error: can not create `pwd`/$ac_config_dir" 1>&2; echo "configure: error: can not create `pwd`/$ac_config_dir" 1>&5; exit 1; }
-      fi
-      ;;
-    esac
-
-    ac_popdir=`pwd`
-    cd $ac_config_dir
-
-      # A "../" for each directory in /$ac_config_dir.
-      ac_dots=`echo $ac_config_dir|sed -e 's%^\./%%' -e 's%[^/]$%&/%' -e 's%[^/]*/%../%g'`
-
-    case "$srcdir" in
-    .) # No --srcdir option.  We are building in place.
-      ac_sub_srcdir=$srcdir ;;
-    /* | ?:/*) # Absolute path.
-      ac_sub_srcdir=$srcdir/$moz_config_srcdir ;;
-    *) # Relative path.
-      ac_sub_srcdir=$ac_dots$srcdir/$moz_config_srcdir ;;
-    esac
-
-    # Check for guested configure; otherwise get Cygnus style configure.
-    if test -f $ac_sub_srcdir/configure; then
-      ac_sub_configure=$ac_sub_srcdir/configure
-    elif test -f $ac_sub_srcdir/configure.in; then
-      ac_sub_configure=$ac_configure
-    else
-      echo "configure: warning: no configuration information is in $ac_config_dir" 1>&2
-      ac_sub_configure=
-    fi
-
-    # The recursion is here.
-    if test -n "$ac_sub_configure"; then
-
-      # Make the cache file name correct relative to the subdirectory.
-      case "$cache_file" in
-      /* | ?:/*) ac_sub_cache_file=$cache_file ;;
-      *) # Relative path.
-        ac_sub_cache_file="$ac_dots$cache_file" ;;
-      esac
-  case "$ac_given_INSTALL" in
-        [/$]*) INSTALL="$ac_given_INSTALL" ;;
-        *) INSTALL="$ac_dots$ac_given_INSTALL" ;;
-        esac
-
-      echo "running ${CONFIG_SHELL-/bin/sh} $ac_sub_configure $ac_sub_configure_args --cache-file=$ac_sub_cache_file --srcdir=$ac_sub_srcdir"
-      # The eval makes quoting arguments work.
-      if eval ${CONFIG_SHELL-/bin/sh} $ac_sub_configure $ac_sub_configure_args --cache-file=$ac_sub_cache_file --srcdir=$ac_sub_srcdir
-      then :
-      else
-        { echo "configure: error: $ac_sub_configure failed for $ac_config_dir" 1>&2; echo "configure: error: $ac_sub_configure failed for $ac_config_dir" 1>&5; exit 1; }
-      fi
-    fi
-
-    cd $ac_popdir
-  done
-fi
-
-
-
-  cache_file="$_save_cache_file"
-  (cd "$moz_config_dir"; $PYTHON $_topsrcdir/build/subconfigure.py adjust $ac_sub_configure)
 done
-
-trap '[ "$?" != 0 ] && echo "------ config.log ------" && tail -n 25 config.log' EXIT
-
 
         ) || exit 1
     	# generate config/icucross.mk
@@ -16079,143 +15975,39 @@ trap '[ "$?" != 0 ] && echo "------ config.log ------" && tail -n 25 config.log'
          export LDFLAGS="$ICU_LDFLAGS $LDFLAGS"
          ac_configure_args="$ICU_BUILD_OPTS $ICU_CROSS_BUILD_OPT $ICU_LINK_OPTS $ICU_TARGET_OPT"
          ac_configure_args="$ac_configure_args --disable-extras --disable-icuio --disable-layout --disable-tests --disable-samples"
-         trap '' EXIT
-for moz_config_dir in intl/icu/source:intl/icu/target; do
+         for moz_config_dir in intl/icu/source:intl/icu/target; do
+  _CONFIG_SHELL=${CONFIG_SHELL-/bin/sh}
   case "$moz_config_dir" in
   *:*)
-    moz_config_srcdir=$(echo $moz_config_dir | awk -F: '{print $1}')
-    moz_config_dir=$(echo $moz_config_dir | awk -F: '{print $2}')
+    objdir=$(echo $moz_config_dir | awk -F: '{print $2}')
     ;;
   *)
-    moz_config_srcdir=$moz_config_dir
+    objdir=$moz_config_dir
     ;;
   esac
-  _CONFIG_SHELL=${CONFIG_SHELL-/bin/sh}
+
+  dumpenv="true | "
   case "$host" in
   *-mingw*)
     _CONFIG_SHELL=$(cd $(dirname $_CONFIG_SHELL); pwd -W)/$(basename $_CONFIG_SHELL)
     if test ! -e "$_CONFIG_SHELL" -a -e "${_CONFIG_SHELL}.exe"; then
         _CONFIG_SHELL="${_CONFIG_SHELL}.exe"
     fi
+                        dumpenv="$PERL $srcdir/build/win32/dumpenv4python.pl $ac_configure_args | "
     ;;
   esac
 
-  if test -d "$moz_config_dir"; then
-    (cd "$moz_config_dir"; eval $PYTHON $_topsrcdir/build/subconfigure.py dump "$_CONFIG_SHELL" $ac_configure_args)
-  else
-    mkdir -p "$moz_config_dir"
+  eval $dumpenv $PYTHON $_topsrcdir/build/subconfigure.py --prepare "$srcdir" "$moz_config_dir" "$_CONFIG_SHELL" $ac_configure_args 
+
+    if test "$no_recursion" != yes; then
+    trap '' EXIT
+    if ! $PYTHON $_topsrcdir/build/subconfigure.py "$objdir"; then
+        exit 1
+    fi
+    trap '[ "$?" != 0 ] && echo "------ config.log ------" && tail -n 25 config.log' EXIT
+
   fi
-  _save_cache_file="$cache_file"
-  cache_file="$moz_config_dir/config.cache"
-  cache_file="$(cd $(dirname "$cache_file"); pwd -W 2>/dev/null || pwd)/$(basename "$cache_file")"
-  
-
-
-if test "$no_recursion" != yes; then
-
-  # Remove --cache-file and --srcdir arguments so they do not pile up.
-  ac_sub_configure_args=
-  ac_prev=
-  for ac_arg in $ac_configure_args; do
-    if test -n "$ac_prev"; then
-      ac_prev=
-      continue
-    fi
-    case "$ac_arg" in
-    -cache-file | --cache-file | --cache-fil | --cache-fi \
-    | --cache-f | --cache- | --cache | --cach | --cac | --ca | --c)
-      ac_prev=cache_file ;;
-    -cache-file=* | --cache-file=* | --cache-fil=* | --cache-fi=* \
-    | --cache-f=* | --cache-=* | --cache=* | --cach=* | --cac=* | --ca=* | --c=*)
-      ;;
-    -srcdir | --srcdir | --srcdi | --srcd | --src | --sr)
-      ac_prev=srcdir ;;
-    -srcdir=* | --srcdir=* | --srcdi=* | --srcd=* | --src=* | --sr=*)
-      ;;
-    *) ac_sub_configure_args="$ac_sub_configure_args $ac_arg" ;;
-    esac
-  done
-
-  for ac_config_dir in $moz_config_dir; do
-
-    # Do not complain, so a configure script can configure whichever
-    # parts of a large source tree are present.
-    if test ! -d $srcdir/$moz_config_srcdir; then
-      continue
-    fi
-
-    echo configuring in $ac_config_dir
-
-    case "$srcdir" in
-    .) ;;
-    *)
-      if test -d ./$ac_config_dir || mkdir ./$ac_config_dir; then :;
-      else
-        { echo "configure: error: can not create `pwd`/$ac_config_dir" 1>&2; echo "configure: error: can not create `pwd`/$ac_config_dir" 1>&5; exit 1; }
-      fi
-      ;;
-    esac
-
-    ac_popdir=`pwd`
-    cd $ac_config_dir
-
-      # A "../" for each directory in /$ac_config_dir.
-      ac_dots=`echo $ac_config_dir|sed -e 's%^\./%%' -e 's%[^/]$%&/%' -e 's%[^/]*/%../%g'`
-
-    case "$srcdir" in
-    .) # No --srcdir option.  We are building in place.
-      ac_sub_srcdir=$srcdir ;;
-    /* | ?:/*) # Absolute path.
-      ac_sub_srcdir=$srcdir/$moz_config_srcdir ;;
-    *) # Relative path.
-      ac_sub_srcdir=$ac_dots$srcdir/$moz_config_srcdir ;;
-    esac
-
-    # Check for guested configure; otherwise get Cygnus style configure.
-    if test -f $ac_sub_srcdir/configure; then
-      ac_sub_configure=$ac_sub_srcdir/configure
-    elif test -f $ac_sub_srcdir/configure.in; then
-      ac_sub_configure=$ac_configure
-    else
-      echo "configure: warning: no configuration information is in $ac_config_dir" 1>&2
-      ac_sub_configure=
-    fi
-
-    # The recursion is here.
-    if test -n "$ac_sub_configure"; then
-
-      # Make the cache file name correct relative to the subdirectory.
-      case "$cache_file" in
-      /* | ?:/*) ac_sub_cache_file=$cache_file ;;
-      *) # Relative path.
-        ac_sub_cache_file="$ac_dots$cache_file" ;;
-      esac
-  case "$ac_given_INSTALL" in
-        [/$]*) INSTALL="$ac_given_INSTALL" ;;
-        *) INSTALL="$ac_dots$ac_given_INSTALL" ;;
-        esac
-
-      echo "running ${CONFIG_SHELL-/bin/sh} $ac_sub_configure $ac_sub_configure_args --cache-file=$ac_sub_cache_file --srcdir=$ac_sub_srcdir"
-      # The eval makes quoting arguments work.
-      if eval ${CONFIG_SHELL-/bin/sh} $ac_sub_configure $ac_sub_configure_args --cache-file=$ac_sub_cache_file --srcdir=$ac_sub_srcdir
-      then :
-      else
-        { echo "configure: error: $ac_sub_configure failed for $ac_config_dir" 1>&2; echo "configure: error: $ac_sub_configure failed for $ac_config_dir" 1>&5; exit 1; }
-      fi
-    fi
-
-    cd $ac_popdir
-  done
-fi
-
-
-
-  cache_file="$_save_cache_file"
-  (cd "$moz_config_dir"; $PYTHON $_topsrcdir/build/subconfigure.py adjust $ac_sub_configure)
 done
-
-trap '[ "$?" != 0 ] && echo "------ config.log ------" && tail -n 25 config.log' EXIT
-
 
         ) || exit 1
     fi
@@ -16228,12 +16020,12 @@ fi
 for ac_func in setlocale
 do
 echo $ac_n "checking for $ac_func""... $ac_c" 1>&6
-echo "configure:16232: checking for $ac_func" >&5
+echo "configure:16024: checking for $ac_func" >&5
 if eval "test \"`echo '$''{'ac_cv_func2_$ac_func'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
   cat > conftest.$ac_ext <<EOF
-#line 16237 "configure"
+#line 16029 "configure"
 #define $ac_func innocuous_$ac_func
 #include "confdefs.h"
 #undef $ac_func
@@ -16260,7 +16052,7 @@ $ac_func();
 
 ; return 0; }
 EOF
-if { (eval echo configure:16264: \"$ac_link\") 1>&5; (eval $ac_link) 2>&5; } && test -s conftest${ac_exeext}; then
+if { (eval echo configure:16056: \"$ac_link\") 1>&5; (eval $ac_link) 2>&5; } && test -s conftest${ac_exeext}; then
   rm -rf conftest*
   eval "ac_cv_func2_$ac_func=yes"
 else
@@ -16290,12 +16082,12 @@ done
 for ac_func in localeconv
 do
 echo $ac_n "checking for $ac_func""... $ac_c" 1>&6
-echo "configure:16294: checking for $ac_func" >&5
+echo "configure:16086: checking for $ac_func" >&5
 if eval "test \"`echo '$''{'ac_cv_func2_$ac_func'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
   cat > conftest.$ac_ext <<EOF
-#line 16299 "configure"
+#line 16091 "configure"
 #define $ac_func innocuous_$ac_func
 #include "confdefs.h"
 #undef $ac_func
@@ -16322,7 +16114,7 @@ $ac_func();
 
 ; return 0; }
 EOF
-if { (eval echo configure:16326: \"$ac_link\") 1>&5; (eval $ac_link) 2>&5; } && test -s conftest${ac_exeext}; then
+if { (eval echo configure:16118: \"$ac_link\") 1>&5; (eval $ac_link) 2>&5; } && test -s conftest${ac_exeext}; then
   rm -rf conftest*
   eval "ac_cv_func2_$ac_func=yes"
 else
@@ -16426,143 +16218,39 @@ if test -z "$MOZ_NATIVE_NSPR"; then
     export LDFLAGS="$LDFLAGS $NSPR_LDFLAGS"
     export CFLAGS="$CFLAGS $MOZ_FRAMEPTR_FLAGS"
 
-    trap '' EXIT
-for moz_config_dir in nsprpub; do
+    for moz_config_dir in nsprpub; do
+  _CONFIG_SHELL=${CONFIG_SHELL-/bin/sh}
   case "$moz_config_dir" in
   *:*)
-    moz_config_srcdir=$(echo $moz_config_dir | awk -F: '{print $1}')
-    moz_config_dir=$(echo $moz_config_dir | awk -F: '{print $2}')
+    objdir=$(echo $moz_config_dir | awk -F: '{print $2}')
     ;;
   *)
-    moz_config_srcdir=$moz_config_dir
+    objdir=$moz_config_dir
     ;;
   esac
-  _CONFIG_SHELL=${CONFIG_SHELL-/bin/sh}
+
+  dumpenv="true | "
   case "$host" in
   *-mingw*)
     _CONFIG_SHELL=$(cd $(dirname $_CONFIG_SHELL); pwd -W)/$(basename $_CONFIG_SHELL)
     if test ! -e "$_CONFIG_SHELL" -a -e "${_CONFIG_SHELL}.exe"; then
         _CONFIG_SHELL="${_CONFIG_SHELL}.exe"
     fi
+                        dumpenv="$PERL $srcdir/build/win32/dumpenv4python.pl $ac_configure_args | "
     ;;
   esac
 
-  if test -d "$moz_config_dir"; then
-    (cd "$moz_config_dir"; eval $PYTHON $_topsrcdir/build/subconfigure.py dump "$_CONFIG_SHELL" $ac_configure_args)
-  else
-    mkdir -p "$moz_config_dir"
+  eval $dumpenv $PYTHON $_topsrcdir/build/subconfigure.py --prepare "$srcdir" "$moz_config_dir" "$_CONFIG_SHELL" $ac_configure_args 
+
+    if test "$no_recursion" != yes; then
+    trap '' EXIT
+    if ! $PYTHON $_topsrcdir/build/subconfigure.py "$objdir"; then
+        exit 1
+    fi
+    trap '[ "$?" != 0 ] && echo "------ config.log ------" && tail -n 25 config.log' EXIT
+
   fi
-  _save_cache_file="$cache_file"
-  cache_file="$moz_config_dir/config.cache"
-  cache_file="$(cd $(dirname "$cache_file"); pwd -W 2>/dev/null || pwd)/$(basename "$cache_file")"
-  
-
-
-if test "$no_recursion" != yes; then
-
-  # Remove --cache-file and --srcdir arguments so they do not pile up.
-  ac_sub_configure_args=
-  ac_prev=
-  for ac_arg in $ac_configure_args; do
-    if test -n "$ac_prev"; then
-      ac_prev=
-      continue
-    fi
-    case "$ac_arg" in
-    -cache-file | --cache-file | --cache-fil | --cache-fi \
-    | --cache-f | --cache- | --cache | --cach | --cac | --ca | --c)
-      ac_prev=cache_file ;;
-    -cache-file=* | --cache-file=* | --cache-fil=* | --cache-fi=* \
-    | --cache-f=* | --cache-=* | --cache=* | --cach=* | --cac=* | --ca=* | --c=*)
-      ;;
-    -srcdir | --srcdir | --srcdi | --srcd | --src | --sr)
-      ac_prev=srcdir ;;
-    -srcdir=* | --srcdir=* | --srcdi=* | --srcd=* | --src=* | --sr=*)
-      ;;
-    *) ac_sub_configure_args="$ac_sub_configure_args $ac_arg" ;;
-    esac
-  done
-
-  for ac_config_dir in $moz_config_dir; do
-
-    # Do not complain, so a configure script can configure whichever
-    # parts of a large source tree are present.
-    if test ! -d $srcdir/$moz_config_srcdir; then
-      continue
-    fi
-
-    echo configuring in $ac_config_dir
-
-    case "$srcdir" in
-    .) ;;
-    *)
-      if test -d ./$ac_config_dir || mkdir ./$ac_config_dir; then :;
-      else
-        { echo "configure: error: can not create `pwd`/$ac_config_dir" 1>&2; echo "configure: error: can not create `pwd`/$ac_config_dir" 1>&5; exit 1; }
-      fi
-      ;;
-    esac
-
-    ac_popdir=`pwd`
-    cd $ac_config_dir
-
-      # A "../" for each directory in /$ac_config_dir.
-      ac_dots=`echo $ac_config_dir|sed -e 's%^\./%%' -e 's%[^/]$%&/%' -e 's%[^/]*/%../%g'`
-
-    case "$srcdir" in
-    .) # No --srcdir option.  We are building in place.
-      ac_sub_srcdir=$srcdir ;;
-    /* | ?:/*) # Absolute path.
-      ac_sub_srcdir=$srcdir/$moz_config_srcdir ;;
-    *) # Relative path.
-      ac_sub_srcdir=$ac_dots$srcdir/$moz_config_srcdir ;;
-    esac
-
-    # Check for guested configure; otherwise get Cygnus style configure.
-    if test -f $ac_sub_srcdir/configure; then
-      ac_sub_configure=$ac_sub_srcdir/configure
-    elif test -f $ac_sub_srcdir/configure.in; then
-      ac_sub_configure=$ac_configure
-    else
-      echo "configure: warning: no configuration information is in $ac_config_dir" 1>&2
-      ac_sub_configure=
-    fi
-
-    # The recursion is here.
-    if test -n "$ac_sub_configure"; then
-
-      # Make the cache file name correct relative to the subdirectory.
-      case "$cache_file" in
-      /* | ?:/*) ac_sub_cache_file=$cache_file ;;
-      *) # Relative path.
-        ac_sub_cache_file="$ac_dots$cache_file" ;;
-      esac
-  case "$ac_given_INSTALL" in
-        [/$]*) INSTALL="$ac_given_INSTALL" ;;
-        *) INSTALL="$ac_dots$ac_given_INSTALL" ;;
-        esac
-
-      echo "running ${CONFIG_SHELL-/bin/sh} $ac_sub_configure $ac_sub_configure_args --cache-file=$ac_sub_cache_file --srcdir=$ac_sub_srcdir"
-      # The eval makes quoting arguments work.
-      if eval ${CONFIG_SHELL-/bin/sh} $ac_sub_configure $ac_sub_configure_args --cache-file=$ac_sub_cache_file --srcdir=$ac_sub_srcdir
-      then :
-      else
-        { echo "configure: error: $ac_sub_configure failed for $ac_config_dir" 1>&2; echo "configure: error: $ac_sub_configure failed for $ac_config_dir" 1>&5; exit 1; }
-      fi
-    fi
-
-    cd $ac_popdir
-  done
-fi
-
-
-
-  cache_file="$_save_cache_file"
-  (cd "$moz_config_dir"; $PYTHON $_topsrcdir/build/subconfigure.py adjust $ac_sub_configure)
 done
-
-trap '[ "$?" != 0 ] && echo "------ config.log ------" && tail -n 25 config.log' EXIT
-
 
 
     # .. and restore them
@@ -16643,143 +16331,39 @@ if test -z "$BUILDING_JS" -o -n "$JS_STANDALONE"; then
     # from our configure.
     old_config_files=$CONFIG_FILES
     unset CONFIG_FILES
-    trap '' EXIT
-for moz_config_dir in js/src/ctypes/libffi; do
+    for moz_config_dir in js/src/ctypes/libffi; do
+  _CONFIG_SHELL=${CONFIG_SHELL-/bin/sh}
   case "$moz_config_dir" in
   *:*)
-    moz_config_srcdir=$(echo $moz_config_dir | awk -F: '{print $1}')
-    moz_config_dir=$(echo $moz_config_dir | awk -F: '{print $2}')
+    objdir=$(echo $moz_config_dir | awk -F: '{print $2}')
     ;;
   *)
-    moz_config_srcdir=$moz_config_dir
+    objdir=$moz_config_dir
     ;;
   esac
-  _CONFIG_SHELL=${CONFIG_SHELL-/bin/sh}
+
+  dumpenv="true | "
   case "$host" in
   *-mingw*)
     _CONFIG_SHELL=$(cd $(dirname $_CONFIG_SHELL); pwd -W)/$(basename $_CONFIG_SHELL)
     if test ! -e "$_CONFIG_SHELL" -a -e "${_CONFIG_SHELL}.exe"; then
         _CONFIG_SHELL="${_CONFIG_SHELL}.exe"
     fi
+                        dumpenv="$PERL $srcdir/build/win32/dumpenv4python.pl $ac_configure_args | "
     ;;
   esac
 
-  if test -d "$moz_config_dir"; then
-    (cd "$moz_config_dir"; eval $PYTHON $_topsrcdir/build/subconfigure.py dump "$_CONFIG_SHELL" $ac_configure_args)
-  else
-    mkdir -p "$moz_config_dir"
+  eval $dumpenv $PYTHON $_topsrcdir/build/subconfigure.py --prepare "$srcdir" "$moz_config_dir" "$_CONFIG_SHELL" $ac_configure_args 
+
+    if test "$no_recursion" != yes; then
+    trap '' EXIT
+    if ! $PYTHON $_topsrcdir/build/subconfigure.py "$objdir"; then
+        exit 1
+    fi
+    trap '[ "$?" != 0 ] && echo "------ config.log ------" && tail -n 25 config.log' EXIT
+
   fi
-  _save_cache_file="$cache_file"
-  cache_file="$moz_config_dir/config.cache"
-  cache_file="$(cd $(dirname "$cache_file"); pwd -W 2>/dev/null || pwd)/$(basename "$cache_file")"
-  
-
-
-if test "$no_recursion" != yes; then
-
-  # Remove --cache-file and --srcdir arguments so they do not pile up.
-  ac_sub_configure_args=
-  ac_prev=
-  for ac_arg in $ac_configure_args; do
-    if test -n "$ac_prev"; then
-      ac_prev=
-      continue
-    fi
-    case "$ac_arg" in
-    -cache-file | --cache-file | --cache-fil | --cache-fi \
-    | --cache-f | --cache- | --cache | --cach | --cac | --ca | --c)
-      ac_prev=cache_file ;;
-    -cache-file=* | --cache-file=* | --cache-fil=* | --cache-fi=* \
-    | --cache-f=* | --cache-=* | --cache=* | --cach=* | --cac=* | --ca=* | --c=*)
-      ;;
-    -srcdir | --srcdir | --srcdi | --srcd | --src | --sr)
-      ac_prev=srcdir ;;
-    -srcdir=* | --srcdir=* | --srcdi=* | --srcd=* | --src=* | --sr=*)
-      ;;
-    *) ac_sub_configure_args="$ac_sub_configure_args $ac_arg" ;;
-    esac
-  done
-
-  for ac_config_dir in $moz_config_dir; do
-
-    # Do not complain, so a configure script can configure whichever
-    # parts of a large source tree are present.
-    if test ! -d $srcdir/$moz_config_srcdir; then
-      continue
-    fi
-
-    echo configuring in $ac_config_dir
-
-    case "$srcdir" in
-    .) ;;
-    *)
-      if test -d ./$ac_config_dir || mkdir ./$ac_config_dir; then :;
-      else
-        { echo "configure: error: can not create `pwd`/$ac_config_dir" 1>&2; echo "configure: error: can not create `pwd`/$ac_config_dir" 1>&5; exit 1; }
-      fi
-      ;;
-    esac
-
-    ac_popdir=`pwd`
-    cd $ac_config_dir
-
-      # A "../" for each directory in /$ac_config_dir.
-      ac_dots=`echo $ac_config_dir|sed -e 's%^\./%%' -e 's%[^/]$%&/%' -e 's%[^/]*/%../%g'`
-
-    case "$srcdir" in
-    .) # No --srcdir option.  We are building in place.
-      ac_sub_srcdir=$srcdir ;;
-    /* | ?:/*) # Absolute path.
-      ac_sub_srcdir=$srcdir/$moz_config_srcdir ;;
-    *) # Relative path.
-      ac_sub_srcdir=$ac_dots$srcdir/$moz_config_srcdir ;;
-    esac
-
-    # Check for guested configure; otherwise get Cygnus style configure.
-    if test -f $ac_sub_srcdir/configure; then
-      ac_sub_configure=$ac_sub_srcdir/configure
-    elif test -f $ac_sub_srcdir/configure.in; then
-      ac_sub_configure=$ac_configure
-    else
-      echo "configure: warning: no configuration information is in $ac_config_dir" 1>&2
-      ac_sub_configure=
-    fi
-
-    # The recursion is here.
-    if test -n "$ac_sub_configure"; then
-
-      # Make the cache file name correct relative to the subdirectory.
-      case "$cache_file" in
-      /* | ?:/*) ac_sub_cache_file=$cache_file ;;
-      *) # Relative path.
-        ac_sub_cache_file="$ac_dots$cache_file" ;;
-      esac
-  case "$ac_given_INSTALL" in
-        [/$]*) INSTALL="$ac_given_INSTALL" ;;
-        *) INSTALL="$ac_dots$ac_given_INSTALL" ;;
-        esac
-
-      echo "running ${CONFIG_SHELL-/bin/sh} $ac_sub_configure $ac_sub_configure_args --cache-file=$ac_sub_cache_file --srcdir=$ac_sub_srcdir"
-      # The eval makes quoting arguments work.
-      if eval ${CONFIG_SHELL-/bin/sh} $ac_sub_configure $ac_sub_configure_args --cache-file=$ac_sub_cache_file --srcdir=$ac_sub_srcdir
-      then :
-      else
-        { echo "configure: error: $ac_sub_configure failed for $ac_config_dir" 1>&2; echo "configure: error: $ac_sub_configure failed for $ac_config_dir" 1>&5; exit 1; }
-      fi
-    fi
-
-    cd $ac_popdir
-  done
-fi
-
-
-
-  cache_file="$_save_cache_file"
-  (cd "$moz_config_dir"; $PYTHON $_topsrcdir/build/subconfigure.py adjust $ac_sub_configure)
 done
-
-trap '[ "$?" != 0 ] && echo "------ config.log ------" && tail -n 25 config.log' EXIT
-
 
     ac_configure_args="$_SUBDIR_CONFIG_ARGS"
     CONFIG_FILES=$old_config_files

@@ -8,6 +8,7 @@
 
 #include "gmp-video-codec.h"
 #include "gmp-video-frame-encoded.h"
+#include "gmp-audio-codec.h"
 
 namespace IPC {
 
@@ -23,6 +24,13 @@ struct ParamTraits<GMPVideoFrameType>
 : public ContiguousEnumSerializer<GMPVideoFrameType,
                                   kGMPKeyFrame,
                                   kGMPSkipFrame>
+{};
+
+template <>
+struct ParamTraits<GMPAudioCodecType>
+: public ContiguousEnumSerializer<GMPAudioCodecType,
+                                  kGMPAudioCodecAAC,
+                                  kGMPAudioCodecInvalid>
 {};
 
 template <>

@@ -26,7 +26,7 @@
 #define mozilla_pkix__pkixtypes_h
 
 #include "pkix/Input.h"
-#include "prtime.h"
+#include "pkix/Time.h"
 #include "mozilla/StandardInteger.h"
 
 namespace mozilla { namespace pkix {
@@ -274,7 +274,7 @@ public:
   // checker.Check is responsible for limiting the recursion to a reasonable
   // limit.
   virtual Result FindIssuer(Input encodedIssuerName,
-                            IssuerChecker& checker, PRTime time) = 0;
+                            IssuerChecker& checker, Time time) = 0;
 
   // Called as soon as we think we have a valid chain but before revocation
   // checks are done. This function can be used to compute additional checks,
@@ -302,7 +302,7 @@ public:
   // issuerCertToDup is only non-const so CERT_DupCertificate can be called on
   // it.
   virtual Result CheckRevocation(EndEntityOrCA endEntityOrCA,
-                                 const CertID& certID, PRTime time,
+                                 const CertID& certID, Time time,
                     /*optional*/ const Input* stapledOCSPresponse,
                     /*optional*/ const Input* aiaExtension) = 0;
 

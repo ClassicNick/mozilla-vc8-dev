@@ -17,7 +17,7 @@
 #ifndef GMP_AUDIO_FRAME_h_
 #define GMP_AUDIO_FRAME_h_
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 #include "gmp-errors.h"
 #include "gmp-decryption.h"
 
@@ -48,10 +48,6 @@ public:
   virtual uint64_t TimeStamp() = 0;
   virtual const uint8_t* Buffer() const = 0;
   virtual uint8_t*       Buffer() = 0;
-
-  // Get metadata describing how this frame is encrypted, or nullptr if the
-  // buffer is not encrypted.
-  virtual const GMPEncryptedBufferMetadata* GetDecryptionData() const = 0;
 };
 
 #endif // GMP_AUDIO_FRAME_h_

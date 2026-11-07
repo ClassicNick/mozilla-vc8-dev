@@ -17,7 +17,7 @@
 #ifndef GMP_AUDIO_CODEC_h_
 #define GMP_AUDIO_CODEC_h_
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 enum GMPAudioCodecType
 {

@@ -42,6 +42,7 @@ namespace gmp {
 
 class GMPVideoHostImpl;
 class GMPVideoEncodedFrameData;
+class GMPEncryptedBufferDataImpl;
 
 class GMPVideoEncodedFrameImpl: public GMPVideoEncodedFrame
 {
@@ -106,6 +107,7 @@ private:
   GMPVideoHostImpl* mHost;
   ipc::Shmem mBuffer;
   GMPBufferType mBufferType;
+  nsAutoPtr<GMPEncryptedBufferDataImpl> mCrypto;
 };
 
 } // namespace gmp

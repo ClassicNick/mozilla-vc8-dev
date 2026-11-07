@@ -693,8 +693,8 @@ APZCTreeManager::ReceiveInputEvent(WidgetInputEvent& aEvent,
 
   MOZ_ASSERT(NS_IsMainThread());
 
-  switch (aEvent.eventStructType) {
-    case NS_TOUCH_EVENT: {
+  switch (aEvent.mClass) {
+    case eTouchEventClass: {
       WidgetTouchEvent& touchEvent = *aEvent.AsTouchEvent();
       MultiTouchInput touchInput(touchEvent);
       nsEventStatus result = ProcessTouchInput(touchInput, aOutTargetGuid);

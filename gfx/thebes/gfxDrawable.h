@@ -39,7 +39,8 @@ public:
                         const gfxRect& aFillRect,
                         bool aRepeat,
                         const GraphicsFilter& aFilter,
-                        const gfxMatrix& aTransform = gfxMatrix()) = 0;
+                        const gfxMatrix& aTransform = gfxMatrix(),
+                        gfxFloat aOpacity = 1.0) = 0;
     virtual already_AddRefed<gfxImageSurface> GetAsImageSurface() { return nullptr; }
     virtual gfxIntSize Size() { return mSize; }
 
@@ -68,7 +69,8 @@ public:
                         const gfxRect& aFillRect,
                         bool aRepeat,
                         const GraphicsFilter& aFilter,
-                        const gfxMatrix& aTransform = gfxMatrix());
+                        const gfxMatrix& aTransform = gfxMatrix(),
+                        gfxFloat aOpacity = 1.0);
     
     virtual already_AddRefed<gfxImageSurface> GetAsImageSurface();
 
@@ -117,7 +119,8 @@ public:
                         const gfxRect& aFillRect,
                         bool aRepeat,
                         const GraphicsFilter& aFilter,
-                        const gfxMatrix& aTransform = gfxMatrix());
+                        const gfxMatrix& aTransform = gfxMatrix(),
+                        gfxFloat aOpacity = 1.0);
 
 protected:
     already_AddRefed<gfxSurfaceDrawable> MakeSurfaceDrawable(const GraphicsFilter aFilter = GraphicsFilter::FILTER_FAST);
@@ -140,7 +143,8 @@ public:
                         const gfxRect& aFillRect,
                         bool aRepeat,
                         const GraphicsFilter& aFilter,
-                        const gfxMatrix& aTransform = gfxMatrix());
+                        const gfxMatrix& aTransform = gfxMatrix(),
+                        gfxFloat aOpacity = 1.0);
 
 protected:
     already_AddRefed<gfxCallbackDrawable> MakeCallbackDrawable();
