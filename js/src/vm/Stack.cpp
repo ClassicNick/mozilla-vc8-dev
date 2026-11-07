@@ -12,8 +12,8 @@
 
 #include "gc/Marking.h"
 #ifdef JS_ION
-#include "jit/AsmJSFrameIterator.h"
-#include "jit/AsmJSModule.h"
+#include "asmjs/AsmJSFrameIterator.h"
+#include "asmjs/AsmJSModule.h"
 #include "jit/BaselineFrame.h"
 #include "jit/JitCompartment.h"
 #endif

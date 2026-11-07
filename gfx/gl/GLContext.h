@@ -27,7 +27,6 @@
 
 #include "GLDefs.h"
 #include "GLLibraryLoader.h"
-#include "gfx3DMatrix.h"
 #include "nsISupportsImpl.h"
 #include "plstr.h"
 #include "nsDataHashtable.h"

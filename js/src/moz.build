@@ -97,7 +97,6 @@ EXPORTS.js += [
 ]
 
 UNIFIED_SOURCES += [
-    'assembler/jit/ExecutableAllocator.cpp',
     'builtin/Eval.cpp',
     'builtin/Intl.cpp',
     'builtin/MapObject.cpp',
@@ -135,6 +134,7 @@ UNIFIED_SOURCES += [
     'irregexp/RegExpMacroAssembler.cpp',
     'irregexp/RegExpParser.cpp',
     'irregexp/RegExpStack.cpp',
+	'jit/ExecutableAllocator.cpp',
     'jsalloc.cpp',
     'jsapi.cpp',
     'jsbool.cpp',
@@ -247,6 +247,11 @@ if CONFIG['ENABLE_TRACE_LOGGING']:
 
 if CONFIG['ENABLE_ION']:
     UNIFIED_SOURCES += [
+		'asmjs/AsmJSFrameIterator.cpp',
+		'asmjs/AsmJSLink.cpp',
+		'asmjs/AsmJSModule.cpp',
+		'asmjs/AsmJSSignalHandlers.cpp',
+		'asmjs/AsmJSValidate.cpp',
         'irregexp/NativeRegExpMacroAssembler.cpp',
         'jit/AliasAnalysis.cpp',
         'jit/AsmJS.cpp',
@@ -362,13 +367,13 @@ if CONFIG['ENABLE_ION']:
 
 if CONFIG['OS_ARCH'] == 'WINNT':
     SOURCES += [
-        'assembler/jit/ExecutableAllocatorWin.cpp',
+        'jit/ExecutableAllocatorWin.cpp',
     ]
     # _CRT_RAND_S must be #defined before #including stdlib.h to get rand_s()
     DEFINES['_CRT_RAND_S'] = True
 else:
     SOURCES += [
-        'assembler/jit/ExecutableAllocatorPosix.cpp',
+        'jit/ExecutableAllocatorPosix.cpp',
     ]
 
 if CONFIG['ENABLE_ION']:

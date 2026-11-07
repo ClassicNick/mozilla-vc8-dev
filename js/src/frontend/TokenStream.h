@@ -469,7 +469,6 @@ class MOZ_STACK_CLASS TokenStream
     // asm.js reporter
     void reportAsmJSError(uint32_t offset, unsigned errorNumber, ...);
 
-#ifdef JS_HAS_TEMPLATE_STRINGS
     JSAtom *getRawTemplateStringAtom() {
         JS_ASSERT(currentToken().type == TOK_TEMPLATE_HEAD ||
                   currentToken().type == TOK_NO_SUBS_TEMPLATE);
@@ -497,7 +496,6 @@ class MOZ_STACK_CLASS TokenStream
         }
         return AtomizeChars(cx, charbuf.begin(), charbuf.length());
     }
-#endif
 
   private:
     // These are private because they should only be called by the tokenizer

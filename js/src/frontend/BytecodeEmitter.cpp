@@ -26,9 +26,9 @@
 #include "jstypes.h"
 #include "jsutil.h"
 
+#include "asmjs/AsmJSLink.h"
 #include "frontend/Parser.h"
 #include "frontend/TokenStream.h"
-#include "jit/AsmJSLink.h"
 #include "vm/Debugger.h"
 
 #include "jsatominlines.h"
@@ -1036,7 +1036,6 @@ EmitObjectOp(ExclusiveContext *cx, ObjectBox *objbox, JSOp op, BytecodeEmitter *
     return EmitInternedObjectOp(cx, bce->objectList.add(objbox), op, bce);
 }
 
-#ifdef JS_HAS_TEMPLATE_STRINGS
 static bool
 EmitObjectPairOp(ExclusiveContext *cx, ObjectBox *objbox1, ObjectBox *objbox2, JSOp op,
                  BytecodeEmitter *bce)
@@ -1045,7 +1044,6 @@ EmitObjectPairOp(ExclusiveContext *cx, ObjectBox *objbox1, ObjectBox *objbox2, J
     bce->objectList.add(objbox2);
     return EmitInternedObjectOp(cx, index, op, bce);
 }
-#endif
 
 static bool
 EmitRegExp(ExclusiveContext *cx, uint32_t index, BytecodeEmitter *bce)
@@ -3448,7 +3446,6 @@ MaybeEmitLetGroupDecl(ExclusiveContext *cx, BytecodeEmitter *bce, ParseNode *pn,
     return true;
 }
 
-#ifdef JS_HAS_TEMPLATE_STRINGS
 static bool
 EmitTemplateString(ExclusiveContext *cx, BytecodeEmitter *bce, ParseNode *pn)
 {
@@ -3478,7 +3475,6 @@ EmitTemplateString(ExclusiveContext *cx, BytecodeEmitter *bce, ParseNode *pn)
     }
     return true;
 }
-#endif
 
 static bool
 EmitVariables(ExclusiveContext *cx, BytecodeEmitter *bce, ParseNode *pn, VarEmitOption emitOption,
@@ -3860,9 +3856,7 @@ ParseNode::getConstantValue(ExclusiveContext *cx, MutableHandleValue vp)
       case PNK_NUMBER:
         vp.setNumber(pn_dval);
         return true;
-#ifdef JS_HAS_TEMPLATE_STRINGS
       case PNK_TEMPLATE_STRING:
-#endif
       case PNK_STRING:
         vp.setString(pn_atom);
         return true;
@@ -3877,28 +3871,20 @@ ParseNode::getConstantValue(ExclusiveContext *cx, MutableHandleValue vp)
         return true;
       case PNK_SPREAD:
         return false;
-#ifdef JS_HAS_TEMPLATE_STRINGS
       case PNK_CALLSITEOBJ:
-#endif
       case PNK_ARRAY: {
         RootedValue value(cx);
         unsigned count;
         ParseNode *pn;
 
-#ifdef JS_HAS_TEMPLATE_STRINGS
-        bool isArray = (getKind() == PNK_ARRAY);
-
-        if (!isArray) {
+        if (getKind() == PNK_CALLSITEOBJ) {
             count = pn_count - 1;
             pn = pn_head->pn_next;
         } else {
-#endif
             JS_ASSERT(isOp(JSOP_NEWINIT) && !(pn_xflags & PNX_NONCONST));
             count = pn_count;
             pn = pn_head;
-#ifdef JS_HAS_TEMPLATE_STRINGS
         }
-#endif
 
         RootedObject obj(cx, NewDenseAllocatedArray(cx, count, nullptr, MaybeSingletonObject));
         if (!obj)
@@ -3995,7 +3981,6 @@ EmitSingletonInitialiser(ExclusiveContext *cx, BytecodeEmitter *bce, ParseNode *
     return EmitObjectOp(cx, objbox, JSOP_OBJECT, bce);
 }
 
-#ifdef JS_HAS_TEMPLATE_STRINGS
 static bool
 EmitCallSiteObject(ExclusiveContext *cx, BytecodeEmitter *bce, ParseNode *pn)
 {
@@ -4020,7 +4005,6 @@ EmitCallSiteObject(ExclusiveContext *cx, BytecodeEmitter *bce, ParseNode *pn)
 
     return EmitObjectPairOp(cx, objbox1, objbox2, JSOP_CALLSITEOBJ, bce);
 }
-#endif
 
 /* See the SRC_FOR source note offsetBias comments later in this file. */
 JS_STATIC_ASSERT(JSOP_NOP_LENGTH == 1);
@@ -5637,12 +5621,7 @@ EmitArray(ExclusiveContext *cx, BytecodeEmitter *bce, ParseNode *pn, uint32_t co
 static bool
 EmitCallOrNew(ExclusiveContext *cx, BytecodeEmitter *bce, ParseNode *pn)
 {
-    bool callop = pn->isKind(PNK_CALL)
-#ifdef JS_HAS_TEMPLATE_STRINGS
-               || pn->isKind(PNK_TAGGED_TEMPLATE)
-#endif
-    ;
-
+    bool callop = pn->isKind(PNK_CALL) || pn->isKind(PNK_TAGGED_TEMPLATE);
     /*
      * Emit callable invocation or operator new (constructor call) code.
      * First, emit code for the left operand to evaluate the callable or
@@ -6665,9 +6644,7 @@ frontend::EmitTree(ExclusiveContext *cx, BytecodeEmitter *bce, ParseNode *pn)
         break;
 
       case PNK_NEW:
-#ifdef JS_HAS_TEMPLATE_STRINGS
       case PNK_TAGGED_TEMPLATE:
-#endif
       case PNK_CALL:
       case PNK_GENEXP:
         ok = EmitCallOrNew(cx, bce, pn);
@@ -6704,11 +6681,11 @@ frontend::EmitTree(ExclusiveContext *cx, BytecodeEmitter *bce, ParseNode *pn)
             return false;
         break;
       }
-#ifdef JS_HAS_TEMPLATE_STRINGS
+
       case PNK_CALLSITEOBJ:
             ok = EmitCallSiteObject(cx, bce, pn);
             break;
-#endif
+
       case PNK_ARRAY:
         if (!(pn->pn_xflags & PNX_NONCONST) && pn->pn_head && bce->checkSingletonContext())
             ok = EmitSingletonInitialiser(cx, bce, pn);
@@ -6729,13 +6706,11 @@ frontend::EmitTree(ExclusiveContext *cx, BytecodeEmitter *bce, ParseNode *pn)
             return false;
         break;
 
-#ifdef JS_HAS_TEMPLATE_STRINGS
       case PNK_TEMPLATE_STRING_LIST:
         ok = EmitTemplateString(cx, bce, pn);
         break;
 
       case PNK_TEMPLATE_STRING:
-#endif
       case PNK_STRING:
         ok = EmitAtomOp(cx, pn, JSOP_STRING, bce);
         break;

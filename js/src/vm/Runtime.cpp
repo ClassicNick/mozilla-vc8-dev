@@ -30,10 +30,10 @@
 #include "jswrapper.h"
 
 #if defined(JS_ION)
+#include "asmjs/AsmJSSignalHandlers.h"
 # include "assembler/assembler/MacroAssembler.h"
 #endif
 #include "jit/arm/Simulator-arm.h"
-#include "jit/AsmJSSignalHandlers.h"
 #include "jit/JitCompartment.h"
 #include "jit/mips/Simulator-mips.h"
 #include "jit/PcScriptCache.h"
