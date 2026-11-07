@@ -1516,8 +1516,7 @@ class JS_PUBLIC_API(ContextOptions) {
     ContextOptions()
       : privateIsNSISupports_(false),
         dontReportUncaught_(false),
-        noDefaultCompartmentObject_(false),
-        noScriptRval_(false)
+        noDefaultCompartmentObject_(false)
     {
     }
 
@@ -1551,21 +1550,10 @@ class JS_PUBLIC_API(ContextOptions) {
         return *this;
     }
 
-    bool noScriptRval() const { return noScriptRval_; }
-    ContextOptions &setNoScriptRval(bool flag) {
-        noScriptRval_ = flag;
-        return *this;
-    }
-    ContextOptions &toggleNoScriptRval() {
-        noScriptRval_ = !noScriptRval_;
-        return *this;
-    }
-
   private:
     bool privateIsNSISupports_ : 1;
     bool dontReportUncaught_ : 1;
     bool noDefaultCompartmentObject_ : 1;
-    bool noScriptRval_ : 1;
 };
 
 JS_PUBLIC_API(ContextOptions &)

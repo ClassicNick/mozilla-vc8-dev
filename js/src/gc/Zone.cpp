@@ -68,7 +68,7 @@ bool Zone::init(bool isSystemArg)
 }
 
 void
-Zone::setNeedsBarrier(bool needs, ShouldUpdateJit updateJit)
+Zone::setNeedsIncrementalBarrier(bool needs, ShouldUpdateJit updateJit)
 {
 #ifdef JS_ION
     if (updateJit == UpdateJit && needs != jitUsingBarriers_) {
@@ -81,7 +81,7 @@ Zone::setNeedsBarrier(bool needs, ShouldUpdateJit updateJit)
         JS_ASSERT(!runtimeFromMainThread()->exclusiveThreadsPresent());
 
     JS_ASSERT_IF(needs, canCollect());
-    needsBarrier_ = needs;
+    needsIncrementalBarrier_ = needs;
 }
 
 void

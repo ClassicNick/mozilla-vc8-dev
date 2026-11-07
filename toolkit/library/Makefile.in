@@ -8,10 +8,6 @@ ifeq ($(OS_ARCH),WINNT)
 endif
 endif
 
-ifeq ($(MOZ_WIDGET_TOOLKIT),cocoa)
-CXXFLAGS += $(TK_CFLAGS)
-endif
-
 include $(topsrcdir)/toolkit/library/libxul.mk
 # Please don't remove the following comment, because it does some magic:
 # libxul.mk adds FT2_LIBS, NSS_LIBS and NSPR_LIBS, but we want to have the

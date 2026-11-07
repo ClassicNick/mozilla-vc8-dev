@@ -214,7 +214,7 @@ public:
 private:
   nsTArray<ReadbackProcessor::Update> mReadbackUpdates;
   // This array is used to keep the layers alive until the callback.
-  vector<RefPtr<Layer>> mLayerRefs;
+  vector<RefPtr<Layer> > mLayerRefs;
 
   nsIntRect mBufferRect;
   nsIntPoint mBufferRotation;
