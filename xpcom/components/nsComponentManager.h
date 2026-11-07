@@ -256,7 +256,7 @@ public:
 
   // The KnownModule is kept alive by these members, it is
   // referenced by pointer from the factory entries.
-  nsTArray<nsAutoPtr<KnownModule>> mKnownStaticModules;
+  nsTArray<nsAutoPtr<KnownModule> > mKnownStaticModules;
   // The key is the URI string of the module
   nsClassHashtable<nsCStringHashKey, KnownModule> mKnownModules;
 

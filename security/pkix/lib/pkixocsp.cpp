@@ -639,7 +639,7 @@ SingleResponse(Reader& input, Context& context)
                             Time::ONE_DAY_IN_SECONDS) != Success) {
       // This could only happen if we're dealing with times beyond the year
       // 10,000AD.
-      return Result::ERROR_OCSP_FUTURE_RESPONSE;
+      return ERROR_OCSP_FUTURE_RESPONSE;
     }
     if (nextUpdate <= notAfter) {
       notAfter = nextUpdate;
@@ -651,7 +651,7 @@ SingleResponse(Reader& input, Context& context)
     if (notAfter.AddSeconds(Time::ONE_DAY_IN_SECONDS) != Success) {
       // This could only happen if we're dealing with times beyond the year
       // 10,000AD.
-      return Result::ERROR_OCSP_FUTURE_RESPONSE;
+      return ERROR_OCSP_FUTURE_RESPONSE;
     }
   }
 
