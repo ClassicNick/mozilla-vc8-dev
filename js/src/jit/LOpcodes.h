@@ -16,6 +16,8 @@
     _(Pointer)                      \
     _(Double)                       \
     _(Float32)                      \
+    _(SimdExtractElementI)          \
+    _(SimdExtractElementF)          \
     _(Value)                        \
     _(CloneLiteral)                 \
     _(Parameter)                    \
@@ -198,6 +200,7 @@
     _(ArrayPushV)                   \
     _(ArrayPushT)                   \
     _(ArrayConcat)                  \
+    _(ArrayJoin)                    \
     _(StoreElementHoleV)            \
     _(StoreElementHoleT)            \
     _(LoadTypedArrayElement)        \

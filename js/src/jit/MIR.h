@@ -1233,6 +1233,47 @@ class MConstant : public MNullaryInstruction
     ALLOW_CLONE(MConstant)
 };
 
+// Extracts a lane element from a given vector type, given by its lane symbol.
+class MSimdExtractElement : public MUnaryInstruction
+{
+  protected:
+    SimdLane lane_;
+
+    MSimdExtractElement(MDefinition *obj, MIRType type, SimdLane lane)
+      : MUnaryInstruction(obj), lane_(lane)
+    {
+        JS_ASSERT(IsSimdType(obj->type()));
+        JS_ASSERT(uint32_t(lane) < SimdTypeToLength(obj->type()));
+        JS_ASSERT(!IsSimdType(type));
+        JS_ASSERT(SimdTypeToScalarType(obj->type()) == type);
+        setResultType(type);
+    }
+
+  public:
+    INSTRUCTION_HEADER(SimdExtractElement);
+    static MSimdExtractElement *NewAsmJS(TempAllocator &alloc, MDefinition *obj, MIRType type,
+                                         SimdLane lane)
+    {
+        return new(alloc) MSimdExtractElement(obj, type, lane);
+    }
+
+    SimdLane lane() const {
+        return lane_;
+    }
+
+    AliasSet getAliasSet() const {
+        return AliasSet::None();
+    }
+    bool congruentTo(const MDefinition *ins) const {
+        if (!ins->isSimdExtractElement())
+            return false;
+        const MSimdExtractElement *other = ins->toSimdExtractElement();
+        if (other->lane_ != lane_)
+            return false;
+        return congruentIfOperandsEqual(other);
+    }
+};
+
 // Deep clone a constant JSObject.
 class MCloneLiteral
   : public MUnaryInstruction,
@@ -7123,6 +7164,39 @@ class MArrayConcat
     bool possiblyCalls() const {
         return true;
     }
+};
+
+class MArrayJoin
+    : public MBinaryInstruction,
+      public MixPolicy<ObjectPolicy<0>, StringPolicy<1> >
+{
+    MArrayJoin(MDefinition *array, MDefinition *sep)
+        : MBinaryInstruction(array, sep)
+    {
+        setResultType(MIRType_String);
+    }
+  public:
+    INSTRUCTION_HEADER(ArrayJoin)
+    static MArrayJoin *New(TempAllocator &alloc, MDefinition *array, MDefinition *sep)
+    {
+        return new (alloc) MArrayJoin(array, sep);
+    }
+    TypePolicy *typePolicy() {
+        return this;
+    }
+    MDefinition *array() const {
+        return getOperand(0);
+    }
+    MDefinition *sep() const {
+        return getOperand(1);
+    }
+    bool possiblyCalls() const {
+        return true;
+    }
+    virtual AliasSet getAliasSet() const {
+        return AliasSet::Load(AliasSet::Element | AliasSet::ObjectFields);
+    }
+    MDefinition *foldsTo(TempAllocator &alloc);
 };
 
 class MLoadTypedArrayElement

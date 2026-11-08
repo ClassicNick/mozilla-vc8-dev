@@ -2759,6 +2759,18 @@ LIRGenerator::visitArrayConcat(MArrayConcat *ins)
 }
 
 bool
+LIRGenerator::visitArrayJoin(MArrayJoin *ins)
+{
+    JS_ASSERT(ins->type() == MIRType_String);
+    JS_ASSERT(ins->array()->type() == MIRType_Object);
+    JS_ASSERT(ins->sep()->type() == MIRType_String);
+
+    LArrayJoin *lir = new(alloc()) LArrayJoin(useRegisterAtStart(ins->array()),
+                                              useRegisterAtStart(ins->sep()));
+    return defineReturn(lir, ins) && assignSafepoint(lir, ins);
+}
+
+bool
 LIRGenerator::visitStringSplit(MStringSplit *ins)
 {
     JS_ASSERT(ins->type() == MIRType_Object);
@@ -3636,6 +3648,28 @@ LIRGenerator::visitRecompileCheck(MRecompileCheck *ins)
     if (!add(lir, ins))
         return false;
     return assignSafepoint(lir, ins);
+}
+
+bool
+LIRGenerator::visitSimdExtractElement(MSimdExtractElement *ins)
+{
+    JS_ASSERT(IsSimdType(ins->input()->type()));
+    JS_ASSERT(!IsSimdType(ins->type()));
+
+    if (ins->input()->type() == MIRType_Int32x4) {
+        // Note: there could be int16x8 in the future, which doesn't use the
+        // same instruction. We either need to pass the arity or create new LIns.
+        LUse use = useRegisterAtStart(ins->input());
+        return define(new(alloc()) LSimdExtractElementI(use, ins->lane()), ins);
+    }
+
+    if (ins->input()->type() == MIRType_Float32x4) {
+        LUse use = useRegisterAtStart(ins->input());
+        return define(new(alloc()) LSimdExtractElementF(use, ins->lane()), ins);
+    }
+
+    MOZ_ASSUME_UNREACHABLE("Unknown SIMD kind when extracting element");
+    return false;
 }
 
 static void
