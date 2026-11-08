@@ -173,9 +173,9 @@ WebGLContext::BindFramebuffer(GLenum target, WebGLFramebuffer *wfb)
     if (!wfb) {
         gl->fBindFramebuffer(target, 0);
     } else {
+        wfb->BindTo(target);
         GLuint framebuffername = wfb->GLName();
         gl->fBindFramebuffer(target, framebuffername);
-        wfb->SetHasEverBeenBound(true);
     }
 
     mBoundFramebuffer = wfb;
@@ -198,7 +198,7 @@ WebGLContext::BindRenderbuffer(GLenum target, WebGLRenderbuffer *wrb)
         return;
 
     if (wrb)
-        wrb->SetHasEverBeenBound(true);
+        wrb->BindTo(target);
 
     MakeContextCurrent();
 

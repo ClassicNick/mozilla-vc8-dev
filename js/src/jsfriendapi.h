@@ -421,6 +421,13 @@ SetSourceHook(JSRuntime *rt, SourceHook *hook);
 extern JS_FRIEND_API(SourceHook *)
 ForgetSourceHook(JSRuntime *rt);
 
+#ifdef NIGHTLY_BUILD
+typedef void (*AssertOnScriptEntryHook)(JSContext *cx, JS::HandleScript script);
+
+extern JS_FRIEND_API(void)
+SetAssertOnScriptEntryHook(JSRuntime *rt, AssertOnScriptEntryHook hook);
+#endif
+
 extern JS_FRIEND_API(JS::Zone *)
 GetCompartmentZone(JSCompartment *comp);
 
