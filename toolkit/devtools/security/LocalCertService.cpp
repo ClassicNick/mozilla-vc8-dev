@@ -352,7 +352,7 @@ private:
   nsMainThreadPtrHandle<nsILocalCertCallback> mCallback;
 };
 
-NS_IMPL_ISUPPORTS(LocalCertService, nsILocalCertService)
+NS_IMPL_ISUPPORTS1(LocalCertService, nsILocalCertService)
 
 LocalCertService::LocalCertService()
 {
