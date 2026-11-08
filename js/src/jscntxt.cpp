@@ -253,7 +253,7 @@ js::DestroyContext(JSContext *cx, DestroyContextMode mode)
     if (mode == DCM_FORCE_GC) {
         JS_ASSERT(!rt->isHeapBusy());
         JS::PrepareForFullGC(rt);
-        rt->gc.gc(GC_NORMAL, JS::gcreason::DESTROY_CONTEXT);
+        GC(rt, GC_NORMAL, JS::gcreason::DESTROY_CONTEXT);
     }
     js_delete_poison(cx);
 }
@@ -998,7 +998,7 @@ js::InvokeInterruptCallback(JSContext *cx)
     // callbacks.
     rt->resetJitStackLimit();
 
-    cx->gcIfNeeded();
+    js::gc::GCIfNeeded(cx);
 
 #ifdef JS_ION
     rt->interruptPar = false;
