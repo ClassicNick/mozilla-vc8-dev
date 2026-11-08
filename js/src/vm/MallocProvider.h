@@ -115,6 +115,12 @@ struct MallocProvider
         return (T *)calloc_(numElems * sizeof(T));
     }
 
+    template <class T>
+    T *pod_realloc(T *prior, size_t oldSize, size_t newSize) {
+        return (T *)realloc_(prior, oldSize * sizeof(T), newSize * sizeof(T));
+    }
+
+
     JS_DECLARE_NEW_METHODS(new_, malloc_, MOZ_ALWAYS_INLINE)
 };
 

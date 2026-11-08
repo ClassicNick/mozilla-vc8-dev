@@ -50,7 +50,7 @@ private:
 
   void TimerExpired(Context* aContext);
 
-  nsTHashtable<nsPtrHashKey<Context>> mTimers;
+  nsTHashtable<nsPtrHashKey<Context> > mTimers;
 
   nsCOMPtr<nsIThread> mGMPThread;
 };

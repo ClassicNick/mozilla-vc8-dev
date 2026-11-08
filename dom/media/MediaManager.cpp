@@ -1539,7 +1539,7 @@ MediaManager::GetUserMedia(bool aPrivileged,
 #endif
 
   if (c.mVideo.IsMediaTrackConstraints() && !aPrivileged) {
-    auto& tc = c.mVideo.GetAsMediaTrackConstraints();
+    MediaTrackConstraints& tc = c.mVideo.GetAsMediaTrackConstraints();
     // only allow privileged content to set the window id
     if (tc.mBrowserWindow.WasPassed()) {
       tc.mBrowserWindow.Construct(-1);

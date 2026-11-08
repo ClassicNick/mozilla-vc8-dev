@@ -203,17 +203,34 @@ loop.panel = (function(_, mozL10n) {
       }
     },
 
+    _generateMailto: function() {
+      return encodeURI([
+        "mailto:?subject=" + __("share_email_subject") + "&",
+        "body=" + __("share_email_body", {callUrl: this.state.callUrl})
+      ].join(""));
+    },
+
     render: function() {
       // XXX setting elem value from a state (in the callUrl input)
       // makes it immutable ie read only but that is fine in our case.
       // readOnly attr will suppress a warning regarding this issue
       // from the react lib.
       var cx = React.addons.classSet;
+      var inputCSSClass = {
+        "pending": this.state.pending,
+        "callUrl": !this.state.pending
+      };
       return (
         <PanelLayout summary={__("share_link_header_text")}>
           <div className="invite">
             <input type="url" value={this.state.callUrl} readOnly="true"
-                   className={cx({'pending': this.state.pending})} />
+                   className={cx(inputCSSClass)} />
+          <a className={cx({btn: true, hide: !this.state.callUrl})}
+             href={this._generateMailto()}>
+           <span>
+            {__("share_button")}
+           </span>
+          </a>
           </div>
         </PanelLayout>
       );
