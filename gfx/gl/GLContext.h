@@ -2919,7 +2919,7 @@ public:
 
 protected:
     friend class GLScreenBuffer;
-    UniquePtr<GLScreenBuffer> mScreen;
+    GLScreenBuffer* mScreen;
 
     void DestroyScreenBuffer();
 
@@ -2945,7 +2945,7 @@ public:
     }
 
     GLScreenBuffer* Screen() const {
-        return mScreen.get();
+        return mScreen;
     }
 
     bool PublishFrame();
