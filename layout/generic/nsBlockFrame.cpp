@@ -48,6 +48,7 @@
 #include "TextOverflow.h"
 #include "nsIFrameInlines.h"
 #include "CounterStyleManager.h"
+#include "nsISelection.h"
 
 #include "nsBidiPresUtils.h"
 

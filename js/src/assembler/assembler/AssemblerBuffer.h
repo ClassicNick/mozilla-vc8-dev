@@ -30,10 +30,6 @@
 #ifndef assembler_assembler_AssemblerBuffer_h
 #define assembler_assembler_AssemblerBuffer_h
 
-#include "assembler/wtf/Platform.h"
-
-#if ENABLE_ASSEMBLER
-
 #include <string.h>
 #include <limits.h>
 #include <stdarg.h>
@@ -338,7 +334,5 @@ namespace JSC {
     };
 
 } // namespace JSC
-
-#endif // ENABLE(ASSEMBLER)
 
 #endif /* assembler_assembler_AssemblerBuffer_h */
