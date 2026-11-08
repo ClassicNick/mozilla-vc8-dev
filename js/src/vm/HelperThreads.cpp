@@ -429,11 +429,11 @@ GlobalHelperThreadState::ensureInitialized()
 
     for (size_t i = 0; i < threadCount; i++) {
         HelperThread &helper = threads[i];
-        helper.threadData.construct(static_cast<JSRuntime *>(nullptr));
+        helper.threadData.emplace(static_cast<JSRuntime *>(nullptr));
         helper.thread = PR_CreateThread(PR_USER_THREAD,
                                         HelperThread::ThreadMain, &helper,
                                         PR_PRIORITY_NORMAL, PR_GLOBAL_THREAD, PR_JOINABLE_THREAD, HELPER_STACK_SIZE);
-        if (!helper.thread || !helper.threadData.ref().init())
+        if (!helper.thread || !helper.threadData->init())
             CrashAtUnhandlableOOM("GlobalHelperThreadState::ensureInitialized");
     }
 
@@ -823,8 +823,7 @@ HelperThread::destroy()
         PR_JoinThread(thread);
     }
 
-    if (!threadData.empty())
-        threadData.destroy();
+    threadData.reset();
 }
 
 #ifdef MOZ_NUWA_PROCESS
@@ -863,7 +862,7 @@ HelperThread::handleAsmJSWorkload()
 
     do {
         AutoUnlockHelperThreadState unlock;
-        PerThreadData::AutoEnterRuntime enter(threadData.addr(), asmData->runtime);
+        PerThreadData::AutoEnterRuntime enter(threadData.ptr(), asmData->runtime);
 
         jit::IonContext icx(asmData->mir->compartment->runtime(),
                             asmData->mir->compartment,
@@ -937,7 +936,7 @@ HelperThread::handleIonWorkload()
 
     {
         AutoUnlockHelperThreadState unlock;
-        PerThreadData::AutoEnterRuntime enter(threadData.addr(),
+        PerThreadData::AutoEnterRuntime enter(threadData.ptr(),
                                               ionBuilder->script()->runtimeFromAnyThread());
         jit::IonContext ictx(jit::CompileRuntime::get(rt),
                              jit::CompileCompartment::get(ionBuilder->script()->compartment()),
@@ -1017,7 +1016,7 @@ void
 ExclusiveContext::setHelperThread(HelperThread *thread)
 {
     helperThread_ = thread;
-    perThreadData = thread->threadData.addr();
+    perThreadData = thread->threadData.ptr();
 }
 
 frontend::CompileError &
@@ -1050,7 +1049,7 @@ HelperThread::handleParseWorkload()
 
     {
         AutoUnlockHelperThreadState unlock;
-        PerThreadData::AutoEnterRuntime enter(threadData.addr(),
+        PerThreadData::AutoEnterRuntime enter(threadData.ptr(),
                                               parseTask->exclusiveContextGlobal->runtimeFromAnyThread());
         SourceBufferHolder srcBuf(parseTask->chars, parseTask->length,
                                   SourceBufferHolder::NoOwnership);
@@ -1206,7 +1205,7 @@ HelperThread::threadLoop()
     JS::AutoSuppressGCAnalysis nogc;
     AutoLockHelperThreadState lock;
 
-    js::TlsPerThreadData.set(threadData.addr());
+    js::TlsPerThreadData.set(threadData.ptr());
 
     // Compute the thread's stack limit, for over-recursed checks.
     uintptr_t stackLimit = GetNativeStackBase();
@@ -1215,8 +1214,8 @@ HelperThread::threadLoop()
 #else
     stackLimit -= HELPER_STACK_QUOTA;
 #endif
-    for (size_t i = 0; i < ArrayLength(threadData.ref().nativeStackLimit); i++)
-        threadData.ref().nativeStackLimit[i] = stackLimit;
+    for (size_t i = 0; i < ArrayLength(threadData->nativeStackLimit); i++)
+        threadData->nativeStackLimit[i] = stackLimit;
 
     while (true) {
         JS_ASSERT(idle());
