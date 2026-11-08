@@ -12,11 +12,11 @@
 extern PRLogModuleInfo* GetMediaSourceLog();
 extern PRLogModuleInfo* GetMediaSourceAPILog();
 
-#define MSE_DEBUG(...) PR_LOG(GetMediaSourceLog(), PR_LOG_DEBUG, (__VA_ARGS__))
-#define MSE_API(...) PR_LOG(GetMediaSourceAPILog(), PR_LOG_DEBUG, (__VA_ARGS__))
+#define MSE_DEBUG(a) PR_LOG(GetMediaSourceLog(), PR_LOG_DEBUG, (a))
+#define MSE_API(a) PR_LOG(GetMediaSourceAPILog(), PR_LOG_DEBUG, (a))
 #else
-#define MSE_DEBUG(...)
-#define MSE_API(...)
+#define MSE_DEBUG(a)
+#define MSE_API(a)
 #endif
 
 namespace mozilla {

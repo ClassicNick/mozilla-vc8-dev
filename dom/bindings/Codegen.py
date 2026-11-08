@@ -2468,7 +2468,7 @@ class CGJsonifyAttributesMethod(CGAbstractMethod):
                       if (!get_${name}(aCx, obj, self, JSJitGetterCallArgs(&temp))) {
                         return false;
                       }
-                      if (!JS_DefineProperty(aCx, aResult, "${name}", temp, JSPROP_ENUMERATE)) {
+                      if (!JS_DefineProperty(aCx, aResult, "${name}", (JS::HandleValue) temp, JSPROP_ENUMERATE)) {
                         return false;
                       }
                     }

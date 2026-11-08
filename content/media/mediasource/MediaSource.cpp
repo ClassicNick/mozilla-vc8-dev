@@ -337,7 +337,7 @@ MediaSource::GetBuffered(TimeRanges* aBuffered)
     return;
   }
 
-  nsTArray<nsRefPtr<TimeRanges>> ranges;
+  nsTArray<nsRefPtr<TimeRanges> > ranges;
   for (uint32_t i = 0; i < mActiveSourceBuffers->Length(); ++i) {
     bool found;
     SourceBuffer* sourceBuffer = mActiveSourceBuffers->IndexedGetter(i, found);
