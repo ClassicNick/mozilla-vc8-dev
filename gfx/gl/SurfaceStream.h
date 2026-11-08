@@ -34,9 +34,9 @@ public:
     static SurfaceStreamType ChooseGLStreamType(OMTC omtc,
                                                 bool preserveBuffer);
 
-    static TemporaryRef<SurfaceStream> CreateForType(SurfaceStreamType type,
-                                                     mozilla::gl::GLContext* glContext,
-                                                     SurfaceStream* prevStream = nullptr);
+    static SurfaceStream* CreateForType(SurfaceStreamType type,
+                                        mozilla::gl::GLContext* glContext,
+                                        SurfaceStream* prevStream = nullptr);
 
     const SurfaceStreamType mType;
 
