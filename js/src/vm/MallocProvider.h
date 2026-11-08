@@ -23,6 +23,10 @@
  *       - TempAllocPolicy: Adds automatic error reporting to the provided
  *         Context when allocations fail.
  *
+ *       - ContextAllocPolicy: forwards to the JSContext MallocProvider.
+ *
+ *       - RuntimeAllocPolicy: forwards to the JSRuntime MallocProvider.
+ *
  *   - MallocProvider. A mixin base class that handles automatically updating
  *     the GC's state in response to allocations that are tied to a GC lifetime
  *     or are for a particular GC purpose. These allocators must only be used
@@ -52,13 +56,6 @@ struct MallocProvider
         client->updateMallocCounter(bytes);
         void *p = js_malloc(bytes);
         return MOZ_LIKELY(!!p) ? p : client->onOutOfMemory(nullptr, bytes);
-    }
-
-    void *calloc_(size_t bytes) {
-        Client *client = static_cast<Client *>(this);
-        client->updateMallocCounter(bytes);
-        void *p = js_calloc(bytes);
-        return MOZ_LIKELY(!!p) ? p : client->onOutOfMemory(reinterpret_cast<void *>(1), bytes);
     }
 
     void *realloc_(void *p, size_t oldBytes, size_t newBytes) {
@@ -92,7 +89,14 @@ struct MallocProvider
 
     template <class T>
     T *pod_calloc() {
-        return (T *)calloc_(sizeof(T));
+        Client *client = static_cast<Client *>(this);
+        client->updateMallocCounter(sizeof(T));
+        T *p = js_pod_calloc<T>();
+        if (MOZ_UNLIKELY(!p)) {
+            client->onOutOfMemory(reinterpret_cast<void *>(1), sizeof(T));
+            return nullptr;
+        }
+        return p;
     }
 
     template <class T>
@@ -112,14 +116,20 @@ struct MallocProvider
             client->reportAllocationOverflow();
             return nullptr;
         }
-        return (T *)calloc_(numElems * sizeof(T));
+        Client *client = static_cast<Client *>(this);
+        client->updateMallocCounter(numElems * sizeof(T));
+        T *p = js_pod_calloc<T>(numElems);
+        if (MOZ_UNLIKELY(!p)) {
+            client->onOutOfMemory(reinterpret_cast<void *>(1), sizeof(T));
+            return nullptr;
+        }
+        return p;
     }
 
     template <class T>
     T *pod_realloc(T *prior, size_t oldSize, size_t newSize) {
         return (T *)realloc_(prior, oldSize * sizeof(T), newSize * sizeof(T));
     }
-
 
     JS_DECLARE_NEW_METHODS(new_, malloc_, MOZ_ALWAYS_INLINE)
 };

@@ -3977,8 +3977,11 @@ EmitSingletonInitialiser(ExclusiveContext *cx, BytecodeEmitter *bce, ParseNode *
     if (!pn->getConstantValue(cx, &value))
         return false;
 
-    JS_ASSERT(value.isObject());
-    ObjectBox *objbox = bce->parser->newObjectBox(&value.toObject());
+    RootedObject obj(cx, &value.toObject());
+    if (!obj->is<ArrayObject>() && !JSObject::setSingletonType(cx, obj))
+        return false;
+
+    ObjectBox *objbox = bce->parser->newObjectBox(obj);
     if (!objbox)
         return false;
 
