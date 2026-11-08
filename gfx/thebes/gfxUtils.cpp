@@ -581,8 +581,7 @@ gfxUtils::DrawPixelSnapped(gfxContext*      aContext,
                            const gfxRect&   aFill,
                            const gfxImageFormat aFormat,
                            GraphicsFilter aFilter,
-                           uint32_t         aImageFlags,
-                           gfxFloat         aOpacity)
+                           uint32_t         aImageFlags)
 {
     PROFILER_LABEL("gfxUtils", "DrawPixelSnapped",
       js::ProfileEntry::Category::GRAPHICS);
@@ -632,7 +631,7 @@ gfxUtils::DrawPixelSnapped(gfxContext*      aContext,
     }
 #endif
 
-    drawable->Draw(aContext, aFill, doTile, aFilter, userSpaceToImageSpace, aOpacity);
+    drawable->Draw(aContext, aFill, doTile, aFilter, userSpaceToImageSpace);
 }
 
 /* static */ int

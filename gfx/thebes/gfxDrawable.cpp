@@ -129,8 +129,7 @@ gfxSurfaceDrawable::Draw(gfxContext* aContext,
                          const gfxRect& aFillRect,
                          bool aRepeat,
                          const GraphicsFilter& aFilter,
-                         const gfxMatrix& aTransform,
-                         gfxFloat aOpacity)
+                         const gfxMatrix& aTransform)
 {
     nsRefPtr<gfxPattern> pattern;
     if (mDrawTarget) {
@@ -221,16 +220,15 @@ gfxCallbackDrawable::Draw(gfxContext* aContext,
                           const gfxRect& aFillRect,
                           bool aRepeat,
                           const GraphicsFilter& aFilter,
-                          const gfxMatrix& aTransform,
-                          gfxFloat aOpacity)
+                          const gfxMatrix& aTransform)
 {
-    if ((aRepeat || aOpacity != 1.0) && !mSurfaceDrawable) {
+    if (aRepeat && !mSurfaceDrawable) {
         mSurfaceDrawable = MakeSurfaceDrawable(aFilter);
     }
 
     if (mSurfaceDrawable)
         return mSurfaceDrawable->Draw(aContext, aFillRect, aRepeat, aFilter,
-                                      aTransform, aOpacity);
+                                      aTransform);
 
     if (mCallback)
         return (*mCallback)(aContext, aFillRect, aFilter, aTransform);
@@ -285,8 +283,7 @@ gfxPatternDrawable::Draw(gfxContext* aContext,
                          const gfxRect& aFillRect,
                          bool aRepeat,
                          const GraphicsFilter& aFilter,
-                         const gfxMatrix& aTransform,
-                         gfxFloat aOpacity)
+                         const gfxMatrix& aTransform)
 {
     if (!mPattern)
         return false;
@@ -301,7 +298,7 @@ gfxPatternDrawable::Draw(gfxContext* aContext,
         // will happen through this Draw() method with aRepeat = false.
         nsRefPtr<gfxCallbackDrawable> callbackDrawable = MakeCallbackDrawable();
         return callbackDrawable->Draw(aContext, aFillRect, true, aFilter,
-                                      aTransform, aOpacity);
+                                      aTransform);
     }
 
     aContext->NewPath();
@@ -309,7 +306,7 @@ gfxPatternDrawable::Draw(gfxContext* aContext,
     mPattern->SetMatrix(aTransform * oldMatrix);
     aContext->SetPattern(mPattern);
     aContext->Rectangle(aFillRect);
-    aContext->FillWithOpacity(aOpacity);
+    aContext->Fill();
     mPattern->SetMatrix(oldMatrix);
     return true;
 }
