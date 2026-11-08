@@ -1584,7 +1584,7 @@ Engine.prototype = {
               "\" for engine: \"" + this.name + "\"");
           var chan = NetUtil.ioService.newChannelFromURI(uri);
 
-          function iconLoadCallback(aByteArray, aEngine) {
+          let iconLoadCallback = function (aByteArray, aEngine) {
             // This callback may run after we've already set a preferred icon,
             // so check again.
             if (aEngine._hasPreferredIcon && !aIsPreferred)
@@ -4732,7 +4732,7 @@ var engineMetadataService = {
 
     if (!this._lazyWriter) {
       LOG("metadata _commit: initializing lazy writer");
-      function writeCommit() {
+      let writeCommit = function () {
         LOG("metadata writeCommit: start");
         let data = gEncoder.encode(JSON.stringify(store));
         let path = engineMetadataService._jsonFile;

@@ -75,6 +75,9 @@ class OptimizationInfo
     // Toggles whether Range Analysis is used.
     bool rangeAnalysis_;
 
+    // Toggles whether loop unrolling is performed.
+    bool loopUnrolling_;
+
     // Toggles whether Truncation based on Range Analysis is used.
     bool autoTruncate_;
 
@@ -144,6 +147,10 @@ class OptimizationInfo
 
     bool rangeAnalysisEnabled() const {
         return rangeAnalysis_ && !js_JitOptions.disableRangeAnalysis;
+    }
+
+    bool loopUnrollingEnabled() const {
+        return loopUnrolling_ && !js_JitOptions.disableLoopUnrolling;
     }
 
     bool autoTruncateEnabled() const {

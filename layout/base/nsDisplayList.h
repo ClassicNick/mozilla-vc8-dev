@@ -2601,6 +2601,8 @@ public:
     mOverrideZIndex = aZIndex;
   }
 
+  void SetVisibleRect(const nsRect& aRect);
+
   /**
    * This creates a copy of this item, but wrapping aItem instead of
    * our existing list. Only gets called if this item returned nullptr
