@@ -6318,7 +6318,7 @@ bool
 Builder::Object::defineProperty(JSContext *cx, const char *name, JS::HandleObject propval_)
 {
     RootedValue propval(cx, ObjectOrNullValue(propval_));
-    return defineProperty(cx, name, propval);
+    return defineProperty(cx, name, (HandleValue) propval);
 }
 
 bool
