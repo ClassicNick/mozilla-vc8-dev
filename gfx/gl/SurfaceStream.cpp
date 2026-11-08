@@ -185,7 +185,7 @@ SurfaceStream::Scrap(UniquePtr<SharedSurface>* surfSlot)
     UniquePtr<SharedSurface>& surf = *surfSlot;
 
     if (surf) {
-        mScraps.Push(Move(surf));
+        mScraps.push(Move(surf));
         surf = nullptr;
     }
     MOZ_ASSERT(!surf);
@@ -195,8 +195,9 @@ SurfaceStream::Scrap(UniquePtr<SharedSurface>* surfSlot)
 void
 SurfaceStream::RecycleScraps(SurfaceFactory* factory)
 {
-    while (!mScraps.Empty()) {
-        UniquePtr<SharedSurface> cur = mScraps.Pop();
+    while (!mScraps.empty()) {
+        UniquePtr<SharedSurface> cur = Move(mScraps.top());
+        mScraps.pop();
 
         Recycle(factory, &cur);
     }
@@ -221,8 +222,9 @@ SurfaceStream::~SurfaceStream()
 {
     Delete(&mProducer);
 
-    while (!mScraps.Empty()) {
-        UniquePtr<SharedSurface> cur = mScraps.Pop();
+    while (!mScraps.empty()) {
+        UniquePtr<SharedSurface> cur = Move(mScraps.top());
+        mScraps.pop();
 
         Delete(&cur);
     }

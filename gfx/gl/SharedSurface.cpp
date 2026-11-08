@@ -268,8 +268,9 @@ SurfaceFactory::SurfaceFactory(GLContext* gl,
 
 SurfaceFactory::~SurfaceFactory()
 {
-    while (!mScraps.Empty()) {
-        UniquePtr<SharedSurface> cur = mScraps.Pop();
+    while (!mScraps.empty()) {
+        UniquePtr<SharedSurface> cur = Move(mScraps.front());
+        mScraps.pop();
     }
 }
 
@@ -277,8 +278,9 @@ UniquePtr<SharedSurface>
 SurfaceFactory::NewSharedSurface(const gfx::IntSize& size)
 {
     // Attempt to reuse an old surface.
-    while (!mScraps.Empty()) {
-        UniquePtr<SharedSurface> cur = mScraps.Pop();
+    while (!mScraps.empty()) {
+        UniquePtr<SharedSurface> cur = Move(mScraps.front());
+        mScraps.pop();
 
         if (cur->mSize == size)
             return Move(cur);
@@ -297,7 +299,7 @@ SurfaceFactory::Recycle(UniquePtr<SharedSurface> surf)
     MOZ_ASSERT(surf);
 
     if (surf->mType == mType) {
-        mScraps.Push(Move(surf));
+        mScraps.push(Move(surf));
     }
 }
 

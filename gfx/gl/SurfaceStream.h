@@ -52,7 +52,7 @@ protected:
 #ifdef DEBUG
     std::set<SharedSurface*> mSurfaces;
 #endif
-    UniquePtrQueue<SharedSurface> mScraps;
+    std::stack< UniquePtr<SharedSurface> > mScraps;
     mutable Monitor mMonitor;
     bool mIsAlive;
 
