@@ -1921,7 +1921,8 @@ nsIFrame::BuildDisplayListForStackingContext(nsDisplayListBuilder* aBuilder,
   AutoSaveRestoreBlendMode autoRestoreBlendMode(*aBuilder);
   aBuilder->SetContainsBlendModes(BlendModeSet());
  
-  nsPoint offsetToReferenceFrame = aBuilder->ToReferenceFrame(this);
+  const nsIFrame* outerReferenceFrame = aBuilder->GetCurrentReferenceFrame();
+  nsPoint offsetToOuterReferenceFrame = GetOffsetToCrossDoc(outerReferenceFrame);
 
   if (isTransformed) {
     const nsRect overflow = GetVisualOverflowRectRelativeToSelf();
@@ -1933,10 +1934,9 @@ nsIFrame::BuildDisplayListForStackingContext(nsDisplayListBuilder* aBuilder,
         return;
       }
 
-      dirtyRect += offsetToReferenceFrame;
       nsRect untransformedDirtyRect;
       if (nsDisplayTransform::UntransformRect(dirtyRect, overflow, this,
-            offsetToReferenceFrame, &untransformedDirtyRect)) {
+            nsPoint(0,0), &untransformedDirtyRect)) {
         dirtyRect = untransformedDirtyRect;
       } else {
         NS_WARNING("Unable to untransform dirty rect!");
@@ -2104,7 +2104,11 @@ nsIFrame::BuildDisplayListForStackingContext(nsDisplayListBuilder* aBuilder,
     clipState.Restore();
     // Revert to the dirtyrect coming in from the parent, without our transform
     // taken into account.
-    buildingDisplayList.SetDirtyRect(aDirtyRect + offsetToReferenceFrame);
+    buildingDisplayList.SetDirtyRect(aDirtyRect);
+    // Revert to the outer reference frame and offset because all display
+    // items we create from now on are outside the transform.
+    buildingDisplayList.SetReferenceFrameAndCurrentOffset(outerReferenceFrame,
+      offsetToOuterReferenceFrame);
 
     if (Preserves3DChildren()) {
       WrapPreserve3DList(this, aBuilder, &resultList);
