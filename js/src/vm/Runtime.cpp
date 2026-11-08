@@ -182,6 +182,7 @@ JSRuntime::JSRuntime(JSRuntime *parentRuntime)
     debugMode(false),
     spsProfiler(thisFromCtor()),
     profilingScripts(false),
+    suppressProfilerSampling(false),
     hadOutOfMemory(false),
     haveCreatedContext(false),
     data(nullptr),
@@ -245,6 +246,9 @@ JitSupportsFloatingPoint()
 
 #if defined(JS_ION) && WTF_ARM_ARCH_VERSION == 6
     if (!js::jit::HasVFP())
+        return false;
+#else
+    if (!JSC::MacroAssembler::supportsFloatingPoint())
         return false;
 #endif
 

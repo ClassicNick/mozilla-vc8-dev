@@ -21,6 +21,7 @@
 #include "js/Vector.h"
 #include "vm/ArgumentsObject.h"
 #include "vm/DebuggerMemory.h"
+#include "vm/SPSProfiler.h"
 #include "vm/WrapperObject.h"
 #include "jsgcinlines.h"
 #include "jsobjinlines.h"
@@ -2302,6 +2303,7 @@ Debugger::construct(JSContext *cx, unsigned argc, Value *vp)
 bool
 Debugger::addDebuggeeGlobal(JSContext *cx, Handle<GlobalObject*> global)
 {
+    AutoSuppressProfilerSampling suppressProfilerSampling(cx);
     AutoDebugModeInvalidation invalidate(global->compartment());
     return addDebuggeeGlobal(cx, global, invalidate);
 }

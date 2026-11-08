@@ -30,6 +30,7 @@ using namespace js::jit;
 using mozilla::NumbersAreIdentical;
 using mozilla::IsFloat32Representable;
 using mozilla::Maybe;
+using mozilla::DebugOnly;
 
 #ifdef DEBUG
 size_t MUse::index() const
@@ -586,6 +587,39 @@ MConstant::canProduceFloat32() const
     if (type() == MIRType_Double)
         return IsFloat32Representable(value_.toDouble());
     return true;
+}
+
+MDefinition*
+MSimdValueX4::foldsTo(TempAllocator &alloc)
+{
+    DebugOnly<MIRType> scalarType = SimdTypeToScalarType(type());
+    for (size_t i = 0; i < 4; ++i) {
+        MDefinition *op = getOperand(i);
+        if (!op->isConstant())
+            return this;
+        JS_ASSERT(op->type() == scalarType);
+    }
+
+    SimdConstant cst;
+    switch (type()) {
+      case MIRType_Int32x4: {
+        int32_t a[4];
+        for (size_t i = 0; i < 4; ++i)
+            a[i] = getOperand(i)->toConstant()->value().toInt32();
+        cst = SimdConstant::CreateX4(a);
+        break;
+      }
+      case MIRType_Float32x4: {
+        float a[4];
+        for (size_t i = 0; i < 4; ++i)
+            a[i] = getOperand(i)->toConstant()->value().toNumber();
+        cst = SimdConstant::CreateX4(a);
+        break;
+      }
+      default: MOZ_ASSUME_UNREACHABLE("unexpected type in MSimdValueX4::foldsTo");
+    }
+
+    return MSimdConstant::New(alloc, cst, type());
 }
 
 MCloneLiteral *
