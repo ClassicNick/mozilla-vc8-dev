@@ -569,7 +569,7 @@ private:
   bool mIsVisited;
 };
 
-NS_IMPL_ISUPPORTS_INHERITED(
+NS_IMPL_ISUPPORTS_INHERITED1(
   VisitedQuery
 , AsyncStatementCallback
 , mozIStorageCompletionCallback
@@ -2095,7 +2095,7 @@ private:
   nsCOMArray<mozIStorageCompletionCallback> mIsVisitedCallbacks;
 };
 
-NS_IMPL_ISUPPORTS(
+NS_IMPL_ISUPPORTS1(
   ConcurrentStatementsHolder
 , mozIStorageCompletionCallback
 )
