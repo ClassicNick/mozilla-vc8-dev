@@ -123,7 +123,7 @@ public:
     ~UniquePtrQueue() {
         MOZ_ASSERT(Empty());
     }
-
+    
     bool Empty() const {
         return mQueue.empty();
     }
@@ -135,12 +135,13 @@ public:
 
     UniquePtr<T> Pop() {
         UniquePtr<T> ret;
+        if (mQueue.empty())
+            return Move(ret);
 
-        if (!mQueue.empty()) {
-            ret.reset(mQueue.front());
-            mQueue.pop();
-        }
+        T* p = mQueue.front();
+        mQueue.pop();
 
+        ret.reset(p);
         return Move(ret);
     }
 };
