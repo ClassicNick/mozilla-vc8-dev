@@ -3177,7 +3177,7 @@ public:
     Init(aOther.GetFrame());
   }
 
-  nsWeakFrame(nsIFrame* aFrame) : mPrev(nullptr), mFrame(nullptr)
+  MOZ_IMPLICIT nsWeakFrame(nsIFrame* aFrame) : mPrev(nullptr), mFrame(nullptr)
   {
     Init(aFrame);
   }

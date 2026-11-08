@@ -3740,7 +3740,7 @@ nsDocument::SetSubDocumentFor(Element* aElement, nsIDocument* aSubDoc)
       };
 
       mSubDocuments = PL_NewDHashTable(&hash_table_ops, nullptr,
-                                       sizeof(SubDocMapEntry), 16);
+                                       sizeof(SubDocMapEntry));
       if (!mSubDocuments) {
         return NS_ERROR_OUT_OF_MEMORY;
       }
@@ -6817,7 +6817,7 @@ nsDocument::GetBoxObjectFor(Element* aElement, ErrorResult& aRv)
   }
 
   if (!mBoxObjectTable) {
-    mBoxObjectTable = new nsInterfaceHashtable<nsPtrHashKey<nsIContent>, nsPIBoxObject>(12);
+    mBoxObjectTable = new nsInterfaceHashtable<nsPtrHashKey<nsIContent>, nsPIBoxObject>(6);
   } else {
     nsCOMPtr<nsPIBoxObject> boxObject = mBoxObjectTable->Get(aElement);
     if (boxObject) {

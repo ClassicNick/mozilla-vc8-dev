@@ -94,7 +94,7 @@ public:
 
   class TargetReference : public nsReferencedElement {
   public:
-    TargetReference(SVGAnimationElement* aAnimationElement) :
+    explicit TargetReference(SVGAnimationElement* aAnimationElement) :
       mAnimationElement(aAnimationElement) {}
   protected:
     // We need to be notified when target changes, in order to request a

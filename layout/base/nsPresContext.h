@@ -936,7 +936,7 @@ public:
   friend class InterruptPreventer;
   class MOZ_STACK_CLASS InterruptPreventer {
   public:
-    InterruptPreventer(nsPresContext* aCtx) :
+    explicit InterruptPreventer(nsPresContext* aCtx) :
       mCtx(aCtx),
       mInterruptsEnabled(aCtx->mInterruptsEnabled),
       mHasPendingInterrupt(aCtx->mHasPendingInterrupt)
@@ -1491,7 +1491,7 @@ protected:
 
   class RunWillPaintObservers : public nsRunnable {
   public:
-    RunWillPaintObservers(nsRootPresContext* aPresContext) : mPresContext(aPresContext) {}
+    explicit RunWillPaintObservers(nsRootPresContext* aPresContext) : mPresContext(aPresContext) {}
     void Revoke() { mPresContext = nullptr; }
     NS_IMETHOD Run() MOZ_OVERRIDE
     {

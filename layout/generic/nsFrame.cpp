@@ -26,6 +26,7 @@
 #include "nsIScrollableFrame.h"
 #include "nsPresContext.h"
 #include "nsStyleConsts.h"
+#include "nsStyleUtil.h"
 #include "nsIPresShell.h"
 #include "prlog.h"
 #include "prprf.h"
@@ -1921,9 +1922,6 @@ nsIFrame::BuildDisplayListForStackingContext(nsDisplayListBuilder* aBuilder,
   AutoSaveRestoreBlendMode autoRestoreBlendMode(*aBuilder);
   aBuilder->SetContainsBlendModes(BlendModeSet());
  
-  const nsIFrame* outerReferenceFrame = aBuilder->GetCurrentReferenceFrame();
-  nsPoint offsetToOuterReferenceFrame = GetOffsetToCrossDoc(outerReferenceFrame);
-
   if (isTransformed) {
     const nsRect overflow = GetVisualOverflowRectRelativeToSelf();
     if (aBuilder->IsForPainting() &&
@@ -2107,8 +2105,10 @@ nsIFrame::BuildDisplayListForStackingContext(nsDisplayListBuilder* aBuilder,
     buildingDisplayList.SetDirtyRect(aDirtyRect);
     // Revert to the outer reference frame and offset because all display
     // items we create from now on are outside the transform.
+    const nsIFrame* outerReferenceFrame =
+      aBuilder->FindReferenceFrameFor(nsLayoutUtils::GetTransformRootFrame(this));
     buildingDisplayList.SetReferenceFrameAndCurrentOffset(outerReferenceFrame,
-      offsetToOuterReferenceFrame);
+      GetOffsetToCrossDoc(outerReferenceFrame));
 
     if (Preserves3DChildren()) {
       WrapPreserve3DList(this, aBuilder, &resultList);
@@ -4060,8 +4060,8 @@ nsFrame::ComputeSize(nsRenderingContext *aRenderingContext,
   if (isFlexItem) {
     // Flex items use their "flex-basis" property in place of their main-size
     // property (e.g. "width") for sizing purposes, *unless* they have
-    // "flex-basis:auto", in which case they use their main-size property after
-    // all.
+    // "flex-basis:main-size", in which case they use their main-size property
+    // after all.
     uint32_t flexDirection = GetParent()->StylePosition()->mFlexDirection;
     isHorizontalFlexItem =
       flexDirection == NS_STYLE_FLEX_DIRECTION_ROW ||
@@ -4071,21 +4071,9 @@ nsFrame::ComputeSize(nsRenderingContext *aRenderingContext,
     // widthStyleCoord and heightStyleCoord in
     // nsLayoutUtils::ComputeSizeWithIntrinsicDimensions().
     const nsStyleCoord* flexBasis = &(stylePos->mFlexBasis);
-    if (flexBasis->GetUnit() != eStyleUnit_Auto) {
-      if (isHorizontalFlexItem) {
-        widthStyleCoord = flexBasis;
-      } else {
-        // One caveat for vertical flex items: We don't support enumerated
-        // values (e.g. "max-content") for height properties yet. So, if our
-        // computed flex-basis is an enumerated value, we'll just behave as if
-        // it were "auto", which means "use the main-size property after all"
-        // (which is "height", in this case).
-        // NOTE: Once we support intrinsic sizing keywords for "height",
-        // we should remove this check.
-        if (flexBasis->GetUnit() != eStyleUnit_Enumerated) {
-          heightStyleCoord = flexBasis;
-        }
-      }
+    if (!nsStyleUtil::IsFlexBasisMainSize(*flexBasis, isHorizontalFlexItem)) {
+      (isHorizontalFlexItem ?
+       widthStyleCoord : heightStyleCoord) = flexBasis;
     }
   }
 
@@ -5031,16 +5019,8 @@ nsIFrame::SchedulePaint(PaintType aType)
                                               nsIPresShell::PAINT_DELAYED_COMPRESS :
                                               nsIPresShell::PAINT_DEFAULT);
 
-  if (aType == PAINT_DELAYED_COMPRESS) {
-    return;
-  }
-
   if (aType == PAINT_DEFAULT) {
     displayRoot->AddStateBits(NS_FRAME_UPDATE_LAYER_TREE);
-  }
-  nsIPresShell* shell = PresContext()->PresShell();
-  if (shell) {
-    shell->AddInvalidateHiddenPresShellObserver(pres->RefreshDriver());
   }
 }
 

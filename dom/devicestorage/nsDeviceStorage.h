@@ -7,6 +7,7 @@
 
 class nsPIDOMWindow;
 #include "mozilla/Attributes.h"
+#include "mozilla/dom/devicestorage/DeviceStorageRequestChild.h"
 
 #include "DOMRequest.h"
 #include "DOMCursor.h"
@@ -27,7 +28,6 @@ class nsPIDOMWindow;
 #include "mozilla/Mutex.h"
 #include "prtime.h"
 #include "DeviceStorage.h"
-#include "mozilla/dom/devicestorage/DeviceStorageRequestChild.h"
 #include "mozilla/StaticPtr.h"
 
 namespace mozilla {

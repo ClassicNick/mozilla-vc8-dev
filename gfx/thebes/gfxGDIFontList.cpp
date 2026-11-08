@@ -624,7 +624,7 @@ GDIFontFamily::FindStyleVariations(FontInfoData *aFontInfoData)
  */
 
 gfxGDIFontList::gfxGDIFontList()
-    : mFontSubstitutes(50)
+    : mFontSubstitutes(32)
 {
     InitializeFontEmbeddingProcs();
     // Make sure the t2embed library is available because it may be

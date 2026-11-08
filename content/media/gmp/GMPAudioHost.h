@@ -33,10 +33,17 @@ public:
 
   void RelinquishData(GMPAudioEncodedSampleData& aData);
 
+  virtual uint32_t Channels() const MOZ_OVERRIDE;
+  virtual void SetChannels(uint32_t aChannels) MOZ_OVERRIDE;
+  virtual uint32_t Rate() const MOZ_OVERRIDE;
+  virtual void SetRate(uint32_t aRate) MOZ_OVERRIDE;
+
 private:
   GMPAudioFormat mFormat;
   nsTArray<uint8_t> mBuffer;
   int64_t mTimeStamp;
+  uint32_t mChannels;
+  uint32_t mRate;
 };
 
 class GMPAudioHostImpl : public GMPAudioHost

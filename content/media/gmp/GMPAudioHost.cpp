@@ -13,6 +13,8 @@ namespace gmp {
 GMPAudioSamplesImpl::GMPAudioSamplesImpl(GMPAudioFormat aFormat)
   : mFormat(aFormat)
   , mTimeStamp(0)
+  , mChannels(0)
+  , mRate(0)
 {
 }
 
@@ -20,6 +22,8 @@ GMPAudioSamplesImpl::GMPAudioSamplesImpl(const GMPAudioEncodedSampleData& aData)
   : mFormat(kGMPAudioEncodedSamples)
   , mBuffer(aData.mData())
   , mTimeStamp(aData.mTimeStamp())
+  , mChannels(aData.mChannelCount())
+  , mRate(aData.mSamplesPerSecond())
 {
 }
 
@@ -82,6 +86,31 @@ GMPAudioSamplesImpl::RelinquishData(GMPAudioEncodedSampleData& aData)
   aData.mData() = mBuffer;
   aData.mTimeStamp() = TimeStamp();
 }
+
+uint32_t
+GMPAudioSamplesImpl::Channels() const
+{
+  return mChannels;
+}
+
+void
+GMPAudioSamplesImpl::SetChannels(uint32_t aChannels)
+{
+  mChannels = aChannels;
+}
+
+uint32_t
+GMPAudioSamplesImpl::Rate() const
+{
+  return mRate;
+}
+
+void
+GMPAudioSamplesImpl::SetRate(uint32_t aRate)
+{
+  mRate = aRate;
+}
+
 
 GMPErr
 GMPAudioHostImpl::CreateSamples(GMPAudioFormat aFormat,

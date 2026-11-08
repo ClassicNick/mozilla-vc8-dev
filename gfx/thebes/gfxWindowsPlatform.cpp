@@ -341,7 +341,7 @@ NS_IMPL_ISUPPORTS1(GPUAdapterReporter, nsIMemoryReporter)
 #endif
 
 gfxWindowsPlatform::gfxWindowsPlatform()
-  : mPrefFonts(50)
+  : mPrefFonts(32)
 #ifdef MOZ_ENABLE_D3D9_LAYER
   , mD3D9DeviceInitialized(false)
 #endif

@@ -341,9 +341,9 @@ private:
     MOZ_ASSERT(!mFlags.mHasHashedFrames);
     uint32_t count = GetChildCount();
     mFlags.mHasHashedFrames = 1;
-    uint32_t minSize =
-      NS_MAX(kMinChildCountForHashtable, uint32_t(PL_DHASH_MIN_SIZE));
-    mFrames = new nsTHashtable< nsPtrHashKey<nsIFrame> >(NS_MAX(count, minSize));
+    uint32_t minLength = NS_MAX(kMinChildCountForHashtable,
+                                  uint32_t(PL_DHASH_DEFAULT_INITIAL_LENGTH));
+    mFrames = new nsTHashtable< nsPtrHashKey<nsIFrame> >(NS_MAX(count, minLength));
     for (nsIFrame* f = mFirstChild; count-- > 0; f = f->GetNextSibling()) {
       mFrames->PutEntry(f);
     }
