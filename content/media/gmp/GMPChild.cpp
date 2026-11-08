@@ -118,7 +118,7 @@ GMPChild::LoadPluginLibrary(const std::string& aPluginPath)
   }
 
   GMPPlatformAPI* platformAPI = new GMPPlatformAPI();
-  InitPlatformAPI(*platformAPI);
+  InitPlatformAPI(*platformAPI, this);
 
   if (initFunc(platformAPI) != GMPNoErr) {
     return false;
@@ -277,6 +277,33 @@ GMPChild::RecvPGMPVideoEncoderConstructor(PGMPVideoEncoderChild* aActor)
   vec->Init(static_cast<GMPVideoEncoder*>(ve));
 
   return true;
+}
+
+PGMPTimerChild*
+GMPChild::AllocPGMPTimerChild()
+{
+  return new GMPTimerChild(this);
+}
+
+bool
+GMPChild::DeallocPGMPTimerChild(PGMPTimerChild* aActor)
+{
+  MOZ_ASSERT(mTimerChild == static_cast<GMPTimerChild*>(aActor));
+  mTimerChild = nullptr;
+  return true;
+}
+
+GMPTimerChild*
+GMPChild::GetGMPTimers()
+{
+  if (!mTimerChild) {
+    PGMPTimerChild* sc = SendPGMPTimerConstructor();
+    if (!sc) {
+      return nullptr;
+    }
+    mTimerChild = static_cast<GMPTimerChild*>(sc);
+  }
+  return mTimerChild;
 }
 
 bool
