@@ -959,13 +959,8 @@ VectorImage::Show(gfxDrawable* aDrawable, const SVGDrawingParameters& aParams)
                              aParams.userSpaceToImageSpace,
                              aParams.subimage, aParams.sourceRect,
                              ThebesIntRect(aParams.imageRect), aParams.fill,
-<<<<<<< HEAD
                              gfxImageFormat::ARGB32,
-                             aParams.filter, aParams.flags, aOpacity);
-=======
-                             SurfaceFormat::B8G8R8A8,
                              aParams.filter, aParams.flags);
->>>>>>> 8977780
 
   MOZ_ASSERT(mRenderingObserver, "Should have a rendering observer by now");
   mRenderingObserver->ResumeHonoringInvalidations();

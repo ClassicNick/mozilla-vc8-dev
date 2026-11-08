@@ -85,8 +85,8 @@
 #define BROWSER_ELEMENT_CHILD_SCRIPT \
     NS_LITERAL_STRING("chrome://global/content/BrowserElementChild.js")
 
-#define TABC_LOG(...)
-// #define TABC_LOG(...) printf_stderr("TABC: " __VA_ARGS__)
+#define TABC_LOG(a)
+// #define TABC_LOG(a) printf_stderr("TABC: " a)
 
 using namespace mozilla;
 using namespace mozilla::dom;
