@@ -3374,7 +3374,7 @@ JSScript::markChildren(JSTracer *trc)
     }
 
     if (sourceObject()) {
-        JS_ASSERT(sourceObject()->compartment() == compartment());
+        JS_ASSERT(MaybeForwarded(sourceObject())->compartment() == compartment());
         MarkObject(trc, &sourceObject_, "sourceObject");
     }
 
