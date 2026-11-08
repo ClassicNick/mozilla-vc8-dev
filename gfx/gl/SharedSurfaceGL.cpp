@@ -47,8 +47,7 @@ SharedSurface_Basic::Create(GLContext* gl,
     }
 
     typedef SharedSurface_Basic ptrT;
-    UniquePtr<ptrT> ret( new ptrT(gl, size, hasAlpha, format, tex) );
-    return Move(ret);
+    return UniquePtr<ptrT>( new ptrT(gl, size, hasAlpha, format, tex) );
 }
 
 SharedSurface_Basic::SharedSurface_Basic(GLContext* gl,
@@ -129,9 +128,8 @@ SharedSurface_GLTexture::Create(GLContext* prodGL,
     }
 
     typedef SharedSurface_GLTexture ptrT;
-    UniquePtr<ptrT> ret( new ptrT(prodGL, consGL, size, hasAlpha, tex,
-                                  ownsTex) );
-    return Move(ret);
+    return UniquePtr<ptrT>( new ptrT(prodGL, consGL, size, hasAlpha,
+                                     tex, ownsTex) );
 }
 
 SharedSurface_GLTexture::~SharedSurface_GLTexture()

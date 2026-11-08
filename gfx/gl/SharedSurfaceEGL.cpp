@@ -27,16 +27,14 @@ SharedSurface_EGLImage::Create(GLContext* prodGL,
     MOZ_ASSERT(egl);
     MOZ_ASSERT(context);
 
-    UniquePtr<SharedSurface_EGLImage> ret;
-
     if (!HasExtensions(egl, prodGL)) {
-        return Move(ret);
+        return nullptr;
     }
 
     MOZ_ALWAYS_TRUE(prodGL->MakeCurrent());
     GLuint prodTex = CreateTextureForOffscreen(prodGL, formats, size);
     if (!prodTex) {
-        return Move(ret);
+        return nullptr;
     }
 
     EGLClientBuffer buffer = reinterpret_cast<EGLClientBuffer>(prodTex);
@@ -45,12 +43,12 @@ SharedSurface_EGLImage::Create(GLContext* prodGL,
                                        nullptr);
     if (!image) {
         prodGL->fDeleteTextures(1, &prodTex);
-        return Move(ret);
+        return nullptr;
     }
 
-    ret.reset( new SharedSurface_EGLImage(prodGL, egl, size, hasAlpha,
-                                          formats, prodTex, image) );
-    return Move(ret);
+    typedef SharedSurface_EGLImage ptrT;
+    return UniquePtr<ptrT>( new ptrT(prodGL, egl, size, hasAlpha,
+                                     formats, prodTex, image) );
 }
 
 bool
@@ -222,15 +220,13 @@ SurfaceFactory_EGLImage::Create(GLContext* prodGL,
 {
     EGLContext context = GLContextEGL::Cast(prodGL)->GetEGLContext();
 
-    typedef SurfaceFactory_EGLImage ptrT;
-    UniquePtr<ptrT> ret;
-
     GLLibraryEGL* egl = &sEGLLibrary;
-    if (SharedSurface_EGLImage::HasExtensions(egl, prodGL)) {
-        ret.reset( new ptrT(prodGL, context, caps) );
+    if (!SharedSurface_EGLImage::HasExtensions(egl, prodGL)) {
+        return nullptr;
     }
 
-    return Move(ret);
+    typedef SurfaceFactory_EGLImage ptrT;
+    return UniquePtr<ptrT>( new ptrT(prodGL, context, caps) );
 }
 
 } /* namespace gfx */

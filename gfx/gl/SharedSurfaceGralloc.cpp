@@ -58,12 +58,10 @@ SharedSurface_Gralloc::Create(GLContext* prodGL,
     GLLibraryEGL* egl = &sEGLLibrary;
     MOZ_ASSERT(egl);
 
-    UniquePtr<SharedSurface_Gralloc> ret;
-
     DEBUG_PRINT("SharedSurface_Gralloc::Create -------\n");
 
     if (!HasExtensions(egl, prodGL))
-        return Move(ret);
+        return nullptr;
 
     gfxContentType type = hasAlpha ? gfxContentType::COLOR_ALPHA
                                    : gfxContentType::COLOR;
@@ -79,7 +77,7 @@ SharedSurface_Gralloc::Create(GLContext* prodGL,
           layers::TextureFlags::DEFAULT);
 
     if (!grallocTC->AllocateForGLRendering(size)) {
-      return Move(ret);
+      return nullptr;
     }
 
     sp<GraphicBuffer> buffer = grallocTC->GetGraphicBuffer();
@@ -94,7 +92,7 @@ SharedSurface_Gralloc::Create(GLContext* prodGL,
                                        LOCAL_EGL_NATIVE_BUFFER_ANDROID,
                                        clientBuffer, attrs);
     if (!image) {
-        return Move(ret);
+        return nullptr;
     }
 
     prodGL->MakeCurrent();
@@ -111,15 +109,14 @@ SharedSurface_Gralloc::Create(GLContext* prodGL,
 
     egl->fDestroyImage(display, image);
 
-    ret.reset( new SharedSurface_Gralloc(prodGL, size, hasAlpha, egl,
-                                         allocator, grallocTC,
-                                         prodTex) );
 
-    DEBUG_PRINT("SharedSurface_Gralloc::Create: success -- surface %p,"
-                " GraphicBuffer %p.\n",
-                ret.get(), buffer.get());
+    typedef SharedSurface_Gralloc ptrT;
+    UniquePtr<ptrT> surf( new ptrT(prodGL, size, hasAlpha, egl,
+                                   allocator, grallocTC, prodTex) );
 
-    return Move(ret);
+    DEBUG_PRINT("SharedSurface_Gralloc::Create: success -- surface %p, GraphicBuffer %p.\n", surf, buffer.get());
+
+    return Move(surf);
 }
 
 
