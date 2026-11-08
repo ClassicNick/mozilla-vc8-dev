@@ -13,7 +13,6 @@
 #include "mozilla/gfx/Point.h"
 #include "mozilla/GenericRefCounted.h"
 #include "SurfaceTypes.h"
-#include "SharedSurface.h"
 
 namespace mozilla {
 
@@ -47,11 +46,9 @@ public:
 protected:
     // |mProd| is owned by us, but can be ripped away when
     // creating a new GLStream from this one.
-    UniquePtr<SharedSurface> mProducer;
-#ifdef DEBUG
+    SharedSurface* mProducer;
     std::set<SharedSurface*> mSurfaces;
-#endif
-    std::stack< UniquePtr<SharedSurface> > mScraps;
+    std::stack<SharedSurface*> mScraps;
     mutable Monitor mMonitor;
     bool mIsAlive;
 
@@ -61,7 +58,16 @@ protected:
 
     // |previous| can be null, indicating this is the first one.
     // Otherwise, we pull in |mProd| from |previous| an our initial surface.
-    SurfaceStream(SurfaceStreamType type, SurfaceStream* prevStream);
+    SurfaceStream(SurfaceStreamType type, SurfaceStream* prevStream)
+        : mType(type)
+        , mProducer(nullptr)
+        , mMonitor("SurfaceStream monitor")
+        , mIsAlive(true)
+    {
+        MOZ_ASSERT(!prevStream || mType != prevStream->mType,
+                   "We should not need to create a SurfaceStream from another "
+                   "of the same type.");
+    }
 
 public:
     virtual ~SurfaceStream();
@@ -70,23 +76,26 @@ protected:
     // These functions below are helpers to make trading buffers around easier.
     // For instance, using Move(a,b) instead of normal assignment assures that
     // we are never leaving anything hanging around, keeping things very safe.
-    void MoveTo(UniquePtr<SharedSurface>* slotFrom,
-                UniquePtr<SharedSurface>* slotTo);
+    static void Move(SharedSurface*& from, SharedSurface*& to) {
+        MOZ_ASSERT(!to);
+        to = from;
+        from = nullptr;
+    }
+
     void New(SurfaceFactory* factory, const gfx::IntSize& size,
-             UniquePtr<SharedSurface>* surfSlot);
-    void Delete(UniquePtr<SharedSurface>* surfSlot);
-    void Recycle(SurfaceFactory* factory,
-                 UniquePtr<SharedSurface>* surfSlot);
+             SharedSurface*& surf);
+    void Delete(SharedSurface*& surf);
+    void Recycle(SurfaceFactory* factory, SharedSurface*& surf);
 
     // Surrender control of a surface, and return it for use elsewhere.
-    UniquePtr<SharedSurface> Surrender(UniquePtr<SharedSurface>* surfSlot);
+    SharedSurface* Surrender(SharedSurface*& surf);
     // Absorb control of a surface from elsewhere, clears its old location.
-    UniquePtr<SharedSurface> Absorb(UniquePtr<SharedSurface>* surfSlot);
+    SharedSurface* Absorb(SharedSurface*& surf);
 
     // For holding on to surfaces we don't need until we can return them to the
     // Producer's factory via SurfaceFactory::Recycle.
     // Not thread-safe.
-    void Scrap(UniquePtr<SharedSurface>* surfSlot);
+    void Scrap(SharedSurface*& scrap);
 
     // Not thread-safe.
     void RecycleScraps(SurfaceFactory* factory);
@@ -115,8 +124,7 @@ protected:
 public:
     virtual SharedSurface* SwapConsumer();
 
-    virtual void SurrenderSurfaces(UniquePtr<SharedSurface>* out_producer,
-                                   UniquePtr<SharedSurface>* out_consumer) = 0;
+    virtual void SurrenderSurfaces(SharedSurface*& producer, SharedSurface*& consumer) = 0;
 };
 
 // Not thread-safe. Don't use cross-threads.
@@ -124,11 +132,10 @@ class SurfaceStream_SingleBuffer
     : public SurfaceStream
 {
 protected:
-    UniquePtr<SharedSurface> mConsumer; // Only present after resize-swap.
+    SharedSurface* mConsumer; // Only present after resize-swap.
 
 public:
     MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(SurfaceStream_SingleBuffer)
-
     explicit SurfaceStream_SingleBuffer(SurfaceStream* prevStream);
     virtual ~SurfaceStream_SingleBuffer();
 
@@ -137,12 +144,11 @@ public:
      * SwapCons being called in Render.
      */
     virtual SharedSurface* SwapProducer(SurfaceFactory* factory,
-                                        const gfx::IntSize& size) MOZ_OVERRIDE;
+                                        const gfx::IntSize& size);
 
-    virtual SharedSurface* SwapConsumer_NoWait() MOZ_OVERRIDE;
+    virtual SharedSurface* SwapConsumer_NoWait();
 
-    virtual void SurrenderSurfaces(UniquePtr<SharedSurface>* out_producer,
-                                   UniquePtr<SharedSurface>* out_consumer) MOZ_OVERRIDE;
+    virtual void SurrenderSurfaces(SharedSurface*& producer, SharedSurface*& consumer);
 };
 
 // Our hero for preserveDrawingBuffer=true.
@@ -150,22 +156,20 @@ class SurfaceStream_TripleBuffer_Copy
     : public SurfaceStream
 {
 protected:
-    UniquePtr<SharedSurface> mStaging;
-    UniquePtr<SharedSurface> mConsumer;
+    SharedSurface* mStaging;
+    SharedSurface* mConsumer;
 
 public:
     MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(SurfaceStream_TripleBuffer_Copy)
-
     explicit SurfaceStream_TripleBuffer_Copy(SurfaceStream* prevStream);
     virtual ~SurfaceStream_TripleBuffer_Copy();
 
     virtual SharedSurface* SwapProducer(SurfaceFactory* factory,
-                                        const gfx::IntSize& size) MOZ_OVERRIDE;
+                                        const gfx::IntSize& size);
 
-    virtual SharedSurface* SwapConsumer_NoWait() MOZ_OVERRIDE;
+    virtual SharedSurface* SwapConsumer_NoWait();
 
-    virtual void SurrenderSurfaces(UniquePtr<SharedSurface>* out_producer,
-                                   UniquePtr<SharedSurface>* out_consumer) MOZ_OVERRIDE;
+    virtual void SurrenderSurfaces(SharedSurface*& producer, SharedSurface*& consumer);
 };
 
 
@@ -173,8 +177,8 @@ class SurfaceStream_TripleBuffer
     : public SurfaceStream
 {
 protected:
-    UniquePtr<SharedSurface> mStaging;
-    UniquePtr<SharedSurface> mConsumer;
+    SharedSurface* mStaging;
+    SharedSurface* mConsumer;
 
     // Returns true if we were able to wait, false if not
     virtual void WaitForCompositor() {}
@@ -184,12 +188,9 @@ protected:
 
 public:
     MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(SurfaceStream_TripleBuffer)
-
     explicit SurfaceStream_TripleBuffer(SurfaceStream* prevStream);
     virtual ~SurfaceStream_TripleBuffer();
-
-    virtual bool CopySurfaceToProducer(SharedSurface* src,
-                                       SurfaceFactory* factory) MOZ_OVERRIDE;
+    virtual bool CopySurfaceToProducer(SharedSurface* src, SurfaceFactory* factory);
 
 private:
     // Common constructor code.
@@ -198,12 +199,11 @@ private:
 public:
     // Done writing to prod, swap prod and staging
     virtual SharedSurface* SwapProducer(SurfaceFactory* factory,
-                                        const gfx::IntSize& size) MOZ_OVERRIDE;
+                                        const gfx::IntSize& size);
 
-    virtual SharedSurface* SwapConsumer_NoWait() MOZ_OVERRIDE;
+    virtual SharedSurface* SwapConsumer_NoWait();
 
-    virtual void SurrenderSurfaces(UniquePtr<SharedSurface>* out_producer,
-                                   UniquePtr<SharedSurface>* out_consumer) MOZ_OVERRIDE;
+    virtual void SurrenderSurfaces(SharedSurface*& producer, SharedSurface*& consumer);
 };
 
 class SurfaceStream_TripleBuffer_Async
@@ -213,8 +213,6 @@ protected:
     virtual void WaitForCompositor() MOZ_OVERRIDE;
 
 public:
-    MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(SurfaceStream_TripleBuffer_Async)
-
     explicit SurfaceStream_TripleBuffer_Async(SurfaceStream* prevStream);
     virtual ~SurfaceStream_TripleBuffer_Async();
 };

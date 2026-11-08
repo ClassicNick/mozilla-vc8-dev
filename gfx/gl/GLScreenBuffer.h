@@ -127,11 +127,11 @@ protected:
 public:
     const SurfaceCaps mCaps;
 protected:
-    UniquePtr<SurfaceFactory> mFactory;
+    SurfaceFactory* mFactory; // Owned by us.
     RefPtr<SurfaceStream> mStream;
 
-    UniquePtr<DrawBuffer> mDraw;
-    UniquePtr<ReadBuffer> mRead;
+    UniquePtr<DrawBuffer> mDraw; // Owned by us.
+    UniquePtr<ReadBuffer> mRead; // Owned by us.
 
     bool mNeedsBlit;
 
@@ -148,11 +148,11 @@ protected:
 
     GLScreenBuffer(GLContext* gl,
                    const SurfaceCaps& caps,
-                   UniquePtr<SurfaceFactory> factory,
+                   SurfaceFactory* factory,
                    const RefPtr<SurfaceStream>& stream)
         : mGL(gl)
         , mCaps(caps)
-        , mFactory(Move(factory))
+        , mFactory(factory)
         , mStream(stream)
         , mDraw(nullptr)
         , mRead(nullptr)
@@ -175,7 +175,7 @@ public:
     }
 
     SurfaceFactory* Factory() const {
-        return mFactory.get();
+        return mFactory;
     }
 
     SharedSurface* SharedSurf() const {
@@ -235,8 +235,7 @@ public:
      * Once you pass newFactory into Morph, newFactory will be owned by
      * GLScreenBuffer, so `forget` any references to it that still exist.
      */
-    void Morph(UniquePtr<SurfaceFactory> newFactory,
-               SurfaceStreamType streamType);
+    void Morph(SurfaceFactory* newFactory, SurfaceStreamType streamType);
 
 protected:
     // Returns false on error or inability to resize.

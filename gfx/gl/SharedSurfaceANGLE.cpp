@@ -11,6 +11,23 @@
 namespace mozilla {
 namespace gl {
 
+SurfaceFactory_ANGLEShareHandle*
+SurfaceFactory_ANGLEShareHandle::Create(GLContext* gl,
+                                        const SurfaceCaps& caps)
+{
+    GLLibraryEGL* egl = &sEGLLibrary;
+    if (!egl)
+        return nullptr;
+
+    if (!egl->IsExtensionSupported(
+            GLLibraryEGL::ANGLE_surface_d3d_texture_2d_share_handle))
+    {
+        return nullptr;
+    }
+
+    return new SurfaceFactory_ANGLEShareHandle(gl, egl, caps);
+}
+
 EGLDisplay
 SharedSurface_ANGLEShareHandle::Display()
 {
@@ -162,7 +179,7 @@ CreatePBufferSurface(GLLibraryEGL* egl,
     return surface;
 }
 
-/*static*/ UniquePtr<SharedSurface_ANGLEShareHandle>
+SharedSurface_ANGLEShareHandle*
 SharedSurface_ANGLEShareHandle::Create(GLContext* gl,
                                        EGLContext context, EGLConfig config,
                                        const gfx::IntSize& size, bool hasAlpha)
@@ -191,28 +208,12 @@ SharedSurface_ANGLEShareHandle::Create(GLContext* gl,
         return nullptr;
     }
 
-    typedef SharedSurface_ANGLEShareHandle ptrT;
-    return UniquePtr<ptrT>( new ptrT(gl, egl, size, hasAlpha, context,
-                                     pbuffer, shareHandle) );
+    return new SharedSurface_ANGLEShareHandle(gl, egl,
+                                              size, hasAlpha,
+                                              context, pbuffer,
+                                              shareHandle);
 }
 
-/*static*/ UniquePtr<SurfaceFactory_ANGLEShareHandle>
-SurfaceFactory_ANGLEShareHandle::Create(GLContext* gl,
-                                        const SurfaceCaps& caps)
-{
-    GLLibraryEGL* egl = &sEGLLibrary;
-    if (!egl)
-        return nullptr;
-
-    if (!egl->IsExtensionSupported(
-            GLLibraryEGL::ANGLE_surface_d3d_texture_2d_share_handle))
-    {
-        return nullptr;
-    }
-
-    typedef SurfaceFactory_ANGLEShareHandle ptrT;
-    return UniquePtr<ptrT>( new ptrT(gl, egl, caps) );
-}
 
 SurfaceFactory_ANGLEShareHandle::SurfaceFactory_ANGLEShareHandle(GLContext* gl,
                                                                  GLLibraryEGL* egl,
