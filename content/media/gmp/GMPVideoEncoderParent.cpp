@@ -16,6 +16,13 @@
 #include "nsThreadUtils.h"
 #include "runnable_utils.h"
 
+template <>
+class nsAutoRefTraits<GMPVideoi420Frame> : public nsPointerRefTraits<GMPVideoi420Frame>
+{
+public:
+  static void Release(GMPVideoi420Frame* aFrame) { aFrame->Destroy(); }
+};
+
 namespace mozilla {
 
 #ifdef LOG
@@ -124,10 +131,12 @@ GMPVideoEncoderParent::InitEncode(const GMPVideoCodec& aCodecSettings,
 }
 
 GMPErr
-GMPVideoEncoderParent::Encode(UniquePtr<GMPVideoi420Frame> aInputFrame,
+GMPVideoEncoderParent::Encode(GMPVideoi420Frame* aInputFrame,
                               const nsTArray<uint8_t>& aCodecSpecificInfo,
                               const nsTArray<GMPVideoFrameType>& aFrameTypes)
 {
+  nsAutoRef<GMPVideoi420Frame> frameRef(aInputFrame);
+
   if (!mIsOpen) {
     NS_WARNING("Trying to use an dead GMP video encoder");
     return GMPGenericErr;

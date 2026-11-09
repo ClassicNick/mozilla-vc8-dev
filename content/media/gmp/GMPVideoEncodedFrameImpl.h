@@ -35,7 +35,6 @@
 #include "gmp-video-frame.h"
 #include "gmp-video-frame-encoded.h"
 #include "gmp-decryption.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/ipc/Shmem.h"
 
 namespace mozilla {
@@ -111,16 +110,6 @@ private:
 };
 
 } // namespace gmp
-
-template<>
-struct DefaultDelete<mozilla::gmp::GMPVideoEncodedFrameImpl>
-{
-  void operator()(mozilla::gmp::GMPVideoEncodedFrameImpl* aFrame) const
-  {
-    aFrame->Destroy();
-  }
-};
-
 } // namespace mozilla
 
 #endif // GMPVideoEncodedFrameImpl_h_

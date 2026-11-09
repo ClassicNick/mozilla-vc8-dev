@@ -14,6 +14,13 @@
 #include "GMPMessageUtils.h"
 #include "mozilla/gmp/GMPTypes.h"
 
+template <>
+class nsAutoRefTraits<GMPVideoEncodedFrame> : public nsPointerRefTraits<GMPVideoEncodedFrame>
+{
+public:
+  static void Release(GMPVideoEncodedFrame* aFrame) { aFrame->Destroy(); }
+};
+
 namespace mozilla {
 
 #ifdef LOG
@@ -107,11 +114,13 @@ GMPVideoDecoderParent::InitDecode(const GMPVideoCodec& aCodecSettings,
 }
 
 nsresult
-GMPVideoDecoderParent::Decode(UniquePtr<GMPVideoEncodedFrame> aInputFrame,
+GMPVideoDecoderParent::Decode(GMPVideoEncodedFrame* aInputFrame,
                               bool aMissingFrames,
                               const nsTArray<uint8_t>& aCodecSpecificInfo,
                               int64_t aRenderTimeMs)
 {
+  nsAutoRef<GMPVideoEncodedFrame> autoDestroy(aInputFrame);
+
   if (!mIsOpen) {
     NS_WARNING("Trying to use an dead GMP video decoder");
     return NS_ERROR_FAILURE;
