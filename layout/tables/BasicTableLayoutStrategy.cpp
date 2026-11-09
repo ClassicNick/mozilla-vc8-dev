@@ -10,11 +10,15 @@
  */
 
 #include "BasicTableLayoutStrategy.h"
+
+#include <algorithm>
+
 #include "nsTableFrame.h"
 #include "nsTableCellFrame.h"
 #include "nsLayoutUtils.h"
 #include "nsGkAtoms.h"
 #include "SpanningCellSorter.h"
+#include "nsIContent.h"
 
 using namespace mozilla;
 using namespace mozilla::layout;

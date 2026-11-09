@@ -31,7 +31,6 @@
 
 #if defined(JS_ION)
 #include "asmjs/AsmJSSignalHandlers.h"
-# include "assembler/assembler/MacroAssembler.h"
 #endif
 #include "jit/arm/Simulator-arm.h"
 #include "jit/JitCompartment.h"
@@ -238,27 +237,6 @@ JSRuntime::JSRuntime(JSRuntime *parentRuntime)
 }
 
 static bool
-JitSupportsFloatingPoint()
-{
-#if defined(JS_ION)
-    if (!JSC::MacroAssembler::supportsFloatingPoint())
-        return false;
-
-#if defined(JS_ION) && WTF_ARM_ARCH_VERSION == 6
-    if (!js::jit::HasVFP())
-        return false;
-#else
-    if (!JSC::MacroAssembler::supportsFloatingPoint())
-        return false;
-#endif
-
-    return true;
-#else
-    return false;
-#endif
-}
-
-static bool
 SignalBasedTriggersDisabled()
 {
   // Don't bother trying to cache the getenv lookup; this should be called
@@ -338,8 +316,6 @@ JSRuntime::init(uint32_t maxbytes, uint32_t maxNurseryBytes)
 #endif
 
     nativeStackBase = GetNativeStackBase();
-
-    jitSupportsFloatingPoint = JitSupportsFloatingPoint();
 
 #ifdef JS_ION
     signalHandlersInstalled_ = EnsureAsmJSSignalHandlersInstalled(this);

@@ -55,7 +55,7 @@ class TransportFlow : public sigslot::has_slots<> {
     : id_("(anonymous)"),
       state_(TransportLayer::TS_NONE),
       layers_(new std::deque<TransportLayer *>) {}
-  TransportFlow(const std::string id)
+  explicit TransportFlow(const std::string id)
     : id_(id),
       state_(TransportLayer::TS_NONE),
       layers_(new std::deque<TransportLayer *>) {}

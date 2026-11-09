@@ -1608,7 +1608,7 @@ ScriptSource::ensureOwnsSource(ExclusiveContext *cx)
     if (ownsUncompressedChars())
         return true;
 
-    jschar *uncompressed = (jschar *) cx->malloc_(sizeof(jschar) * Max<size_t>(length_, 1));
+    jschar *uncompressed = cx->zone()->pod_malloc<jschar>(Max<size_t>(length_, 1));
     if (!uncompressed)
         return false;
     PodCopy(uncompressed, uncompressedChars(), length_);
@@ -1821,7 +1821,7 @@ ScriptSource::performXDR(XDRState<mode> *xdr)
 
         size_t byteLen = compressedLength ? compressedLength : (length_ * sizeof(jschar));
         if (mode == XDR_DECODE) {
-            void *p = xdr->cx()->malloc_(Max<size_t>(byteLen, 1));
+            uint8_t *p = xdr->cx()->template pod_malloc<uint8_t>(Max<size_t>(byteLen, 1));
             if (!p || !xdr->codeBytes(p, byteLen)) {
                 js_free(p);
                 return false;
@@ -1864,7 +1864,7 @@ ScriptSource::performXDR(XDRState<mode> *xdr)
         if (mode == XDR_DECODE) {
             size_t byteLen = (sourceMapURLLen + 1) * sizeof(jschar);
             MOZ_ASSERT(!sourceMapURL_, "Don't leak sourceMapURL_");
-            sourceMapURL_ = static_cast<jschar *>(xdr->cx()->malloc_(byteLen));
+            sourceMapURL_ = static_cast<jschar *>(xdr->cx()->pod_malloc<uint16_t>(byteLen));
             if (!sourceMapURL_)
                 return false;
         }
@@ -1889,7 +1889,7 @@ ScriptSource::performXDR(XDRState<mode> *xdr)
 
         if (mode == XDR_DECODE) {
             size_t byteLen = (displayURLLen + 1) * sizeof(jschar);
-            displayURL_ = static_cast<jschar *>(xdr->cx()->malloc_(byteLen));
+            displayURL_ = static_cast<jschar *>(xdr->cx()->pod_malloc<uint16_t>(byteLen));
             if (!displayURL_)
                 return false;
         }
@@ -1918,7 +1918,7 @@ ScriptSource::performXDR(XDRState<mode> *xdr)
     return true;
 }
 
-// Format and return a cx->malloc_'ed URL for a generated script like:
+// Format and return a cx->zone()->pod_malloc'ed URL for a generated script like:
 //   {filename} line {lineno} > {introducer}
 // For example:
 //   foo.js line 7 > eval
@@ -1943,7 +1943,7 @@ FormatIntroducedFilename(ExclusiveContext *cx, const char *filename, unsigned li
                  3 /* == strlen(" > ") */       +
                  introducerLen                  +
                  1 /* \0 */;
-    char *formatted = cx->pod_malloc<char>(len);
+    char *formatted = cx->zone()->pod_malloc<char>(len);
     if (!formatted)
         return nullptr;
     mozilla::DebugOnly<size_t> checkLen = JS_snprintf(formatted, len, "%s line %s > %s",
@@ -2092,7 +2092,8 @@ js::SharedScriptData::new_(ExclusiveContext *cx, uint32_t codeLength,
     uint32_t padding = (pointerSize - ((baseLength + dataOffset) & pointerMask)) & pointerMask;
     uint32_t length = baseLength + padding + pointerSize * natoms;
 
-    SharedScriptData *entry = (SharedScriptData *)cx->malloc_(length + dataOffset);
+    SharedScriptData *entry = reinterpret_cast<SharedScriptData *>(
+            cx->zone()->pod_malloc<uint8_t>(length + dataOffset));
     if (!entry)
         return nullptr;
 
@@ -3698,7 +3699,7 @@ LazyScript::CreateRaw(ExclusiveContext *cx, HandleFunction fun,
     size_t bytes = (p.numFreeVariables * sizeof(HeapPtrAtom))
                  + (p.numInnerFunctions * sizeof(HeapPtrFunction));
 
-    ScopedJSFreePtr<void> table(bytes ? cx->malloc_(bytes) : nullptr);
+    ScopedJSFreePtr<uint8_t> table(bytes ? fun->zone()->pod_malloc<uint8_t>(bytes) : nullptr);
     if (bytes && !table)
         return nullptr;
 

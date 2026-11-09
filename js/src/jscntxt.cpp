@@ -623,7 +623,7 @@ char *
 js_strdup(ExclusiveContext *cx, const char *s)
 {
     size_t n = strlen(s) + 1;
-    void *p = cx->malloc_(n);
+    void *p = cx->pod_malloc<size_t>(n);
     if (!p)
         return nullptr;
     return (char *)js_memcpy(p, s, n);
