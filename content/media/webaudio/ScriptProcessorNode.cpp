@@ -382,7 +382,7 @@ private:
 
       NS_IMETHODIMP Run()
       {
-        nsRefPtr<ScriptProcessorNode> node = static_cast<ScriptProcessorNode*>
+        ScriptProcessorNode* node = static_cast<ScriptProcessorNode*>
           (mStream->Engine()->NodeMainThread());
         if (!node) {
           return NS_OK;
