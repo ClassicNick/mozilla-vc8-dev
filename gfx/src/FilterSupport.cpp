@@ -1230,10 +1230,10 @@ ResultChangeRegionForPrimitive(const FilterPrimitiveDescription& aDescription,
       Size kernelUnitLength = atts.GetSize(eConvolveMatrixKernelUnitLength);
       IntSize kernelSize = atts.GetIntSize(eConvolveMatrixKernelSize);
       IntPoint target = atts.GetIntPoint(eConvolveMatrixTarget);
-      nsIntMargin m(ceil(kernelUnitLength.width * (target.x)),
-                    ceil(kernelUnitLength.height * (target.y)),
-                    ceil(kernelUnitLength.width * (kernelSize.width - target.x - 1)),
-                    ceil(kernelUnitLength.height * (kernelSize.height - target.y - 1)));
+      nsIntMargin m(ceill(kernelUnitLength.width * (target.x)),
+                    ceill(kernelUnitLength.height * (target.y)),
+                    ceill(kernelUnitLength.width * (kernelSize.width - target.x - 1)),
+                    ceill(kernelUnitLength.height * (kernelSize.height - target.y - 1)));
       return aInputChangeRegions[0].Inflated(m);
     }
 
@@ -1456,10 +1456,10 @@ SourceNeededRegionForPrimitive(const FilterPrimitiveDescription& aDescription,
       Size kernelUnitLength = atts.GetSize(eConvolveMatrixKernelUnitLength);
       IntSize kernelSize = atts.GetIntSize(eConvolveMatrixKernelSize);
       IntPoint target = atts.GetIntPoint(eConvolveMatrixTarget);
-      nsIntMargin m(ceil(kernelUnitLength.width * (kernelSize.width - target.x - 1)),
-                    ceil(kernelUnitLength.height * (kernelSize.height - target.y - 1)),
-                    ceil(kernelUnitLength.width * (target.x)),
-                    ceil(kernelUnitLength.height * (target.y)));
+      nsIntMargin m(ceill(kernelUnitLength.width * (kernelSize.width - target.x - 1)),
+                    ceill(kernelUnitLength.height * (kernelSize.height - target.y - 1)),
+                    ceill(kernelUnitLength.width * (target.x)),
+                    ceill(kernelUnitLength.height * (target.y)));
       return aResultNeededRegion.Inflated(m);
     }
 

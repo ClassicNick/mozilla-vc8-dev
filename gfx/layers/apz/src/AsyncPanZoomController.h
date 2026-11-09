@@ -792,7 +792,7 @@ private:
    */
 
 private:
-  UniquePtr<InputBlockState> mPanGestureState;
+  nsAutoPtr<InputBlockState> mPanGestureState;
 
 
   /* ===================================================================

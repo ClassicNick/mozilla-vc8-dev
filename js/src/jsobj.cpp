@@ -4255,7 +4255,7 @@ js::DefineNativeProperty(ExclusiveContext *cx, HandleObject obj, HandleId id, Ha
                 shape = obj->nativeLookup(cx, id);
             }
             if (shape->isAccessorDescriptor()) {
-                attrs = ApplyOrDefaultAttributes(attrs, shape);
+                attrs = ApplyOrDefaultAttributes(attrs, (const Shape*) shape);
                 shape = JSObject::changeProperty<SequentialExecution>(cx, obj, shape, attrs,
                                                                       JSPROP_GETTER | JSPROP_SETTER,
                                                                       (attrs & JSPROP_GETTER)
@@ -4279,7 +4279,7 @@ js::DefineNativeProperty(ExclusiveContext *cx, HandleObject obj, HandleId id, Ha
          */
         shape = obj->nativeLookup(cx, id);
         if (shape && shape->isDataDescriptor())
-            attrs = ApplyOrDefaultAttributes(attrs, shape);
+            attrs = ApplyOrDefaultAttributes(attrs, (const Shape*) shape);
     } else {
         /*
          * We have been asked merely to update some attributes by a caller of
@@ -4290,7 +4290,7 @@ js::DefineNativeProperty(ExclusiveContext *cx, HandleObject obj, HandleId id, Ha
             return false;
 
         if (shape) {
-            attrs = ApplyOrDefaultAttributes(attrs, shape);
+            attrs = ApplyOrDefaultAttributes(attrs, (const Shape*) shape);
 
             /* Keep everything from the shape that isn't the things we're changing */
             unsigned attrMask = ~(JSPROP_ENUMERATE | JSPROP_READONLY | JSPROP_PERMANENT);

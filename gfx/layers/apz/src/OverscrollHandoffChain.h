@@ -99,7 +99,7 @@ public:
   // has room to be panned.
   bool CanBePanned(const AsyncPanZoomController* aApzc) const;
 private:
-  std::vector<nsRefPtr<AsyncPanZoomController>> mChain;
+  std::vector<nsRefPtr<AsyncPanZoomController> > mChain;
 };
 
 // Don't pollute other files with this macro for now.

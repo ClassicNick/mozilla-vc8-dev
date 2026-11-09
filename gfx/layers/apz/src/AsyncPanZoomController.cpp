@@ -1361,7 +1361,7 @@ nsEventStatus AsyncPanZoomController::OnPanCancelled(const PanGestureInput& aEve
 nsEventStatus AsyncPanZoomController::OnPanBegin(const PanGestureInput& aEvent) {
   APZC_LOG("%p got a pan-begin in state %d\n", this, mState);
 
-  mPanGestureState = MakeUnique<InputBlockState>(BuildOverscrollHandoffChain());
+  mPanGestureState = new InputBlockState(BuildOverscrollHandoffChain());
 
   mX.StartTouch(aEvent.mPanStartPoint.x.Truncated(), aEvent.mTime);
   mY.StartTouch(aEvent.mPanStartPoint.y.Truncated(), aEvent.mTime);
@@ -1413,7 +1413,7 @@ nsEventStatus AsyncPanZoomController::OnPanEnd(const PanGestureInput& aEvent) {
 nsEventStatus AsyncPanZoomController::OnPanMomentumStart(const PanGestureInput& aEvent) {
   APZC_LOG("%p got a pan-momentumstart in state %d\n", this, mState);
 
-  mPanGestureState = MakeUnique<InputBlockState>(BuildOverscrollHandoffChain());
+  mPanGestureState = new InputBlockState(BuildOverscrollHandoffChain());
 
   return nsEventStatus_eConsumeNoDefault;
 }

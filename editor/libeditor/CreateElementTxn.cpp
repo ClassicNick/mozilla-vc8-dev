@@ -27,10 +27,6 @@
 #include "nsReadableUtils.h"
 #include "nsStringFwd.h"
 #include "nsString.h"
-<<<<<<< HEAD
-#include "nsAString.h"
-=======
->>>>>>> d54b9ed
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -80,15 +76,8 @@ CreateElementTxn::DoTransaction()
     return rv.ErrorCode();
   }
 
-<<<<<<< HEAD
-  nsCOMPtr<nsINode> parent = do_QueryInterface(mParent);
-  NS_ENSURE_STATE(parent);
-
-  mOffsetInParent = NS_MIN(mOffsetInParent, parent->GetChildCount());
-=======
-  mOffsetInParent = std::min(mOffsetInParent,
+  mOffsetInParent = NS_MIN(mOffsetInParent,
                              static_cast<int32_t>(mParent->GetChildCount()));
->>>>>>> d54b9ed
 
   // Note, it's ok for mRefNode to be null. That means append
   mRefNode = mParent->GetChildAt(mOffsetInParent);

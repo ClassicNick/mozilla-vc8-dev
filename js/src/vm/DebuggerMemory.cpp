@@ -300,7 +300,7 @@ class Tally {
 
   public:
     Tally(Census &census) : total_(0) { }
-    Tally(MoveRef<Tally> rhs) : total_(rhs.total_) { }
+    Tally(MoveRef<Tally> rhs) : total_(rhs->total_) { }
     Tally &operator=(MoveRef<Tally> rhs) { total_ = rhs->total_; return *this; }
 
     bool init(Census &census) { return true; }

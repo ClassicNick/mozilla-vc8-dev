@@ -26,12 +26,12 @@ NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
 NS_IMPL_ADDREF_INHERITED(ServiceWorkerRegistration, DOMEventTargetHelper)
 NS_IMPL_RELEASE_INHERITED(ServiceWorkerRegistration, DOMEventTargetHelper)
 
-NS_IMPL_CYCLE_COLLECTION_INHERITED(ServiceWorkerRegistration,
-                                   DOMEventTargetHelper,
-                                   mWindow,
-                                   mInstallingWorker,
-                                   mWaitingWorker,
-                                   mActiveWorker)
+NS_IMPL_CYCLE_COLLECTION_INHERITED_4(ServiceWorkerRegistration,
+                                     DOMEventTargetHelper,
+                                     mWindow,
+                                     mInstallingWorker,
+                                     mWaitingWorker,
+                                     mActiveWorker)
 
 ServiceWorkerRegistration::ServiceWorkerRegistration(nsPIDOMWindow* aWindow,
                                                      const nsAString& aScope)

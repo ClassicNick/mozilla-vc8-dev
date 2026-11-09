@@ -217,7 +217,7 @@ APZCTreeManager::UpdatePanZoomControllerTree(CompositorParent* aCompositor,
       // that is supposed to scroll together is split into multiple layers because of
       // e.g. non-scrolling content interleaved in z-index order.
       ScrollableLayerGuid guid(aLayersId, metrics);
-      auto insertResult = aApzcMap.insert(std::make_pair(guid, static_cast<AsyncPanZoomController*>(nullptr)));
+      std::pair<std::map<ScrollableLayerGuid, AsyncPanZoomController*>::iterator, bool> insertResult = aApzcMap.insert(std::make_pair(guid, static_cast<AsyncPanZoomController*>(nullptr)));
       if (!insertResult.second) {
         apzc = insertResult.first->second;
       }
