@@ -120,6 +120,8 @@ public:
   // GMPSharedMem
   virtual void CheckThread() MOZ_OVERRIDE;
 
+  void AbortAsyncShutdown();
+
 private:
   ~GMPParent();
   nsRefPtr<GeckoMediaPluginService> mService;
@@ -146,6 +148,9 @@ private:
   virtual PGMPTimerParent* AllocPGMPTimerParent() MOZ_OVERRIDE;
   virtual bool DeallocPGMPTimerParent(PGMPTimerParent* aActor) MOZ_OVERRIDE;
 
+  virtual bool RecvAsyncShutdownComplete() MOZ_OVERRIDE;
+  virtual bool RecvAsyncShutdownRequired() MOZ_OVERRIDE;
+
   GMPState mState;
   nsCOMPtr<nsIFile> mDirectory; // plugin directory on disk
   nsString mName; // base name of plugin on disk, UTF-16 because used for paths
@@ -160,10 +165,14 @@ private:
   nsTArray<nsRefPtr<GMPVideoDecoderParent> > mVideoDecoders;
   nsTArray<nsRefPtr<GMPVideoEncoderParent> > mVideoEncoders;
   nsTArray<nsRefPtr<GMPAudioDecoderParent> > mAudioDecoders;
+  nsTArray<nsRefPtr<GMPTimerParent> > mTimers;
   nsCOMPtr<nsIThread> mGMPThread;
   // Origin the plugin is assigned to, or empty if the the plugin is not
   // assigned to an origin.
   nsAutoString mOrigin;
+
+  bool mAsyncShutdownRequired;
+  bool mAsyncShutdownInProgress;
 };
 
 } // namespace gmp

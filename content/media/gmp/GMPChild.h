@@ -9,14 +9,16 @@
 #include "mozilla/gmp/PGMPChild.h"
 #include "GMPSharedMemManager.h"
 #include "GMPTimerChild.h"
+#include "gmp-async-shutdown.h"
 #include "gmp-entrypoints.h"
 #include "prlink.h"
 
 namespace mozilla {
 namespace gmp {
 
-class GMPChild : public PGMPChild,
-                 public GMPSharedMem
+class GMPChild : public PGMPChild
+               , public GMPSharedMem
+               , public GMPAsyncShutdownHost
 {
 public:
   GMPChild();
@@ -39,6 +41,9 @@ public:
   // GMPSharedMem
   virtual void CheckThread() MOZ_OVERRIDE;
 
+  // GMPAsyncShutdownHost
+  void ShutdownComplete() MOZ_OVERRIDE;
+
 private:
   virtual PCrashReporterChild* AllocPCrashReporterChild(const NativeThreadId& aThread) MOZ_OVERRIDE;
   virtual bool DeallocPCrashReporterChild(PCrashReporterChild*) MOZ_OVERRIDE;
@@ -57,10 +62,12 @@ private:
   virtual bool DeallocPGMPTimerChild(PGMPTimerChild* aActor) MOZ_OVERRIDE;
 
   virtual bool RecvCrashPluginNow() MOZ_OVERRIDE;
+  virtual bool RecvBeginAsyncShutdown() MOZ_OVERRIDE;
 
   virtual void ActorDestroy(ActorDestroyReason aWhy) MOZ_OVERRIDE;
   virtual void ProcessingError(Result aWhat) MOZ_OVERRIDE;
 
+  GMPAsyncShutdown* mAsyncShutdown;
   nsRefPtr<GMPTimerChild> mTimerChild;
 
   PRLibrary* mLib;
