@@ -544,13 +544,6 @@ AutoGCRooter::trace(JSTracer *trc)
         return;
       }
 
-      case IONALLOC: {
-#ifdef JS_ION
-        static_cast<js::jit::AutoTempAllocatorRooter *>(this)->trace(trc);
-#endif
-        return;
-      }
-
       case WRAPPER: {
         /*
          * We need to use MarkValueUnbarriered here because we mark wrapper

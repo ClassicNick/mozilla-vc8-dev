@@ -124,11 +124,19 @@
       <field name="_contentWindow">null</field>
 
       <property name="contentWindow"
+                onget="return null"
+                readonly="true"/>
+
+      <property name="contentWindowAsCPOW"
                 onget="return this._contentWindow"
                 readonly="true"/>
 
       <property name="contentDocument"
-                onget="return this.contentWindow ? this.contentWindow.document : null"
+                onget="return null"
+                readonly="true"/>
+
+      <property name="contentDocumentAsCPOW"
+                onget="return this.contentWindowAsCPOW ? this.contentWindowAsCPOW.document : null"
                 readonly="true"/>
 
       <field name="_syncHandler">null</field>
@@ -209,6 +217,7 @@
           this.messageManager.addMessageListener("DocumentInserted", this);
           this.messageManager.addMessageListener("FullZoomChange", this);
           this.messageManager.addMessageListener("TextZoomChange", this);
+          this.messageManager.addMessageListener("ZoomChangeUsingMouseWheel", this);
           this.messageManager.loadFrameScript("chrome://global/content/browser-child.js", true);
 
           if (this.hasAttribute("selectpopup")) {
@@ -267,6 +276,12 @@
 
             case "TextZoomChange":
               this._textZoom = data.value;
+              break;
+
+            case "ZoomChangeUsingMouseWheel":
+              let event = document.createEvent("Events");
+              event.initEvent("ZoomChangeUsingMouseWheel", true, false);
+              this.dispatchEvent(event);
               break;
 
             case "Forms:HideDropDown": {

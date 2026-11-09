@@ -2433,10 +2433,10 @@ FilterNodeConvolveMatrixSoftware::InflatedSourceRect(const IntRect &aDestRect)
   }
 
   IntMargin margin;
-  margin.left = ceil(mTarget.x * mKernelUnitLength.width);
-  margin.top = ceil(mTarget.y * mKernelUnitLength.height);
-  margin.right = ceil((mKernelSize.width - mTarget.x - 1) * mKernelUnitLength.width);
-  margin.bottom = ceil((mKernelSize.height - mTarget.y - 1) * mKernelUnitLength.height);
+  margin.left = ceill(mTarget.x * mKernelUnitLength.width);
+  margin.top = ceill(mTarget.y * mKernelUnitLength.height);
+  margin.right = ceill((mKernelSize.width - mTarget.x - 1) * mKernelUnitLength.width);
+  margin.bottom = ceill((mKernelSize.height - mTarget.y - 1) * mKernelUnitLength.height);
 
   IntRect srcRect = aDestRect;
   srcRect.Inflate(margin);
@@ -2451,10 +2451,10 @@ FilterNodeConvolveMatrixSoftware::InflatedDestRect(const IntRect &aSourceRect)
   }
 
   IntMargin margin;
-  margin.left = ceil((mKernelSize.width - mTarget.x - 1) * mKernelUnitLength.width);
-  margin.top = ceil((mKernelSize.height - mTarget.y - 1) * mKernelUnitLength.height);
-  margin.right = ceil(mTarget.x * mKernelUnitLength.width);
-  margin.bottom = ceil(mTarget.y * mKernelUnitLength.height);
+  margin.left = ceill((mKernelSize.width - mTarget.x - 1) * mKernelUnitLength.width);
+  margin.top = ceill((mKernelSize.height - mTarget.y - 1) * mKernelUnitLength.height);
+  margin.right = ceill(mTarget.x * mKernelUnitLength.width);
+  margin.bottom = ceill(mTarget.y * mKernelUnitLength.height);
 
   IntRect destRect = aSourceRect;
   destRect.Inflate(margin);

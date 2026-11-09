@@ -556,7 +556,7 @@ ForkJoinNursery::allocateSlots(JSObject *obj, uint32_t nslots)
         return nullptr;
 
     if (!isInsideNewspace(obj))
-        return obj->zone()->pod_malloc<HeapSlot>(nslots);
+        return obj->pod_malloc<HeapSlot>(nslots);
 
     if (nslots > MaxNurserySlots)
         return allocateHugeSlots(obj, nslots);
@@ -578,7 +578,7 @@ ForkJoinNursery::reallocateSlots(JSObject *obj, HeapSlot *oldSlots,
 
     if (!isInsideNewspace(obj)) {
         JS_ASSERT_IF(oldSlots, !isInsideNewspace(oldSlots));
-        return obj->zone()->pod_realloc<HeapSlot>(oldSlots, oldCount, newCount);
+        return obj->pod_realloc<HeapSlot>(oldSlots, oldCount, newCount);
     }
 
     if (!isInsideNewspace(oldSlots))
@@ -628,7 +628,7 @@ ForkJoinNursery::allocateHugeSlots(JSObject *obj, size_t nslots)
     if (nslots & mozilla::tl::MulOverflowMask<sizeof(HeapSlot)>::value)
         return nullptr;
 
-    HeapSlot *slots = obj->zone()->pod_malloc<HeapSlot>(nslots);
+    HeapSlot *slots = obj->pod_malloc<HeapSlot>(nslots);
     if (!slots)
         return slots;
 
@@ -641,7 +641,7 @@ HeapSlot *
 ForkJoinNursery::reallocateHugeSlots(JSObject *obj, HeapSlot *oldSlots,
                                      uint32_t oldCount, uint32_t newCount)
 {
-    HeapSlot *newSlots = obj->zone()->pod_realloc<HeapSlot>(oldSlots, oldCount, newCount);
+    HeapSlot *newSlots = obj->pod_realloc<HeapSlot>(oldSlots, oldCount, newCount);
     if (!newSlots)
         return newSlots;
 
@@ -851,7 +851,7 @@ ForkJoinNursery::copySlotsToTospace(JSObject *dst, JSObject *src, AllocKind dstK
 size_t
 ForkJoinNursery::copyElementsToTospace(JSObject *dst, JSObject *src, AllocKind dstKind)
 {
-    if (src->hasEmptyElements())
+    if (src->hasEmptyElements() || src->denseElementsAreCopyOnWrite())
         return 0;
 
     ObjectElements *srcHeader = src->getElementsHeader();

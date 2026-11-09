@@ -34,12 +34,12 @@ struct CommonType;
 
 template <class units, class primitive>
 struct CommonType<IntCoordTyped<units>, primitive> {
-    typedef decltype(int32_t() + primitive()) type;
+    typedef int32_t type;
 };
 
 template <class units, class primitive>
 struct CommonType<CoordTyped<units>, primitive> {
-    typedef decltype(Float() + primitive()) type;
+    typedef Float type;
 };
 
 // This is a base class that provides mixed-type operator overloads between
