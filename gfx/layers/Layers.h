@@ -2234,6 +2234,9 @@ void WriteSnapshotToDumpFile(LayerManager* aManager, gfx::DataSourceSurface* aSu
 void WriteSnapshotToDumpFile(Compositor* aCompositor, gfx::DrawTarget* aTarget);
 #endif
 
+// A utility function used by different LayerManager implementations.
+nsIntRect ToOutsideIntRect(const gfxRect &aRect);
+
 }
 }
 

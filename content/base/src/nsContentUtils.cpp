@@ -1953,19 +1953,6 @@ nsContentUtils::TraceSafeJSContext(JSTracer* aTrc)
   }
 }
 
-nsPIDOMWindow *
-nsContentUtils::GetWindowFromCaller()
-{
-  JSContext *cx = GetCurrentJSContext();
-  if (cx) {
-    nsCOMPtr<nsPIDOMWindow> win =
-      do_QueryInterface(nsJSUtils::GetDynamicScriptGlobal(cx));
-    return win;
-  }
-
-  return nullptr;
-}
-
 nsIDocument*
 nsContentUtils::GetDocumentFromCaller()
 {
@@ -1978,24 +1965,6 @@ nsContentUtils::GetDocumentFromCaller()
   }
 
   return win->GetExtantDoc();
-}
-
-nsIDocument*
-nsContentUtils::GetDocumentFromContext()
-{
-  JSContext *cx = GetCurrentJSContext();
-  if (cx) {
-    nsIScriptGlobalObject *sgo = nsJSUtils::GetDynamicScriptGlobal(cx);
-
-    if (sgo) {
-      nsCOMPtr<nsPIDOMWindow> pwin = do_QueryInterface(sgo);
-      if (pwin) {
-        return pwin->GetExtantDoc();
-      }
-    }
-  }
-
-  return nullptr;
 }
 
 bool
