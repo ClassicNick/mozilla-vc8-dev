@@ -5929,6 +5929,8 @@ SetRuntimeOptions(JSRuntime *rt, const OptionParser &op)
     if (jsCacheDir) {
         if (!op.getBoolOption("no-js-cache-per-process"))
             jsCacheDir = JS_smprintf("%s/%u", jsCacheDir, (unsigned)getpid());
+        else
+            jsCacheDir = JS_strdup(rt, jsCacheDir);
         jsCacheAsmJSPath = JS_smprintf("%s/asmjs.cache", jsCacheDir);
     }
 
@@ -5970,10 +5972,14 @@ Shell(JSContext *cx, OptionParser *op, char **envp)
         JS_DumpCompartmentPCCounts(cx);
 
     if (!op->getBoolOption("no-js-cache-per-process")) {
-        if (jsCacheAsmJSPath)
+        if (jsCacheAsmJSPath) {
             unlink(jsCacheAsmJSPath);
-        if (jsCacheDir)
+            JS_free(cx, const_cast<char *>(jsCacheAsmJSPath));
+        }
+        if (jsCacheDir) {
             rmdir(jsCacheDir);
+            JS_free(cx, const_cast<char *>(jsCacheDir));
+        }
     }
 
     return result;
