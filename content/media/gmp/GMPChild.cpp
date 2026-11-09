@@ -127,14 +127,15 @@ GMPChild::Init(const std::string& aPluginPath,
     return false;
   }
 
+#ifdef MOZ_CRASHREPORTER
+  SendPCrashReporterConstructor(CrashReporter::CurrentThreadId());
+#endif
+
 #if defined(XP_MACOSX) && defined(MOZ_GMP_SANDBOX)
   mPluginPath = aPluginPath;
   return true;
 #endif
 
-#ifdef MOZ_CRASHREPORTER
-  SendPCrashReporterConstructor(CrashReporter::CurrentThreadId());
-#endif
 #if defined(XP_WIN) && MOZ_CONTENT_SANDBOX
   mozilla::SandboxTarget::Instance()->StartSandbox();
 #endif

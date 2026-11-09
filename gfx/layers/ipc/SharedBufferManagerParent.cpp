@@ -108,7 +108,7 @@ void InitGralloc() {
 class DeleteSharedBufferManagerParentTask : public Task
 {
 public:
-    DeleteSharedBufferManagerParentTask(nsAutoPtr<SharedBufferManagerParent> aSharedBufferManager)
+    explicit DeleteSharedBufferManagerParentTask(nsAutoPtr<SharedBufferManagerParent> aSharedBufferManager)
         : mSharedBufferManager(aSharedBufferManager) {
     }
     virtual void Run() MOZ_OVERRIDE {}

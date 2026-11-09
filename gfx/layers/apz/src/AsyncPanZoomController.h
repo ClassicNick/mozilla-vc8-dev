@@ -149,14 +149,21 @@ public:
   // These methods must only be called on the compositor thread.
   //
 
+  /**
+   * Advances any animations currently running to the given timestamp.
+   * This may be called multiple times with the same timestamp.
+   *
+   * The return value indicates whether or not any currently running animation
+   * should continue. If true, the compositor should schedule another composite.
+   */
+  bool AdvanceAnimations(const TimeStamp& aSampleTime);
+
   bool UpdateAnimation(const TimeStamp& aSampleTime,
                        Vector<Task*>* aOutDeferredTasks);
 
   /**
-   * RQuery the transforms that should be applied to the layer corresponding
+   * Query the transforms that should be applied to the layer corresponding
    * to this APZC due to asynchronous panning and zooming.
-   * |aSampleTime| is the time that this is sampled at; this is used for
-   * interpolating animations.
    * This function returns two transforms via out parameters:
    *   |aOutTransform| is the transform due to regular panning and zooming
    *   |aOverscrollTransform| is the transform due to overscrolling
@@ -165,14 +172,10 @@ public:
    * overscroll transform parameter may be nullptr). Clients who do not want
    * to ignore the overscroll transform should multiply the two transforms
    * together.
-   *
-   * The return value indicates whether or not any currently running animation
-   * should continue. If true, the compositor should schedule another composite.
    */
-  bool SampleContentTransformForFrame(const TimeStamp& aSampleTime,
-                                      ViewTransform* aOutTransform,
+  void SampleContentTransformForFrame(ViewTransform* aOutTransform,
                                       ScreenPoint& aScrollOffset,
-                                      ViewTransform* aOutOverscrollTransform = nullptr);
+                                      ViewTransform* aOutOverscrollTransform);
 
   /**
    * A shadow layer update has arrived. |aLayerMetrics| is the new FrameMetrics
@@ -973,20 +976,17 @@ private:
    * hit-testing to see which APZC instance should handle touch events.
    */
 public:
-  void SetLayerHitTestData(const nsIntRegion& aRegion, const Matrix4x4& aTransformToLayer,
-                           const Matrix4x4& aTransformForLayer) {
+  void SetLayerHitTestData(const nsIntRegion& aRegion, const Matrix4x4& aTransformToLayer) {
     mVisibleRegion = aRegion;
     mAncestorTransform = aTransformToLayer;
-    mCSSTransform = aTransformForLayer;
-    UpdateTransformScale();
+  }
+
+  void AddHitTestRegion(const nsIntRegion& aRegion) {
+    mVisibleRegion.OrWith(aRegion);
   }
 
   Matrix4x4 GetAncestorTransform() const {
     return mAncestorTransform;
-  }
-
-  Matrix4x4 GetCSSTransform() const {
-    return mCSSTransform;
   }
 
   bool VisibleRegionContains(const ParentLayerPoint& aPoint) const {
@@ -999,15 +999,14 @@ public:
   }
 
 private:
-  /* This is the visible region of the layer that this APZC corresponds to, in
-   * that layer's screen pixels (the same coordinate system in which this APZC
-   * receives events in ReceiveInputEvent()). */
+  /* This is the union of the visible regions of the layers that this APZC
+   * corresponds to, in the screen pixels of those layers. (This is the same
+   * coordinate system in which this APZC receives events in
+   * ReceiveInputEvent()). */
   nsIntRegion mVisibleRegion;
-  /* This is the cumulative CSS transform for all the layers between the parent
-   * APZC and this one (not inclusive) */
+  /* This is the cumulative CSS transform for all the layers from (and including)
+   * the parent APZC down to (but excluding) this one. */
   Matrix4x4 mAncestorTransform;
-  /* This is the CSS transform for this APZC's layer. */
-  Matrix4x4 mCSSTransform;
 
 
   /* ===================================================================
@@ -1075,8 +1074,8 @@ class AsyncPanZoomAnimation {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(AsyncPanZoomAnimation)
 
 public:
-  AsyncPanZoomAnimation(const TimeDuration& aRepaintInterval =
-                        TimeDuration::Forever())
+  explicit AsyncPanZoomAnimation(const TimeDuration& aRepaintInterval =
+                                 TimeDuration::Forever())
     : mRepaintInterval(aRepaintInterval)
   { }
 
