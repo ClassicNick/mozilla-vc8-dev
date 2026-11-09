@@ -12,7 +12,7 @@
 #define DNS_API_PORTABLE (0)          // Portable: PR_GetAddrInfoByName()
 #define DNS_API_WINDOWS_DNS_QUERY (1) // Windows: DnsQuery()
 
-#ifdef XP_WIN
+#if defined (XP_WIN) && defined(_MSC_VER) && _MSC_VER >= 1600
 #define DNS_API DNS_API_WINDOWS_DNS_QUERY
 #else
 #define DNS_API DNS_API_PORTABLE
