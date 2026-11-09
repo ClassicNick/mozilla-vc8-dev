@@ -317,8 +317,6 @@ JSRuntime::init(uint32_t maxbytes, uint32_t maxNurseryBytes)
 
     nativeStackBase = GetNativeStackBase();
 
-    jitSupportsFloatingPoint = js::jit::JitSupportsFloatingPoint();
-
 #ifdef JS_ION
     signalHandlersInstalled_ = EnsureAsmJSSignalHandlersInstalled(this);
     canUseSignalHandlers_ = signalHandlersInstalled_ && !SignalBasedTriggersDisabled();

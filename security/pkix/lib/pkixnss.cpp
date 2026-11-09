@@ -64,12 +64,7 @@ CheckPublicKeySize(Input subjectPublicKeyInfo,
     case rsaKey:
       // TODO(bug 622859): Enforce a minimum of 2048 bits for EV certs.
       if (SECKEY_PublicKeyStrengthInBits(publicKey.get()) < MINIMUM_NON_ECC_BITS) {
-<<<<<<< HEAD
-        // TODO(bug 1031946): Create a new error code.
-        return ERROR_INVALID_KEY;
-=======
         return ERROR_INADEQUATE_KEY_SIZE;
->>>>>>> 8abfa77
       }
       break;
     case nullKey:

@@ -133,7 +133,7 @@ struct MallocProvider
         return (T *)realloc_(prior, oldSize * sizeof(T), newSize * sizeof(T));
     }
 
-    JS_DECLARE_NEW_METHODS(new_, malloc_, MOZ_ALWAYS_INLINE)
+    JS_DECLARE_NEW_METHODS(new_, pod_malloc<uint8_t>, MOZ_ALWAYS_INLINE)
 
   private:
     Client *client() { return static_cast<Client *>(this); }

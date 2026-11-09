@@ -12,7 +12,7 @@
 
 #include "nsDisplayList.h"
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 #include <algorithm>
 
 #include "mozilla/dom/TabChild.h"

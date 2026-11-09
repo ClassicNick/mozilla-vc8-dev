@@ -1864,7 +1864,7 @@ ScriptSource::performXDR(XDRState<mode> *xdr)
         if (mode == XDR_DECODE) {
             size_t byteLen = (sourceMapURLLen + 1) * sizeof(jschar);
             MOZ_ASSERT(!sourceMapURL_, "Don't leak sourceMapURL_");
-            sourceMapURL_ = static_cast<jschar *>(xdr->cx()->malloc_(byteLen));
+            sourceMapURL_ = static_cast<jschar *>(xdr->cx()->pod_malloc<uint16_t>(byteLen));
             if (!sourceMapURL_)
                 return false;
         }
@@ -1889,7 +1889,7 @@ ScriptSource::performXDR(XDRState<mode> *xdr)
 
         if (mode == XDR_DECODE) {
             size_t byteLen = (displayURLLen + 1) * sizeof(jschar);
-            displayURL_ = static_cast<jschar *>(xdr->cx()->malloc_(byteLen));
+            displayURL_ = static_cast<jschar *>(xdr->cx()->pod_malloc<uint16_t>(byteLen));
             if (!displayURL_)
                 return false;
         }
