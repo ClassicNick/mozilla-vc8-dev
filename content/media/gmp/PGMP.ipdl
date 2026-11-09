@@ -8,6 +8,7 @@ include protocol PGMPVideoEncoder;
 include protocol PCrashReporter;
 include protocol PGMPAudioDecoder;
 include protocol PGMPTimer;
+include protocol PGMPStorage;
 
 using mozilla::dom::NativeThreadId from "mozilla/dom/TabMessageUtils.h";
 
@@ -21,10 +22,12 @@ intr protocol PGMP
   manages PGMPVideoEncoder;
   manages PCrashReporter;
   manages PGMPTimer;
+  manages PGMPStorage;
 
 parent:
   async PCrashReporter(NativeThreadId tid);
   async PGMPTimer();
+  async PGMPStorage();
 
   async AsyncShutdownComplete();
   async AsyncShutdownRequired();

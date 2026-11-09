@@ -6305,7 +6305,7 @@ JS::AutoAssertOnGC::AutoAssertOnGC()
         JSRuntime *runtime = data->runtimeIfOnOwnerThread();
         if (runtime) {
             gc = &runtime->gc;
-            gcNumber = gc->gcNumber();;
+            gcNumber = gc->gcNumber();
             gc->enterUnsafeRegion();
         }
     }

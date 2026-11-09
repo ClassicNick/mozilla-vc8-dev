@@ -160,6 +160,12 @@ GMPParent::CloseIfUnused()
       mVideoDecoders.IsEmpty() &&
       mVideoEncoders.IsEmpty() &&
       mAudioDecoders.IsEmpty()) {
+
+    // Ensure all timers are killed.
+    for (uint32_t i = mTimers.Length(); i > 0; i--) {
+      mTimers[i - 1]->Shutdown();
+    }
+
     if (mAsyncShutdownRequired) {
       if (!mAsyncShutdownInProgress) {
         LOGD(("%s::%s: %p sending async shutdown notification", __CLASS__,
@@ -170,6 +176,10 @@ GMPParent::CloseIfUnused()
         }
       }
     } else {
+      // Any async shutdown must be complete. Shutdown GMPStorage.
+      for (size_t i = mStorage.Length(); i > 0; i--) {
+        mStorage[i - 1]->Shutdown();
+      }
       Shutdown();
     }
   }
@@ -217,19 +227,19 @@ GMPParent::CloseActive(bool aDieWhenUnloaded)
     mVideoDecoders[i - 1]->Shutdown();
   }
 
-  // Invalidate and remove any remaining API objects.
   for (uint32_t i = mVideoEncoders.Length(); i > 0; i--) {
     mVideoEncoders[i - 1]->Shutdown();
   }
 
-  // Invalidate and remove any remaining API objects.
   for (uint32_t i = mAudioDecoders.Length(); i > 0; i--) {
     mAudioDecoders[i - 1]->Shutdown();
   }
 
-  for (uint32_t i = mTimers.Length(); i > 0; i--) {
-    mTimers[i - 1]->Shutdown();
-  }
+  // Note: we don't shutdown timers here, we do that in CloseIfUnused(),
+  // as there are multiple entry points to CloseIfUnused().
+
+  // Note: We don't shutdown storage API objects here, as they need to
+  // work during async shutdown of GMPs.
 
   // Note: the shutdown of the codecs is async!  don't kill
   // the plugin-container until they're all safely shut down via
@@ -595,6 +605,29 @@ GMPParent::DeallocPGMPAudioDecoderParent(PGMPAudioDecoderParent* aActor)
 {
   GMPAudioDecoderParent* vdp = static_cast<GMPAudioDecoderParent*>(aActor);
   NS_RELEASE(vdp);
+  return true;
+}
+
+PGMPStorageParent*
+GMPParent::AllocPGMPStorageParent()
+{
+  GMPStorageParent* p = new GMPStorageParent(mOrigin, this);
+  mStorage.AppendElement(p); // Addrefs, released in DeallocPGMPStorageParent.
+  return p;
+}
+
+bool
+GMPParent::DeallocPGMPStorageParent(PGMPStorageParent* aActor)
+{
+  GMPStorageParent* p = static_cast<GMPStorageParent*>(aActor);
+  p->Shutdown();
+  mStorage.RemoveElement(p);
+  return true;
+}
+
+bool
+GMPParent::RecvPGMPStorageConstructor(PGMPStorageParent* actor)
+{
   return true;
 }
 
