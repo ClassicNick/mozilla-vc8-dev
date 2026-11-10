@@ -797,7 +797,6 @@ MakeUnique() MOZ_DELETE;
 
 template<typename T, typename A1>
 typename detail::UniqueSelector<T>::KnownBound
-<<<<<<< HEAD
 MakeUnique(A1& a1) MOZ_DELETE;
 
 template<typename T, typename A1, typename A2>

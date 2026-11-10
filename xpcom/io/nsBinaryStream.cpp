@@ -825,7 +825,7 @@ nsBinaryInputStream::ReadByteArray(uint32_t aLength, uint8_t** aResult)
 NS_IMETHODIMP
 nsBinaryInputStream::ReadArrayBuffer(uint32_t aLength,
                                      JS::Handle<JS::Value> aBuffer,
-                                     JSContext* aCx, uint32_t *rLength)
+                                     JSContext* aCx, uint32_t* aReadLength)
 {
   if (!aBuffer.isObject()) {
     return NS_ERROR_FAILURE;
@@ -849,7 +849,7 @@ nsBinaryInputStream::ReadArrayBuffer(uint32_t aLength,
   ScopedDeleteArray<char> buf(new char[bufSize]);
 
   uint32_t remaining = aLength;
-  *rLength = 0;
+  *aReadLength = 0;
   do {
     // Read data into temporary buffer.
     uint32_t bytesRead;
@@ -869,7 +869,7 @@ nsBinaryInputStream::ReadArrayBuffer(uint32_t aLength,
       return NS_ERROR_FAILURE;
     }
 
-    *rLength += bytesRead;
+    *aReadLength += bytesRead;
     PodCopy(data, buf.get(), bytesRead);
 
     remaining -= bytesRead;

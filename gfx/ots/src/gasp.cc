@@ -9,11 +9,11 @@
 
 #define TABLE_NAME "gasp"
 
-#define DROP_THIS_TABLE(...) \
+#define DROP_THIS_TABLE(a) \
   do { \
     delete file->gasp; \
     file->gasp = 0; \
-    OTS_FAILURE_MSG_(file, TABLE_NAME ": " __VA_ARGS__); \
+    OTS_FAILURE_MSG_(file, TABLE_NAME ": " a); \
     OTS_FAILURE_MSG("Table discarded"); \
   } while (0)
 

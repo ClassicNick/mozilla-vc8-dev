@@ -1287,7 +1287,7 @@ GCONF_VERSION=1.2.1
 GIO_VERSION=2.20
 STARTUP_NOTIFICATION_VERSION=0.8
 DBUS_VERSION=0.60
-SQLITE_VERSION=3.8.5
+SQLITE_VERSION=3.8.6
 
 MSMANIFEST_TOOL=
 
@@ -28083,7 +28083,6 @@ MOZ_CHILD_PROCESS_BUNDLE="plugin-container.app/Contents/MacOS/"
 # - MOZ_APP_ID: When set, used for application.ini's "ID" field, and
 # crash reporter server url.
 # - MOZ_PROFILE_MIGRATOR: When set, enables profile migrator.
-# - MOZ_EXTENSION_MANAGER: When set, enabled extension manager.
 
 if test -z "$MOZ_APP_NAME"; then
    MOZ_APP_NAME=`echo $MOZ_APP_BASENAME | tr A-Z a-z`
@@ -28117,7 +28116,6 @@ EOF
 cat >> confdefs.h <<EOF
 #define MOZ_B2G_OS_NAME "$MOZ_B2G_OS_NAME"
 EOF
-
 
 
 
@@ -28412,12 +28410,12 @@ if test -n "$COMPILE_ENVIRONMENT"; then
 for ac_func in posix_fadvise posix_fallocate
 do
 echo $ac_n "checking for $ac_func""... $ac_c" 1>&6
-echo "configure:28416: checking for $ac_func" >&5
+echo "configure:28414: checking for $ac_func" >&5
 if eval "test \"`echo '$''{'ac_cv_func2_$ac_func'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
   cat > conftest.$ac_ext <<EOF
-#line 28421 "configure"
+#line 28419 "configure"
 #define $ac_func innocuous_$ac_func
 #include "confdefs.h"
 #undef $ac_func
@@ -28444,7 +28442,7 @@ $ac_func();
 
 ; return 0; }
 EOF
-if { (eval echo configure:28448: \"$ac_link\") 1>&5; (eval $ac_link) 2>&5; } && test -s conftest${ac_exeext}; then
+if { (eval echo configure:28446: \"$ac_link\") 1>&5; (eval $ac_link) 2>&5; } && test -s conftest${ac_exeext}; then
   rm -rf conftest*
   eval "ac_cv_func2_$ac_func=yes"
 else
@@ -28479,7 +28477,7 @@ if test "$MOZ_X11"; then
                 _SAVE_CFLAGS=$CFLAGS
     CFLAGS="$CFLAGS $XCFLAGS"
     cat > conftest.$ac_ext <<EOF
-#line 28483 "configure"
+#line 28481 "configure"
 #include "confdefs.h"
 
         #include <stdio.h>
@@ -28498,7 +28496,7 @@ int main() {
     
 ; return 0; }
 EOF
-if { (eval echo configure:28502: \"$ac_compile\") 1>&5; (eval $ac_compile) 2>&5; }; then
+if { (eval echo configure:28500: \"$ac_compile\") 1>&5; (eval $ac_compile) 2>&5; }; then
   :
 else
   echo "configure: failed program was:" >&5
@@ -28668,7 +28666,7 @@ if test -n "$MOZ_NATIVE_ICU"; then
     # Extract the first word of "pkg-config", so it can be a program name with args.
 set dummy pkg-config; ac_word=$2
 echo $ac_n "checking for $ac_word""... $ac_c" 1>&6
-echo "configure:28672: checking for $ac_word" >&5
+echo "configure:28670: checking for $ac_word" >&5
 if eval "test \"`echo '$''{'ac_cv_path_PKG_CONFIG'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
@@ -28712,19 +28710,19 @@ fi
      PKG_CONFIG_MIN_VERSION=0.9.0
      if $PKG_CONFIG --atleast-pkgconfig-version $PKG_CONFIG_MIN_VERSION; then
         echo $ac_n "checking for icu-i18n >= 50.1""... $ac_c" 1>&6
-echo "configure:28716: checking for icu-i18n >= 50.1" >&5
+echo "configure:28714: checking for icu-i18n >= 50.1" >&5
 
         if $PKG_CONFIG --exists "icu-i18n >= 50.1" ; then
             echo "$ac_t""yes" 1>&6
             succeeded=yes
 
             echo $ac_n "checking MOZ_ICU_CFLAGS""... $ac_c" 1>&6
-echo "configure:28723: checking MOZ_ICU_CFLAGS" >&5
+echo "configure:28721: checking MOZ_ICU_CFLAGS" >&5
             MOZ_ICU_CFLAGS=`$PKG_CONFIG --cflags "icu-i18n >= 50.1"`
             echo "$ac_t""$MOZ_ICU_CFLAGS" 1>&6
 
             echo $ac_n "checking MOZ_ICU_LIBS""... $ac_c" 1>&6
-echo "configure:28728: checking MOZ_ICU_LIBS" >&5
+echo "configure:28726: checking MOZ_ICU_LIBS" >&5
             ## Remove evil flags like -Wl,--export-dynamic
             MOZ_ICU_LIBS="`$PKG_CONFIG --libs \"icu-i18n >= 50.1\" |sed s/-Wl,--export-dynamic//g`"
             echo "$ac_t""$MOZ_ICU_LIBS" 1>&6
@@ -29558,7 +29556,6 @@ sed 's/$/,/' >> $CONFIG_STATUS <<EOF
     (''' MAR_CHANNEL_ID ''', r''' $MAR_CHANNEL_ID ''')
     (''' ACCEPTED_MAR_CHANNEL_IDS ''', r''' $ACCEPTED_MAR_CHANNEL_IDS ''')
     (''' MOZ_PROFILE_MIGRATOR ''', r''' $MOZ_PROFILE_MIGRATOR ''')
-    (''' MOZ_EXTENSION_MANAGER ''', r''' $MOZ_EXTENSION_MANAGER ''')
     (''' MOZ_APP_UA_NAME ''', r''' $MOZ_APP_UA_NAME ''')
     (''' MOZ_APP_VERSION ''', r''' $MOZ_APP_VERSION ''')
     (''' MOZ_APP_MAXVERSION ''', r''' $MOZ_APP_MAXVERSION ''')

@@ -435,7 +435,7 @@ PrintError(const char* aPrefix)
     nullptr,
     lastErr,
     MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), // Default language
-    (LPSTR) &lpMsgBuf,
+    (LPSTR)&lpMsgBuf,
     0,
     nullptr
   );
@@ -466,9 +466,8 @@ EnsureWalkThreadReady()
     }
 
     unsigned int threadID;
-    stackWalkThread = (HANDLE)
-      _beginthreadex(nullptr, 0, WalkStackThread, (void*)readyEvent,
-                     0, &threadID);
+    stackWalkThread = (HANDLE)_beginthreadex(nullptr, 0, WalkStackThread,
+                                             (void*)readyEvent, 0, &threadID);
     if (!stackWalkThread) {
       PrintError("CreateThread");
       ::CloseHandle(readyEvent);
@@ -813,7 +812,7 @@ WalkStackThread(void* aData)
   HANDLE readyEvent = (HANDLE)aData;
   ::SetEvent(readyEvent);
 
-  while ((msgRet = ::GetMessage(&msg, (HWND) - 1, 0, 0)) != 0) {
+  while ((msgRet = ::GetMessage(&msg, (HWND)-1, 0, 0)) != 0) {
     if (msgRet == -1) {
       PrintError("GetMessage");
     } else {
@@ -1565,7 +1564,7 @@ static void
 myinit()
 {
 
-  if (! initialized) {
+  if (!initialized) {
 #ifndef __GNUC__
     void *handle;
     const char *libdem = "libdemangle.so.1";

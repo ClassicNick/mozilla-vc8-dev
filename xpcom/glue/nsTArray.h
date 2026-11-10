@@ -1102,8 +1102,9 @@ public:
   {
     // Adjust memory allocation up-front to catch errors.
     if (!Alloc::Successful(this->EnsureCapacity(Length() + aArrayLen - aCount,
-                                                sizeof(elem_type))))
+                                                sizeof(elem_type)))) {
       return nullptr;
+    }
     DestructRange(aStart, aCount);
     this->ShiftData(aStart, aCount, aArrayLen,
                     sizeof(elem_type), MOZ_ALIGNOF(elem_type));
@@ -1163,8 +1164,9 @@ public:
   elem_type* InsertElementAt(index_type aIndex)
   {
     if (!Alloc::Successful(this->EnsureCapacity(Length() + 1,
-                                                sizeof(elem_type))))
+                                                sizeof(elem_type)))) {
       return nullptr;
+    }
     this->ShiftData(aIndex, 0, 1, sizeof(elem_type), MOZ_ALIGNOF(elem_type));
     elem_type* elem = Elements() + aIndex;
     elem_traits::Construct(elem);
@@ -1243,8 +1245,9 @@ public:
   elem_type* AppendElements(const Item* aArray, size_type aArrayLen)
   {
     if (!Alloc::Successful(this->EnsureCapacity(Length() + aArrayLen,
-                                                sizeof(elem_type))))
+                                                sizeof(elem_type)))) {
       return nullptr;
+    }
     index_type len = Length();
     AssignRange(len, aArrayLen, aArray);
     this->IncrementLength(aArrayLen);
@@ -1271,8 +1274,9 @@ public:
   elem_type* AppendElements(size_type aCount)
   {
     if (!Alloc::Successful(this->EnsureCapacity(Length() + aCount,
-                                                sizeof(elem_type))))
+                                                sizeof(elem_type)))) {
       return nullptr;
+    }
     elem_type* elems = Elements() + Length();
     size_type i;
     for (i = 0; i < aCount; ++i) {
@@ -1297,8 +1301,9 @@ public:
     index_type len = Length();
     index_type otherLen = aArray.Length();
     if (!Alloc::Successful(this->EnsureCapacity(len + otherLen,
-                                                sizeof(elem_type))))
+                                                sizeof(elem_type)))) {
       return nullptr;
+    }
     copy_type::CopyElements(Elements() + len, aArray.Elements(), otherLen,
                             sizeof(elem_type));
     this->IncrementLength(otherLen);
@@ -1405,7 +1410,7 @@ public:
   // removes elements from the array (see also RemoveElementsAt).
   // @param aNewLen The desired length of this array.
   // @return True if the operation succeeded; false otherwise.
-  // See also TruncateLength if the new length is guaranteed to be smaller than 
+  // See also TruncateLength if the new length is guaranteed to be smaller than
   // the old.
   typename Alloc::ResultType SetLength(size_type aNewLen)
   {

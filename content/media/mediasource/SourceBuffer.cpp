@@ -16,6 +16,10 @@
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/dom/MediaSourceBinding.h"
 #include "mozilla/dom/TimeRanges.h"
+#ifdef MOZ_FMP4
+#include "mp4_demuxer/BufferStream.h"
+#include "mp4_demuxer/MoofParser.h"
+#endif
 #include "nsError.h"
 #include "nsIEventTarget.h"
 #include "nsIRunnable.h"
@@ -85,6 +89,8 @@ public:
 
 class MP4ContainerParser : public ContainerParser {
 public:
+  MP4ContainerParser() : mTimescale(0) {}
+
   bool IsInitSegmentPresent(const uint8_t* aData, uint32_t aLength)
   {
     ContainerParser::IsInitSegmentPresent(aData, aLength);
@@ -111,6 +117,35 @@ public:
     return aData[4] == 'f' && aData[5] == 't' && aData[6] == 'y' &&
            aData[7] == 'p';
   }
+
+#ifdef MOZ_FMP4
+  virtual bool ParseStartAndEndTimestamps(const uint8_t* aData, uint32_t aLength,
+                                          double& aStart, double& aEnd)
+  {
+    mp4_demuxer::MoofParser parser(new mp4_demuxer::BufferStream(aData, aLength), 0);
+    parser.mMdhd.mTimescale = mTimescale;
+
+    nsTArray<MediaByteRange> byteRanges;
+    byteRanges.AppendElement(MediaByteRange(0, aLength));
+    parser.RebuildFragmentedIndex(byteRanges);
+
+    // Persist the timescale for when it is absent in later chunks
+    mTimescale = parser.mMdhd.mTimescale;
+
+    mp4_demuxer::Interval<mp4_demuxer::Microseconds> compositionRange =
+        parser.GetCompositionRange();
+
+    if (compositionRange.IsNull()) {
+      return false;
+    }
+    aStart = static_cast<double>(compositionRange.start) / USECS_PER_S;
+    aEnd = static_cast<double>(compositionRange.end) / USECS_PER_S;
+    return true;
+  }
+#endif
+
+  private:
+    uint32_t mTimescale;
 };
 
 

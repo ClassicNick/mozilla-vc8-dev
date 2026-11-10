@@ -3747,6 +3747,13 @@ ContentParent::CheckAppHasStatus(unsigned short aStatus)
     return AssertAppHasStatus(this, aStatus);
 }
 
+bool
+ContentParent::KillChild()
+{
+  KillHard();
+  return true;
+}
+
 PBlobParent*
 ContentParent::SendPBlobConstructor(PBlobParent* aActor,
                                     const BlobConstructorParams& aParams)
