@@ -1117,7 +1117,6 @@ JSContext::JSContext(JSRuntime *rt)
     resolvingList(nullptr),
     generatingError(false),
     savedFrameChains_(),
-    defaultCompartmentObject_(nullptr),
     cycleDetectorSet(MOZ_THIS_IN_INITIALIZER_LIST()),
     errorReporter(nullptr),
     data(nullptr),
@@ -1314,8 +1313,6 @@ JSContext::mark(JSTracer *trc)
     /* Stack frames and slots are traced by StackSpace::mark. */
 
     /* Mark other roots-by-definition in the JSContext. */
-    if (defaultCompartmentObject_)
-        MarkObjectRoot(trc, &defaultCompartmentObject_, "default compartment object");
     if (isExceptionPending())
         MarkValueRoot(trc, &unwrappedException_, "unwrapped exception");
 
