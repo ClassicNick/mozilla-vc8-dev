@@ -294,7 +294,7 @@ UDPSocket::DoPendingMcastCommand()
 bool
 UDPSocket::Send(const StringOrBlobOrArrayBufferOrArrayBufferView& aData,
                 const Optional<nsAString>& aRemoteAddress,
-                const Optional<Nullable<uint16_t>>& aRemotePort,
+                const Optional<Nullable<uint16_t> >& aRemotePort,
                 ErrorResult& aRv)
 {
   if (mReadyState != SocketReadyState::Open) {
@@ -468,39 +468,19 @@ UDPSocket::InitRemote(const nsAString& aLocalAddress,
   return NS_OK;
 }
 
-nsresult
-UDPSocket::Init(const nsString& aLocalAddress,
-                const Nullable<uint16_t>& aLocalPort,
-                const bool& aAddressReuse,
-                const bool& aLoopback)
-{
-  MOZ_ASSERT(!mSocket && !mSocketChild);
-
-  mLocalAddress = aLocalAddress;
-  mLocalPort = aLocalPort;
-  mAddressReuse = aAddressReuse;
-  mLoopback = aLoopback;
-
-  ErrorResult rv;
-  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(GetOwner());
-
-  mOpened = Promise::Create(global, rv);
-  if (NS_WARN_IF(rv.Failed())) {
-    return rv.ErrorCode();
-  }
-
-  mClosed = Promise::Create(global, rv);
-  if (NS_WARN_IF(rv.Failed())) {
-    return rv.ErrorCode();
-  }
-
-  class OpenSocketRunnable MOZ_FINAL : public nsRunnable
+class OpenSocketRunnable MOZ_FINAL : public nsRunnable
   {
   public:
     OpenSocketRunnable(UDPSocket* aSocket) : mSocket(aSocket)
     { }
+	
+	NS_IMETHOD Run() MOZ_OVERRIDE;
 
-    NS_IMETHOD Run() MOZ_OVERRIDE
+  private:
+    nsRefPtr<UDPSocket> mSocket;
+  };
+
+NS_IMETHODIMP OpenSocketRunnable::Run()
     {
       MOZ_ASSERT(mSocket);
 
@@ -527,9 +507,31 @@ UDPSocket::Init(const nsString& aLocalAddress,
       return NS_OK;
     }
 
-  private:
-    nsRefPtr<UDPSocket> mSocket;
-  };
+nsresult
+UDPSocket::Init(const nsString& aLocalAddress,
+                const Nullable<uint16_t>& aLocalPort,
+                const bool& aAddressReuse,
+                const bool& aLoopback)
+{
+  MOZ_ASSERT(!mSocket && !mSocketChild);
+
+  mLocalAddress = aLocalAddress;
+  mLocalPort = aLocalPort;
+  mAddressReuse = aAddressReuse;
+  mLoopback = aLoopback;
+
+  ErrorResult rv;
+  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(GetOwner());
+
+  mOpened = Promise::Create(global, rv);
+  if (NS_WARN_IF(rv.Failed())) {
+    return rv.ErrorCode();
+  }
+
+  mClosed = Promise::Create(global, rv);
+  if (NS_WARN_IF(rv.Failed())) {
+    return rv.ErrorCode();
+  }
 
   nsCOMPtr<nsIRunnable> runnable = new OpenSocketRunnable(this);
 

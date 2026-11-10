@@ -863,7 +863,7 @@ private:
   nsCOMPtr<nsIInputStream> mStream;
 };
 
-NS_IMPL_ISUPPORTS(PendingSendStream, nsIDNSListener)
+NS_IMPL_ISUPPORTS1(PendingSendStream, nsIDNSListener)
 
 NS_IMETHODIMP
 PendingSendStream::OnLookupComplete(nsICancelable *request,

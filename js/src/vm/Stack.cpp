@@ -1851,37 +1851,53 @@ JS::ProfilingFrameIterator::settle()
 void
 JS::ProfilingFrameIterator::iteratorConstruct(const RegisterState &state)
 {
+#ifdef JS_ION
     JS_ASSERT(!done());
 
     JS_ASSERT(activation_->isAsmJS());
     new (storage_.addr()) AsmJSProfilingFrameIterator(*activation_->asAsmJS(), state);
+#else
+	MOZ_CRASH("Shouldn't have any frames");
+#endif
 }
 
 void
 JS::ProfilingFrameIterator::iteratorConstruct()
 {
+#ifdef JS_ION
     JS_ASSERT(!done());
 
     JS_ASSERT(activation_->isAsmJS());
     new (storage_.addr()) AsmJSProfilingFrameIterator(*activation_->asAsmJS());
+#else
+	MOZ_CRASH("Shouldn't have any frames");
+#endif
 }
 
 void
 JS::ProfilingFrameIterator::iteratorDestroy()
 {
+#ifdef JS_ION
     JS_ASSERT(!done());
 
     JS_ASSERT(activation_->isAsmJS());
     asmJSIter().~AsmJSProfilingFrameIterator();
+#else
+	MOZ_CRASH("Shouldn't have any frames");
+#endif
 }
 
 bool
 JS::ProfilingFrameIterator::iteratorDone()
 {
+#ifdef JS_ION
     JS_ASSERT(!done());
 
     JS_ASSERT(activation_->isAsmJS());
     return asmJSIter().done();
+#else
+	MOZ_CRASH("Shouldn't have any frames");
+#endif
 }
 
 void *

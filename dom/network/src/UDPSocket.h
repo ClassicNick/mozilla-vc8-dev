@@ -140,12 +140,14 @@ private:
        const bool& aAddressReuse,
        const bool& aLoopback);
 
+public:
   nsresult
   InitLocal(const nsAString& aLocalAddress, const uint16_t& aLocalPort);
 
   nsresult
   InitRemote(const nsAString& aLocalAddress, const uint16_t& aLocalPort);
 
+private:
   void
   HandleReceivedData(const nsACString& aRemoteAddress,
                      const uint16_t& aRemotePort,
@@ -158,23 +160,29 @@ private:
                        const uint8_t* aData,
                        const uint32_t& aDataLength);
 
+public:
   void
   CloseWithReason(nsresult aReason);
 
+  nsString mLocalAddress;
+  Nullable<uint16_t> mLocalPort;
+private:
   nsresult
   DoPendingMcastCommand();
 
-  nsString mLocalAddress;
-  Nullable<uint16_t> mLocalPort;
   nsCString mRemoteAddress;
   Nullable<uint16_t> mRemotePort;
   bool mAddressReuse;
   bool mLoopback;
+public:
   SocketReadyState mReadyState;
+private:
   nsRefPtr<Promise> mOpened;
   nsRefPtr<Promise> mClosed;
 
+public:
   nsCOMPtr<nsIUDPSocket> mSocket;
+private:
   nsCOMPtr<nsIUDPSocketChild> mSocketChild;
 
   struct MulticastCommand {
