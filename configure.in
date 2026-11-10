@@ -2147,7 +2147,11 @@ ia64*-hpux*)
         MKSHLIB_UNFORCE_ALL=
         dnl Set subsystem version 5 for Windows XP.
         if test "$CPU_ARCH" = "x86"; then
+		if test "$_CC_SUITE" -ge "10"; then
             WIN32_SUBSYSTEM_VERSION=5.01
+		else
+			WIN32_SUBSYSTEM_VERSION=5.00
+		fi
         else
             WIN32_SUBSYSTEM_VERSION=5.02
         fi
