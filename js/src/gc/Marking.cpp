@@ -1876,6 +1876,12 @@ js::TraceChildren(JSTracer *trc, void *thing, JSGCTraceKind kind)
 }
 
 static void
+AssertNonGrayGCThing(JSTracer *trc, void **thingp, JSGCTraceKind kind)
+{
+    MOZ_ASSERT(!JS::GCThingIsMarkedGray(*thingp));
+}
+
+static void
 UnmarkGrayGCThing(void *thing)
 {
     static_cast<js::gc::Cell *>(thing)->unmark(js::gc::GRAY);
@@ -1958,14 +1964,19 @@ UnmarkGrayChildren(JSTracer *trc, void **thingp, JSGCTraceKind kind)
         return;
     }
 
-    UnmarkGrayTracer *tracer = static_cast<UnmarkGrayTracer *>(trc);
-    if (!IsInsideNursery(static_cast<Cell *>(thing))) {
-        if (!JS::GCThingIsMarkedGray(thing))
-            return;
-
-        UnmarkGrayGCThing(thing);
-        tracer->unmarkedAny = true;
+#ifdef DEBUG
+    if (gc::IsInsideNursery(static_cast<gc::Cell *>(thing))) {
+        JSTracer nongray(trc->runtime(), AssertNonGrayGCThing);
+        JS_TraceChildren(&nongray, thing, kind);
     }
+#endif
+
+    if (!JS::GCThingIsMarkedGray(thing))
+        return;
+
+    UnmarkGrayTracer *tracer = static_cast<UnmarkGrayTracer *>(trc);
+    UnmarkGrayGCThing(thing);
+    tracer->unmarkedAny = true;
 
     /*
      * Trace children of |thing|. If |thing| and its parent are both shapes,

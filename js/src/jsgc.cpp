@@ -2760,7 +2760,7 @@ ArenaLists::refillFreeListInGC(Zone *zone, AllocKind thingKind)
 
     Allocator &allocator = zone->allocator;
     JS_ASSERT(allocator.arenas.freeLists[thingKind].isEmpty());
-    JSRuntime *rt = zone->runtimeFromMainThread();
+    mozilla::DebugOnly<JSRuntime *> rt = zone->runtimeFromMainThread();
     JS_ASSERT(rt->isHeapMajorCollecting());
     JS_ASSERT(!rt->gc.isBackgroundSweeping());
 
