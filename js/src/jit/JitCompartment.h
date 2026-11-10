@@ -189,6 +189,7 @@ class JitRuntime
     // Thunk that calls the GC pre barrier.
     JitCode *valuePreBarrier_;
     JitCode *shapePreBarrier_;
+    JitCode *typeObjectPreBarrier_;
 
     // Thunk to call malloc/free.
     JitCode *mallocStub_;
@@ -353,12 +354,13 @@ class JitRuntime
         return enterBaselineJIT_->as<EnterJitCode>();
     }
 
-    JitCode *valuePreBarrier() const {
-        return valuePreBarrier_;
-    }
-
-    JitCode *shapePreBarrier() const {
-        return shapePreBarrier_;
+    JitCode *preBarrier(MIRType type) const {
+        switch (type) {
+          case MIRType_Value: return valuePreBarrier_;
+          case MIRType_Shape: return shapePreBarrier_;
+          case MIRType_TypeObject: return typeObjectPreBarrier_;
+          default: MOZ_CRASH();
+        }
     }
 
     JitCode *mallocStub() const {

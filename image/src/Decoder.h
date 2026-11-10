@@ -175,7 +175,11 @@ public:
   // marked as dirty. Must be called only on the main thread.
   void MarkFrameDirty();
 
-  imgFrame* GetCurrentFrame() const { return mCurrentFrame; }
+  already_AddRefed<imgFrame> GetCurrentFrame() const
+  {
+    nsRefPtr<imgFrame> frame = mCurrentFrame;
+    return frame.forget();
+  }
 
 protected:
 
@@ -234,7 +238,7 @@ protected:
    *
    */
   RasterImage &mImage;
-  imgFrame* mCurrentFrame;
+  nsRefPtr<imgFrame> mCurrentFrame;
   RefPtr<imgDecoderObserver> mObserver;
   ImageMetadata mImageMetadata;
 

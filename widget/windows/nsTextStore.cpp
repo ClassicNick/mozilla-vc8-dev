@@ -614,7 +614,7 @@ GetDisplayAttrStr(const TF_DISPLAYATTRIBUTE &aDispAttr)
 #endif // #ifdef PR_LOGGING
 
 nsTextStore::nsTextStore()
-  : mContent(mComposition, mSelection)
+  : mLockedContent(mComposition, mSelection)
   , mEditCookie(0)
   , mIPProfileCookie(TF_INVALID_COOKIE)
   , mLangProfileCookie(TF_INVALID_COOKIE)
@@ -814,7 +814,7 @@ nsTextStore::Destroy(void)
     CommitCompositionInternal(false);
   }
 
-  mContent.Clear();
+  mLockedContent.Clear();
   mSelection.MarkDirty();
 
   if (mWidget) {
@@ -1098,13 +1098,13 @@ nsTextStore::FlushPendingActions()
 {
   if (!mWidget || mWidget->Destroyed()) {
     mPendingActions.Clear();
-    mContent.Clear();
+    mLockedContent.Clear();
     mPendingOnSelectionChange = false;
     mPendingOnLayoutChange = false;
     return;
   }
 
-  mContent.Clear();
+  mLockedContent.Clear();
 
   nsRefPtr<nsWindowBase> kungFuDeathGrip(mWidget);
   for (uint32_t i = 0; i < mPendingActions.Length(); i++) {
@@ -1409,32 +1409,60 @@ nsTextStore::GetSelection(ULONG ulIndex,
 }
 
 nsTextStore::Content&
-nsTextStore::CurrentContent()
+nsTextStore::LockedContent()
 {
-  Selection& currentSel = CurrentSelection();
-  if (currentSel.IsDirty()) {
-    mContent.Clear();
-    return mContent;
+  MOZ_ASSERT(IsReadLocked(),
+             "LockedContent must be called only during the document is locked");
+  if (!IsReadLocked()) {
+    mLockedContent.Clear();
+    return mLockedContent;
   }
 
-  if (!mContent.IsInitialized()) {
-    MOZ_ASSERT(mWidget && !mWidget->Destroyed());
+  Selection& currentSel = CurrentSelection();
+  if (currentSel.IsDirty()) {
+    mLockedContent.Clear();
+    return mLockedContent;
+  }
 
-    WidgetQueryContentEvent queryText(true, NS_QUERY_TEXT_CONTENT, mWidget);
-    queryText.InitForQueryTextContent(0, UINT32_MAX);
-    mWidget->InitEvent(queryText);
-    mWidget->DispatchWindowEvent(&queryText);
-    NS_ENSURE_TRUE(queryText.mSucceeded, mContent);
+  if (!mLockedContent.IsInitialized()) {
+    nsAutoString text;
+    if (NS_WARN_IF(!GetCurrentText(text))) {
+      mLockedContent.Clear();
+      return mLockedContent;
+    }
 
-    mContent.Init(queryText.mReply.mString);
+    mLockedContent.Init(text);
   }
 
   PR_LOG(sTextStoreLog, PR_LOG_DEBUG,
-         ("TSF: 0x%p   nsTextStore::CurrentContent(): "
-          "mContent={ mText.Length()=%d }",
-          this, mContent.Text().Length()));
+         ("TSF: 0x%p   nsTextStore::LockedContent(): "
+          "mLockedContent={ mText.Length()=%d }",
+          this, mLockedContent.Text().Length()));
 
-  return mContent;
+  return mLockedContent;
+}
+
+bool
+nsTextStore::GetCurrentText(nsAString& aTextContent)
+{
+  if (mLockedContent.IsInitialized()) {
+    aTextContent = mLockedContent.Text();
+    return true;
+  }
+
+  MOZ_ASSERT(mWidget && !mWidget->Destroyed());
+
+  WidgetQueryContentEvent queryText(true, NS_QUERY_TEXT_CONTENT, mWidget);
+  queryText.InitForQueryTextContent(0, UINT32_MAX);
+  mWidget->InitEvent(queryText);
+  mWidget->DispatchWindowEvent(&queryText);
+  if (NS_WARN_IF(!queryText.mSucceeded)) {
+    aTextContent.Truncate();
+    return false;
+  }
+
+  aTextContent = queryText.mReply.mString;
+  return true;
 }
 
 nsTextStore::Selection&
@@ -2011,28 +2039,28 @@ nsTextStore::GetText(LONG acpStart,
     prgRunInfo->type = TS_RT_PLAIN;
   }
 
-  Content& currentContent = CurrentContent();
-  if (!currentContent.IsInitialized()) {
+  Content& lockedContent = LockedContent();
+  if (!lockedContent.IsInitialized()) {
     PR_LOG(sTextStoreLog, PR_LOG_ERROR,
            ("TSF: 0x%p   nsTextStore::GetText() FAILED due to "
-            "CurrentContent() failure", this));
+            "LockedContent() failure", this));
     return E_FAIL;
   }
-  if (currentContent.Text().Length() < static_cast<uint32_t>(acpStart)) {
+  if (lockedContent.Text().Length() < static_cast<uint32_t>(acpStart)) {
     PR_LOG(sTextStoreLog, PR_LOG_ERROR,
            ("TSF: 0x%p   nsTextStore::GetText() FAILED due to "
             "acpStart is larger offset than the actual text length", this));
     return TS_E_INVALIDPOS;
   }
   if (acpEnd != -1 &&
-      currentContent.Text().Length() < static_cast<uint32_t>(acpEnd)) {
+      lockedContent.Text().Length() < static_cast<uint32_t>(acpEnd)) {
     PR_LOG(sTextStoreLog, PR_LOG_ERROR,
            ("TSF: 0x%p   nsTextStore::GetText() FAILED due to "
             "acpEnd is larger offset than the actual text length", this));
     return TS_E_INVALIDPOS;
   }
   uint32_t length = (acpEnd == -1) ?
-    currentContent.Text().Length() - static_cast<uint32_t>(acpStart) :
+    lockedContent.Text().Length() - static_cast<uint32_t>(acpStart) :
     static_cast<uint32_t>(acpEnd - acpStart);
   if (cchPlainReq && cchPlainReq - 1 < length) {
     length = cchPlainReq - 1;
@@ -2040,7 +2068,7 @@ nsTextStore::GetText(LONG acpStart,
   if (length) {
     if (pchPlain && cchPlainReq) {
       const char16_t* startChar =
-        currentContent.Text().BeginReading() + acpStart;
+        lockedContent.Text().BeginReading() + acpStart;
       memcpy(pchPlain, startChar, length * sizeof(*pchPlain));
       pchPlain[length] = 0;
       *pcchPlainOut = length;
@@ -2451,14 +2479,14 @@ nsTextStore::GetEndACP(LONG *pacp)
     return E_INVALIDARG;
   }
 
-  Content& currentContent = CurrentContent();
-  if (!currentContent.IsInitialized()) {
+  Content& lockedContent = LockedContent();
+  if (!lockedContent.IsInitialized()) {
     PR_LOG(sTextStoreLog, PR_LOG_ERROR,
            ("TSF: 0x%p   nsTextStore::GetEndACP() FAILED due to "
-            "CurrentContent() failure", this));
+            "LockedContent() failure", this));
     return E_FAIL;
   }
-  *pacp = static_cast<LONG>(currentContent.Text().Length());
+  *pacp = static_cast<LONG>(lockedContent.Text().Length());
   return S_OK;
 }
 
@@ -2503,7 +2531,7 @@ nsTextStore::GetACPFromPoint(TsViewCookie vcView,
     return E_INVALIDARG;
   }
 
-  if (mContent.IsLayoutChanged()) {
+  if (mLockedContent.IsLayoutChanged()) {
     PR_LOG(sTextStoreLog, PR_LOG_ERROR,
            ("TSF: 0x%p   nsTextStore::GetACPFromPoint() FAILED due to "
             "layout not recomputed", this));
@@ -2570,7 +2598,7 @@ nsTextStore::GetTextExt(TsViewCookie vcView,
       (sDoNotReturnNoLayoutErrorToEasyChangjei &&
        mActiveTIPKeyboardDescription.Equals(TIP_NAME_EASY_CHANGJEI)) &&
       mComposition.IsComposing() &&
-      mContent.IsLayoutChangedAfter(acpEnd) &&
+      mLockedContent.IsLayoutChangedAfter(acpEnd) &&
       mComposition.mStart < acpEnd) {
     acpEnd = mComposition.mStart;
     acpStart = std::min(acpStart, acpEnd);
@@ -2579,7 +2607,7 @@ nsTextStore::GetTextExt(TsViewCookie vcView,
             "acpStart=%d, acpEnd=%d", this, acpStart, acpEnd));
   }
 
-  if (mContent.IsLayoutChangedAfter(acpEnd)) {
+  if (mLockedContent.IsLayoutChangedAfter(acpEnd)) {
     PR_LOG(sTextStoreLog, PR_LOG_ERROR,
            ("TSF: 0x%p   nsTextStore::GetTextExt() FAILED due to "
             "layout not recomputed at %d", this, acpEnd));
@@ -2916,15 +2944,15 @@ nsTextStore::InsertTextAtSelectionInternal(const nsAString &aInsertStr,
           this, NS_ConvertUTF16toUTF8(aInsertStr).get(), aTextChange,
           GetBoolName(mComposition.IsComposing())));
 
-  Content& currentContent = CurrentContent();
-  if (!currentContent.IsInitialized()) {
+  Content& lockedContent = LockedContent();
+  if (!lockedContent.IsInitialized()) {
     PR_LOG(sTextStoreLog, PR_LOG_ERROR,
            ("TSF: 0x%p   nsTextStore::InsertTextAtSelectionInternal() failed "
-            "due to CurrentContent() failure()", this));
+            "due to LockedContent() failure()", this));
     return false;
   }
 
-  TS_SELECTION_ACP oldSelection = currentContent.Selection().ACP();
+  TS_SELECTION_ACP oldSelection = lockedContent.Selection().ACP();
   if (!mComposition.IsComposing()) {
     // Use a temporary composition to contain the text
     PendingAction* compositionStart = mPendingActions.AppendElement();
@@ -2938,12 +2966,12 @@ nsTextStore::InsertTextAtSelectionInternal(const nsAString &aInsertStr,
     compositionEnd->mData = aInsertStr;
   }
 
-  currentContent.ReplaceSelectedTextWith(aInsertStr);
+  lockedContent.ReplaceSelectedTextWith(aInsertStr);
 
   if (aTextChange) {
     aTextChange->acpStart = oldSelection.acpStart;
     aTextChange->acpOldEnd = oldSelection.acpEnd;
-    aTextChange->acpNewEnd = currentContent.Selection().EndOffset();
+    aTextChange->acpNewEnd = lockedContent.Selection().EndOffset();
   }
 
   PR_LOG(sTextStoreLog, PR_LOG_DEBUG,
@@ -2994,11 +3022,11 @@ nsTextStore::RecordCompositionStartAction(ITfCompositionView* pComposition,
     return hr;
   }
 
-  Content& currentContent = CurrentContent();
-  if (!currentContent.IsInitialized()) {
+  Content& lockedContent = LockedContent();
+  if (!lockedContent.IsInitialized()) {
     PR_LOG(sTextStoreLog, PR_LOG_ERROR,
            ("TSF: 0x%p   nsTextStore::RecordCompositionStartAction() FAILED "
-            "due to CurrentContent() failure", this));
+            "due to LockedContent() failure", this));
     return E_FAIL;
   }
 
@@ -3023,7 +3051,7 @@ nsTextStore::RecordCompositionStartAction(ITfCompositionView* pComposition,
     }
   }
 
-  currentContent.StartComposition(pComposition, *action);
+  lockedContent.StartComposition(pComposition, *action);
 
   PR_LOG(sTextStoreLog, PR_LOG_ALWAYS,
          ("TSF: 0x%p   nsTextStore::RecordCompositionStartAction() succeeded: "
@@ -3053,14 +3081,14 @@ nsTextStore::RecordCompositionEndAction()
   action->mType = PendingAction::COMPOSITION_END;
   action->mData = mComposition.mString;
 
-  Content& currentContent = CurrentContent();
-  if (!currentContent.IsInitialized()) {
+  Content& lockedContent = LockedContent();
+  if (!lockedContent.IsInitialized()) {
     PR_LOG(sTextStoreLog, PR_LOG_ERROR,
            ("TSF: 0x%p   nsTextStore::RecordCompositionEndAction() FAILED due "
-            "to CurrentContent() failure", this));
+            "to LockedContent() failure", this));
     return E_FAIL;
   }
-  currentContent.EndComposition(*action);
+  lockedContent.EndComposition(*action);
 
   PR_LOG(sTextStoreLog, PR_LOG_ALWAYS,
          ("TSF: 0x%p   nsTextStore::RecordCompositionEndAction(), succeeded",

@@ -18,6 +18,7 @@
 #include "prenv.h"
 #include "prsystem.h"
 #include "ImageContainer.h"
+#include "ImageRegion.h"
 #include "Layers.h"
 #include "nsPresContext.h"
 #include "nsIThreadPool.h"
@@ -185,21 +186,19 @@ DiscardingEnabled()
 class ScaleRequest
 {
 public:
-  ScaleRequest(RasterImage* aImage, const gfxSize& aScale, imgFrame* aSrcFrame)
-    : scale(aScale)
+  ScaleRequest(RasterImage* aImage,
+               const nsIntSize& aSize,
+               imgFrame* aSrcFrame)
+    : dstSize(aSize)
     , dstLocked(false)
     , done(false)
     , stopped(false)
   {
     MOZ_ASSERT(!aSrcFrame->GetIsPaletted());
-    MOZ_ASSERT(aScale.width > 0 && aScale.height > 0);
+    MOZ_ASSERT(aSize.width > 0 && aSize.height > 0);
 
     weakImage = aImage;
     srcRect = aSrcFrame->GetRect();
-
-    nsIntRect dstRect = srcRect;
-    dstRect.ScaleRoundOut(scale.width, scale.height);
-    dstSize = dstRect.Size();
   }
 
   // This can only be called on the main thread.
@@ -278,16 +277,15 @@ public:
 
   // These values may only be touched on the main thread.
   WeakPtr<RasterImage> weakImage;
-  nsAutoPtr<imgFrame> dstFrame;
+  nsRefPtr<imgFrame> dstFrame;
   nsRefPtr<gfxImageSurface> srcSurface;
   nsRefPtr<gfxImageSurface> dstSurface;
 
   // Below are the values that may be touched on the scaling thread.
-  gfxSize scale;
   uint8_t* srcData;
   uint8_t* dstData;
   nsIntRect srcRect;
-  gfxIntSize dstSize;
+  nsIntSize dstSize;
   uint32_t srcStride;
   uint32_t dstStride;
   mozilla::gfx::SurfaceFormat srcFormat;
@@ -334,9 +332,11 @@ private: /* members */
 class ScaleRunner : public nsRunnable
 {
 public:
-  ScaleRunner(RasterImage* aImage, const gfxSize& aScale, imgFrame* aSrcFrame)
+  ScaleRunner(RasterImage* aImage,
+              const nsIntSize& aSize,
+              imgFrame* aSrcFrame)
   {
-    nsAutoPtr<ScaleRequest> request(new ScaleRequest(aImage, aScale, aSrcFrame));
+    nsAutoPtr<ScaleRequest> request(new ScaleRequest(aImage, aSize, aSrcFrame));
 
     // Destination is unconditionally ARGB32 because that's what the scaler
     // outputs.
@@ -396,7 +396,6 @@ RasterImage::RasterImage(imgStatusTracker* aStatusTracker,
   ImageResource(aURI), // invoke superclass's constructor
   mSize(0,0),
   mFrameDecodeFlags(DECODE_FLAGS_DEFAULT),
-  mMultipartDecodedFrame(nullptr),
   mAnim(nullptr),
   mLockCount(0),
   mDecodeCount(0),
@@ -465,14 +464,13 @@ RasterImage::~RasterImage()
     // This would be done in ShutdownDecoder, but since mDecoder is non-null,
     // we didn't call ShutdownDecoder and we need to do it manually.
     if (GetNumFrames() > 0) {
-      imgFrame *curframe = mFrameBlender.RawGetFrame(GetNumFrames() - 1);
+      nsRefPtr<imgFrame> curframe = mFrameBlender.RawGetFrame(GetNumFrames() - 1);
       curframe->UnlockImageData();
     }
   }
 
   delete mAnim;
   mAnim = nullptr;
-  delete mMultipartDecodedFrame;
 
   // Total statistics
   num_containers--;
@@ -666,7 +664,7 @@ RasterImage::GetType()
   return imgIContainer::TYPE_RASTER;
 }
 
-imgFrame*
+already_AddRefed<imgFrame>
 RasterImage::GetImgFrameNoDecode(uint32_t framenum)
 {
   if (!mAnim) {
@@ -676,7 +674,7 @@ RasterImage::GetImgFrameNoDecode(uint32_t framenum)
   return mFrameBlender.GetFrame(framenum);
 }
 
-imgFrame*
+already_AddRefed<imgFrame>
 RasterImage::GetImgFrame(uint32_t framenum)
 {
   nsresult rv = WantDecodedFrames();
@@ -684,10 +682,10 @@ RasterImage::GetImgFrame(uint32_t framenum)
   return GetImgFrameNoDecode(framenum);
 }
 
-imgFrame*
+already_AddRefed<imgFrame>
 RasterImage::GetDrawableImgFrame(uint32_t framenum)
 {
-  imgFrame* frame = nullptr;
+  nsRefPtr<imgFrame> frame;
 
   if (mMultipart && framenum == GetCurrentImgFrameIndex()) {
     // In the multipart case we prefer to use mMultipartDecodedFrame, which is
@@ -709,7 +707,7 @@ RasterImage::GetDrawableImgFrame(uint32_t framenum)
     frame->ApplyDirtToSurfaces();
   }
 
-  return frame;
+  return frame.forget();
 }
 
 uint32_t
@@ -721,7 +719,7 @@ RasterImage::GetCurrentImgFrameIndex() const
   return 0;
 }
 
-imgFrame*
+already_AddRefed<imgFrame>
 RasterImage::GetCurrentImgFrame()
 {
   return GetImgFrame(GetCurrentImgFrameIndex());
@@ -741,8 +739,9 @@ RasterImage::FrameIsOpaque(uint32_t aWhichFrame)
     return false;
 
   // See if we can get an image frame.
-  imgFrame* frame = aWhichFrame == FRAME_FIRST ? GetImgFrameNoDecode(0)
-                                               : GetImgFrameNoDecode(GetCurrentImgFrameIndex());
+  nsRefPtr<imgFrame> frame = aWhichFrame == FRAME_FIRST
+                           ? GetImgFrameNoDecode(0)
+                           : GetImgFrameNoDecode(GetCurrentImgFrameIndex());
 
   // If we don't get a frame, the safe answer is "not opaque".
   if (!frame)
@@ -765,8 +764,9 @@ RasterImage::FrameRect(uint32_t aWhichFrame)
   }
 
   // Get the requested frame.
-  imgFrame* frame = aWhichFrame == FRAME_FIRST ? GetImgFrameNoDecode(0)
-                                               : GetImgFrameNoDecode(GetCurrentImgFrameIndex());
+  nsRefPtr<imgFrame> frame = aWhichFrame == FRAME_FIRST
+                           ? GetImgFrameNoDecode(0)
+                           : GetImgFrameNoDecode(GetCurrentImgFrameIndex());
 
   // If we have the frame, use that rectangle.
   if (frame) {
@@ -868,7 +868,7 @@ RasterImage::CopyFrame(uint32_t aWhichFrame,
   // FLAG_SYNC_DECODE
   uint32_t frameIndex = (aWhichFrame == FRAME_FIRST) ?
                         0 : GetCurrentImgFrameIndex();
-  imgFrame *frame = GetDrawableImgFrame(frameIndex);
+  nsRefPtr<imgFrame> frame = GetDrawableImgFrame(frameIndex);
   if (!frame) {
     *_retval = nullptr;
     return NS_ERROR_FAILURE;
@@ -927,7 +927,7 @@ RasterImage::GetFrame(uint32_t aWhichFrame,
   // FLAG_SYNC_DECODE
   uint32_t frameIndex = (aWhichFrame == FRAME_FIRST) ?
                           0 : GetCurrentImgFrameIndex();
-  imgFrame *frame = GetDrawableImgFrame(frameIndex);
+  nsRefPtr<imgFrame> frame = GetDrawableImgFrame(frameIndex);
   if (!frame) {
     return nullptr;
   }
@@ -1164,7 +1164,7 @@ RasterImage::InternalAddFrameHelper(uint32_t framenum, imgFrame *aFrame,
   if (framenum > GetNumFrames())
     return NS_ERROR_INVALID_ARG;
 
-  nsAutoPtr<imgFrame> frame(aFrame);
+  nsRefPtr<imgFrame> frame(aFrame);
 
   // We are in the middle of decoding. This will be unlocked when we finish
   // decoding or switch to another frame.
@@ -1175,10 +1175,9 @@ RasterImage::InternalAddFrameHelper(uint32_t framenum, imgFrame *aFrame,
 
   frame->GetImageData(imageData, imageLength);
 
-  *aRetFrame = frame;
+  mFrameBlender.InsertFrame(framenum, frame);
 
-  mFrameBlender.InsertFrame(framenum, frame.forget());
-
+  frame.forget(aRetFrame);
   return NS_OK;
 }
 
@@ -1203,7 +1202,7 @@ RasterImage::InternalAddFrame(uint32_t framenum,
   if (framenum > GetNumFrames())
     return NS_ERROR_INVALID_ARG;
 
-  nsAutoPtr<imgFrame> frame(new imgFrame());
+  nsRefPtr<imgFrame> frame(new imgFrame());
 
   nsresult rv = frame->Init(aX, aY, aWidth, aHeight, aFormat, aPaletteDepth);
   if (!(mSize.width > 0 && mSize.height > 0))
@@ -1215,12 +1214,12 @@ RasterImage::InternalAddFrame(uint32_t framenum,
   // We know we are in a decoder. Therefore, we must unlock the previous frame
   // when we move on to decoding into the next frame.
   if (GetNumFrames() > 0) {
-    imgFrame *prevframe = mFrameBlender.RawGetFrame(GetNumFrames() - 1);
+    nsRefPtr<imgFrame> prevframe = mFrameBlender.RawGetFrame(GetNumFrames() - 1);
     prevframe->UnlockImageData();
   }
 
   if (GetNumFrames() == 0) {
-    return InternalAddFrameHelper(framenum, frame.forget(), imageData, imageLength,
+    return InternalAddFrameHelper(framenum, frame, imageData, imageLength,
                                   paletteData, paletteLength, aRetFrame);
   }
 
@@ -1231,10 +1230,11 @@ RasterImage::InternalAddFrame(uint32_t framenum,
     // If we dispose of the first frame by clearing it, then the
     // First Frame's refresh area is all of itself.
     // RESTORE_PREVIOUS is invalid (assumed to be DISPOSE_CLEAR)
-    int32_t frameDisposalMethod = mFrameBlender.RawGetFrame(0)->GetFrameDisposalMethod();
+    nsRefPtr<imgFrame> firstFrame = mFrameBlender.RawGetFrame(0);
+    int32_t frameDisposalMethod = firstFrame->GetFrameDisposalMethod();
     if (frameDisposalMethod == FrameBlender::kDisposeClear ||
         frameDisposalMethod == FrameBlender::kDisposeRestorePrevious)
-      mAnim->SetFirstFrameRefreshArea(mFrameBlender.RawGetFrame(0)->GetRect());
+      mAnim->SetFirstFrameRefreshArea(firstFrame->GetRect());
   }
 
   // Calculate firstFrameRefreshArea
@@ -1242,7 +1242,7 @@ RasterImage::InternalAddFrame(uint32_t framenum,
   // We only need to refresh that small area when Frame 0 comes around again
   mAnim->UnionFirstFrameRefreshArea(frame->GetRect());
 
-  rv = InternalAddFrameHelper(framenum, frame.forget(), imageData, imageLength,
+  rv = InternalAddFrameHelper(framenum, frame, imageData, imageLength,
                               paletteData, paletteLength, aRetFrame);
 
   return rv;
@@ -1352,7 +1352,7 @@ RasterImage::EnsureFrame(uint32_t aFrameNum, int32_t aX, int32_t aY,
                             paletteData, paletteLength, aRetFrame);
   }
 
-  imgFrame *frame = mFrameBlender.RawGetFrame(aFrameNum);
+  nsRefPtr<imgFrame> frame = mFrameBlender.RawGetFrame(aFrameNum);
   if (!frame) {
     return InternalAddFrame(aFrameNum, aX, aY, aWidth, aHeight, aFormat,
                             aPaletteDepth, imageData, imageLength,
@@ -1369,13 +1369,13 @@ RasterImage::EnsureFrame(uint32_t aFrameNum, int32_t aX, int32_t aY,
       frame->GetPaletteData(paletteData, paletteLength);
     }
 
-    *aRetFrame = frame;
-
     // We can re-use the frame if it has image data.
     if (*imageData && paletteData && *paletteData) {
+      frame.forget(aRetFrame);
       return NS_OK;
     }
     if (*imageData && !paletteData) {
+      frame.forget(aRetFrame);
       return NS_OK;
     }
   }
@@ -1387,12 +1387,11 @@ RasterImage::EnsureFrame(uint32_t aFrameNum, int32_t aX, int32_t aY,
   frame->UnlockImageData();
 
   mFrameBlender.RemoveFrame(aFrameNum);
-  nsAutoPtr<imgFrame> newFrame(new imgFrame());
+  nsRefPtr<imgFrame> newFrame(new imgFrame());
   nsresult rv = newFrame->Init(aX, aY, aWidth, aHeight, aFormat, aPaletteDepth);
   NS_ENSURE_SUCCESS(rv, rv);
-  return InternalAddFrameHelper(aFrameNum, newFrame.forget(), imageData,
-                                imageLength, paletteData, paletteLength,
-                                aRetFrame);
+  return InternalAddFrameHelper(aFrameNum, newFrame, imageData, imageLength,
+                                paletteData, paletteLength, aRetFrame);
 }
 
 nsresult
@@ -1419,7 +1418,7 @@ RasterImage::SetFrameAsNonPremult(uint32_t aFrameNum, bool aIsNonPremult)
   if (aFrameNum >= GetNumFrames())
     return NS_ERROR_INVALID_ARG;
 
-  imgFrame* frame = mFrameBlender.RawGetFrame(aFrameNum);
+  nsRefPtr<imgFrame> frame = mFrameBlender.RawGetFrame(aFrameNum);
   NS_ABORT_IF_FALSE(frame, "Calling SetFrameAsNonPremult on frame that doesn't exist!");
   NS_ENSURE_TRUE(frame, NS_ERROR_FAILURE);
 
@@ -1461,10 +1460,11 @@ RasterImage::DecodingComplete()
     // CanForciblyDiscard is used instead of CanForciblyDiscardAndRedecode
     // because we know decoding is complete at this point and this is not
     // an animation
+    nsRefPtr<imgFrame> firstFrame = mFrameBlender.RawGetFrame(0);
     if (DiscardingEnabled() && CanForciblyDiscard()) {
-      mFrameBlender.RawGetFrame(0)->SetDiscardable();
+      firstFrame->SetDiscardable();
     }
-    rv = mFrameBlender.RawGetFrame(0)->Optimize();
+    rv = firstFrame->Optimize();
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
@@ -1479,7 +1479,6 @@ RasterImage::DecodingComplete()
       // complexity and it's not really needed since we already are smart about
       // not displaying the still-decoding frame of an animated image. We may
       // have already stored an extra frame, though, so we'll release it here.
-      delete mMultipartDecodedFrame;
       mMultipartDecodedFrame = nullptr;
     }
   }
@@ -1512,7 +1511,7 @@ RasterImage::StartAnimation()
 
   EnsureAnimExists();
 
-  imgFrame* currentFrame = GetCurrentImgFrame();
+  nsRefPtr<imgFrame> currentFrame = GetCurrentImgFrame();
   // A timeout of -1 means we should display this frame forever.
   if (currentFrame && mFrameBlender.GetTimeoutForFrame(GetCurrentImgFrameIndex()) < 0) {
     mAnimationFinished = true;
@@ -1838,8 +1837,9 @@ RasterImage::OnImageDataAvailable(nsIRequest*,
   uint32_t bytesRead;
   rv = aInStr->ReadSegments(WriteToRasterImage, this, aCount, &bytesRead);
 
-  NS_ABORT_IF_FALSE(bytesRead == aCount || HasError(),
-    "WriteToRasterImage should consume everything or the image must be in error!");
+  NS_ABORT_IF_FALSE(bytesRead == aCount || HasError() || NS_FAILED(rv),
+    "WriteToRasterImage should consume everything if ReadSegments succeeds or "
+    "the image must be in error!");
 
   return rv;
 }
@@ -1979,7 +1979,6 @@ RasterImage::Discard(bool force)
   mScaleResult.frame = nullptr;
 
   // Clear the last decoded multipart frame.
-  delete mMultipartDecodedFrame;
   mMultipartDecodedFrame = nullptr;
 
   // Flag that we no longer have decoded frames for this image
@@ -2104,7 +2103,7 @@ RasterImage::InitDecoder(bool aDoSizeDecode)
   // case. Regardless, we need to lock the last frame. Our invariant is that,
   // while we have a decoder open, the last frame is always locked.
   if (GetNumFrames() > 0) {
-    imgFrame *curframe = mFrameBlender.RawGetFrame(GetNumFrames() - 1);
+    nsRefPtr<imgFrame> curframe = mFrameBlender.RawGetFrame(GetNumFrames() - 1);
     curframe->LockImageData();
   }
 
@@ -2186,7 +2185,7 @@ RasterImage::ShutdownDecoder(eShutdownIntent aIntent)
   // Unlock the last frame (if we have any). Our invariant is that, while we
   // have a decoder open, the last frame is always locked.
   if (GetNumFrames() > 0) {
-    imgFrame *curframe = mFrameBlender.RawGetFrame(GetNumFrames() - 1);
+    nsRefPtr<imgFrame> curframe = mFrameBlender.RawGetFrame(GetNumFrames() - 1);
     curframe->UnlockImageData();
   }
 
@@ -2523,7 +2522,7 @@ RasterImage::SyncDecode()
 }
 
 bool
-RasterImage::CanQualityScale(const gfxSize& scale)
+RasterImage::CanQualityScale(const gfx::Size& scale)
 {
   // If target size is 1:1 with original, don't scale.
   if (scale.width == 1.0 && scale.height == 1.0)
@@ -2540,8 +2539,7 @@ RasterImage::CanQualityScale(const gfxSize& scale)
 }
 
 bool
-RasterImage::CanScale(GraphicsFilter aFilter,
-                      gfxSize aScale, uint32_t aFlags)
+RasterImage::CanScale(GraphicsFilter aFilter, gfx::Size aScale, uint32_t aFlags)
 {
 // The high-quality scaler requires Skia.
 #ifdef MOZ_ENABLE_SKIA
@@ -2565,7 +2563,7 @@ void
 RasterImage::ScalingStart(ScaleRequest* request)
 {
   MOZ_ASSERT(request);
-  mScaleResult.scale = request->scale;
+  mScaleResult.scaledSize = request->dstSize;
   mScaleResult.status = SCALE_PENDING;
   mScaleRequest = request;
 }
@@ -2579,17 +2577,16 @@ RasterImage::ScalingDone(ScaleRequest* request, ScaleStatus status)
   if (status == SCALE_DONE) {
     MOZ_ASSERT(request->done);
 
-    imgFrame *scaledFrame = request->dstFrame.forget();
-    scaledFrame->ImageUpdated(scaledFrame->GetRect());
-    scaledFrame->ApplyDirtToSurfaces();
+    mScaleResult.status = SCALE_DONE;
+    mScaleResult.frame = request->dstFrame.forget();
+    mScaleResult.scaledSize = request->dstSize;
+
+    mScaleResult.frame->ImageUpdated(mScaleResult.frame->GetRect());
+	mScaleResult.frame->ApplyDirtToSurfaces();
 
     if (mStatusTracker) {
       mStatusTracker->FrameChanged(&request->srcRect);
     }
-
-    mScaleResult.status = SCALE_DONE;
-    mScaleResult.frame = scaledFrame;
-    mScaleResult.scale = request->scale;
   } else {
     mScaleResult.status = SCALE_INVALID;
     mScaleResult.frame = nullptr;
@@ -2604,7 +2601,7 @@ RasterImage::ScalingDone(ScaleRequest* request, ScaleStatus status)
 }
 
 void
-RasterImage::RequestScale(imgFrame* aFrame, gfxSize aScale)
+RasterImage::RequestScale(imgFrame* aFrame, nsIntSize aSize)
 {
   // We can't store more than one scaled version of an image right now, so if
   // there's more than one instance of this image, bail.
@@ -2623,7 +2620,7 @@ RasterImage::RequestScale(imgFrame* aFrame, gfxSize aScale)
     mScaleRequest->stopped = true;
   }
 
-  nsRefPtr<ScaleRunner> runner = new ScaleRunner(this, aScale, aFrame);
+  nsRefPtr<ScaleRunner> runner = new ScaleRunner(this, aSize, aFrame);
   if (runner->IsOK()) {
     if (!sScaleWorkerThread) {
       NS_NewNamedThread("Image Scaler", getter_AddRefs(sScaleWorkerThread));
@@ -2639,22 +2636,18 @@ RasterImage::RequestScale(imgFrame* aFrame, gfxSize aScale)
 bool
 RasterImage::DrawWithPreDownscaleIfNeeded(imgFrame *aFrame,
                                           gfxContext *aContext,
+                                          const nsIntSize& aSize,
+                                          const ImageRegion& aRegion,
                                           GraphicsFilter aFilter,
-                                          const gfxMatrix &aUserSpaceToImageSpace,
-                                          const gfxRect &aFill,
-                                          const nsIntRect &aSubimage,
                                           uint32_t aFlags)
 {
-  imgFrame *frame = aFrame;
+  nsRefPtr<imgFrame> frame = aFrame;
   nsIntRect framerect = frame->GetRect();
-  gfxMatrix userSpaceToImageSpace = aUserSpaceToImageSpace;
-  gfxMatrix imageSpaceToUserSpace = aUserSpaceToImageSpace;
-  if (!imageSpaceToUserSpace.Invert()) {
-    return false;
-  }
-  gfxSize scale = imageSpaceToUserSpace.ScaleFactors(true);
-  nsIntRect subimage = aSubimage;
+
+  gfxContextMatrixAutoSaveRestore saveMatrix(aContext);
   nsRefPtr<gfxASurface> surf;
+  gfx::Size scale(double(aSize.width) / mSize.width,
+                  double(aSize.height) / mSize.height);
 
   if (CanScale(aFilter, scale, aFlags) && !frame->IsSinglePixel()) {
     // If scale factor is still the same that we scaled for and
@@ -2666,29 +2659,33 @@ RasterImage::DrawWithPreDownscaleIfNeeded(imgFrame *aFrame,
     // The solution is to cache more than one scaled image frame
     // for each RasterImage.
     bool needScaleReq;
-    if (mScaleResult.status == SCALE_DONE && mScaleResult.scale == scale) {
+    if (mScaleResult.status == SCALE_DONE && mScaleResult.scaledSize == aSize) {
       // Grab and hold the surface to make sure the OS didn't destroy it
       mScaleResult.frame->GetSurface(getter_AddRefs(surf));
       needScaleReq = !surf;
       if (surf) {
         frame = mScaleResult.frame;
-        userSpaceToImageSpace *= gfxMatrix::Scaling(scale.width, scale.height);
-
-        // Since we're switching to a scaled image, we need to transform the
-        // area of the subimage to draw accordingly, since imgFrame::Draw()
-        // doesn't know about scaled frames.
-        subimage.ScaleRoundOut(scale.width, scale.height);
       }
     } else {
       needScaleReq = !(mScaleResult.status == SCALE_PENDING &&
-                       mScaleResult.scale == scale);
+                       mScaleResult.scaledSize == aSize);
     }
 
     // If we're not waiting for exactly this result, and there's only one
     // instance of this image on this page, ask for a scale.
     if (needScaleReq) {
-      RequestScale(frame, scale);
+      RequestScale(frame, aSize);
     }
+  }
+
+  ImageRegion region(aRegion);
+
+  // By now we may have a frame with the requested size. If not, we need to
+  // adjust the drawing parameters accordingly.
+  nsIntSize finalFrameSize(frame->GetRect().Size());
+  if (finalFrameSize != aSize) {
+    aContext->Multiply(gfxMatrix::Scaling(scale.width, scale.height));
+    region.Scale(1.0 / scale.width, 1.0 / scale.height);
   }
 
   nsIntMargin padding(framerect.y,
@@ -2696,8 +2693,7 @@ RasterImage::DrawWithPreDownscaleIfNeeded(imgFrame *aFrame,
                       mSize.height - framerect.YMost(),
                       framerect.x);
 
-  return frame->Draw(aContext, aFilter, userSpaceToImageSpace,
-                     aFill, padding, subimage, aFlags);
+  return frame->Draw(aContext, region, padding, aFilter, aFlags);
 }
 
 //******************************************************************************
@@ -2711,14 +2707,12 @@ RasterImage::DrawWithPreDownscaleIfNeeded(imgFrame *aFrame,
  *                      in uint32_t aWhichFrame,
  *                      in uint32_t aFlags); */
 NS_IMETHODIMP
-RasterImage::Draw(gfxContext *aContext,
-                  GraphicsFilter aFilter,
-                  const gfxMatrix &aUserSpaceToImageSpace,
-                  const gfxRect &aFill,
-                  const nsIntRect &aSubimage,
-                  const nsIntSize& /*aViewportSize - ignored*/,
-                  const SVGImageContext* /*aSVGContext - ignored*/,
+RasterImage::Draw(gfxContext* aContext,
+                  const nsIntSize& aSize,
+                  const ImageRegion& aRegion,
                   uint32_t aWhichFrame,
+                  GraphicsFilter aFilter,
+                  const Maybe<SVGImageContext>& /*aSVGContext - ignored*/,
                   uint32_t aFlags)
 {
   if (aWhichFrame > FRAME_MAX_VALUE)
@@ -2784,14 +2778,13 @@ RasterImage::Draw(gfxContext *aContext,
 
   uint32_t frameIndex = aWhichFrame == FRAME_FIRST ? 0
                                                    : GetCurrentImgFrameIndex();
-  imgFrame* frame = GetDrawableImgFrame(frameIndex);
+  nsRefPtr<imgFrame> frame = GetDrawableImgFrame(frameIndex);
   if (!frame) {
     return NS_OK; // Getting the frame (above) touches the image and kicks off decoding
   }
 
-  bool drawn = DrawWithPreDownscaleIfNeeded(frame, aContext, aFilter,
-                                            aUserSpaceToImageSpace, aFill,
-                                            aSubimage, aFlags);
+  bool drawn = DrawWithPreDownscaleIfNeeded(frame, aContext, aSize,
+                                            aRegion, aFilter, aFlags);
   if (!drawn) {
     // The OS threw out some or all of our buffer. Start decoding again.
     ForceDiscard();
@@ -3702,11 +3695,11 @@ RasterImage::OptimalImageSizeForDest(const gfxSize& aDest, uint32_t aWhichFrame,
   }
 
   nsIntSize destSize(ceil(aDest.width), ceil(aDest.height));
-  gfxSize scale(double(destSize.width) / mSize.width,
-                double(destSize.height) / mSize.height);
+  gfx::Size scale(double(destSize.width) / mSize.width,
+                  double(destSize.height) / mSize.height);
 
   if (CanScale(aFilter, scale, aFlags)) {
-    if (mScaleResult.scale == scale) {
+    if (mScaleResult.scaledSize == destSize) {
       if (mScaleResult.status == SCALE_DONE) {
         return destSize;  // We have an existing HQ scale for this size.
       } else if (mScaleResult.status == SCALE_PENDING) {
@@ -3718,9 +3711,9 @@ RasterImage::OptimalImageSizeForDest(const gfxSize& aDest, uint32_t aWhichFrame,
     uint32_t frameIndex = aWhichFrame == FRAME_FIRST ? 0
                                                      : GetCurrentImgFrameIndex();
 
-    imgFrame* frame = GetDrawableImgFrame(frameIndex);
+    nsRefPtr<imgFrame> frame = GetDrawableImgFrame(frameIndex);
     if (frame) {
-      RequestScale(frame, scale);
+      RequestScale(frame, destSize);
     }
   }
 

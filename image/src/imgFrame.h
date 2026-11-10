@@ -28,6 +28,8 @@
 namespace mozilla {
 namespace image {
 
+class ImageRegion;
+
 /*
  * This creates a gfxImageSurface which will unlock the buffer on destruction
  */
@@ -46,21 +48,23 @@ public:
 class imgFrame
 {
 public:
+  MOZ_DECLARE_REFCOUNTED_TYPENAME(imgFrame)
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(imgFrame)
+
   imgFrame();
-  ~imgFrame();
 
   nsresult Init(int32_t aX, int32_t aY, int32_t aWidth, int32_t aHeight, gfxImageFormat aFormat, uint8_t aPaletteDepth = 0);
   nsresult Optimize();
 
-  bool Draw(gfxContext *aContext, GraphicsFilter aFilter,
-            const gfxMatrix &aUserSpaceToImageSpace, const gfxRect& aFill,
-            const nsIntMargin &aPadding, const nsIntRect &aSubimage,
-            uint32_t aImageFlags = imgIContainer::FLAG_NONE);
+  bool Draw(gfxContext* aContext, const ImageRegion& aRegion,
+            const nsIntMargin& aPadding, GraphicsFilter aFilter,
+            uint32_t aImageFlags);
 
   nsresult ImageUpdated(const nsIntRect &aUpdateRect);
   bool GetIsDirty() const;
 
   nsIntRect GetRect() const;
+  nsIntSize GetSize() const { return mSize; }
   gfxImageFormat GetFormat() const;
   bool GetNeedsBackground() const;
   uint32_t GetImageBytesPerRow() const;
@@ -176,6 +180,8 @@ public:
 
 private: // methods
 
+  ~imgFrame();
+
   struct SurfaceWithFormat {
     nsRefPtr<gfxDrawable> mDrawable;
     gfxImageFormat mFormat;
@@ -188,13 +194,11 @@ private: // methods
   SurfaceWithFormat SurfaceForDrawing(bool               aDoPadding,
                                       bool               aDoPartialDecode,
                                       bool               aDoTile,
+                                      gfxContext*        aContext,
                                       const nsIntMargin& aPadding,
-                                      gfxMatrix&         aUserSpaceToImageSpace,
-                                      gfxRect&           aFill,
-                                      gfxRect&           aSubimage,
-                                      gfxRect&           aSourceRect,
                                       gfxRect&           aImageRect,
-                                      gfxASurface*       aSurface);
+                                      ImageRegion&       aRegion,
+                                      gfxASurface*     aSurface);
 
 private: // data
   nsRefPtr<gfxImageSurface> mImageSurface;
@@ -268,7 +272,7 @@ private: // data
     bool Succeeded() { return mSucceeded; }
 
   private:
-    imgFrame* mFrame;
+    nsRefPtr<imgFrame> mFrame;
     bool mSucceeded;
   };
 

@@ -268,9 +268,9 @@ nsHTMLButtonControlFrame::ReflowButtonContents(nsPresContext* aPresContext,
     extraleft = NS_MIN(extraleft, aButtonReflowState.ComputedPhysicalPadding().left);
     extraright = NS_MIN(extraright, aButtonReflowState.ComputedPhysicalPadding().right);
     xoffset -= extraleft;
-    availSize.SetWidth(wm, availSize.Width(wm) + extraleft + extraright);
+    availSize.Width(wm) = availSize.Width(wm) + extraleft + extraright;
   }
-  availSize.SetWidth(wm, NS_MAX(availSize.Width(wm), 0));
+  availSize.Width(wm) = NS_MAX(availSize.Width(wm), 0);
 
   // Give child a clone of the button's reflow state, with height/width reduced
   // by focusPadding, so that descendants with height:100% don't protrude.

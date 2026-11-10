@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "imgFrame.h"
+#include "ImageRegion.h"
 #include "DiscardTracker.h"
 
 #include "prenv.h"
@@ -429,13 +430,11 @@ imgFrame::SurfaceWithFormat
 imgFrame::SurfaceForDrawing(bool               aDoPadding,
                             bool               aDoPartialDecode,
                             bool               aDoTile,
+                            gfxContext*        aContext,
                             const nsIntMargin& aPadding,
-                            gfxMatrix&         aUserSpaceToImageSpace,
-                            gfxRect&           aFill,
-                            gfxRect&           aSubimage,
-                            gfxRect&           aSourceRect,
                             gfxRect&           aImageRect,
-                            gfxASurface*       aSurface)
+                            ImageRegion&       aRegion,
+                            gfxASurface*     aSurface)
 {
   IntSize size(int32_t(aImageRect.Width()), int32_t(aImageRect.Height()));
   if (!aDoPadding && !aDoPartialDecode) {
@@ -471,15 +470,9 @@ imgFrame::SurfaceForDrawing(bool               aDoPadding,
 
   // Not tiling, and we have a surface, so we can account for
   // padding and/or a partial decode just by twiddling parameters.
-  // First, update our user-space fill rect.
-  aSourceRect = aSourceRect.Intersect(available);
-  gfxMatrix imageSpaceToUserSpace = aUserSpaceToImageSpace;
-  imageSpaceToUserSpace.Invert();
-  aFill = imageSpaceToUserSpace.Transform(aSourceRect);
-
-  aSubimage = aSubimage.Intersect(available) - gfxPoint(aPadding.left, aPadding.top);
-  aUserSpaceToImageSpace *= gfxMatrix::Translation(-aPadding.left, -aPadding.top);
-  aSourceRect = aSourceRect - gfxPoint(aPadding.left, aPadding.top);
+  gfxPoint paddingTopLeft(aPadding.left, aPadding.top);
+  aRegion = aRegion.Intersect(available) - paddingTopLeft;
+  aContext->Multiply(gfxMatrix::Translation(paddingTopLeft));
   aImageRect = gfxRect(0, 0, mSize.width, mSize.height);
 
   gfxIntSize availableSize(mDecoded.width, mDecoded.height);
@@ -487,35 +480,29 @@ imgFrame::SurfaceForDrawing(bool               aDoPadding,
                            mFormat);
 }
 
-bool imgFrame::Draw(gfxContext *aContext, GraphicsFilter aFilter,
-                    const gfxMatrix &aUserSpaceToImageSpace, const gfxRect& aFill,
-                    const nsIntMargin &aPadding, const nsIntRect &aSubimage,
+bool imgFrame::Draw(gfxContext* aContext, const ImageRegion& aRegion,
+                    const nsIntMargin& aPadding, GraphicsFilter aFilter,
                     uint32_t aImageFlags)
 {
   PROFILER_LABEL("imgFrame", "Draw",
     js::ProfileEntry::Category::GRAPHICS);
 
-  NS_ASSERTION(!aFill.IsEmpty(), "zero dest size --- fix caller");
-  NS_ASSERTION(!aSubimage.IsEmpty(), "zero source size --- fix caller");
+  NS_ASSERTION(!aRegion.Rect().IsEmpty(), "Drawing empty region!");
+  NS_ASSERTION(!aRegion.IsRestricted() ||
+               !aRegion.Rect().Intersect(aRegion.Restriction()).IsEmpty(),
+               "We must be allowed to sample *some* source pixels!");
   NS_ASSERTION(!mPalettedImageData, "Directly drawing a paletted image!");
 
   bool doPadding = aPadding != nsIntMargin(0,0,0,0);
   bool doPartialDecode = !ImageComplete();
 
   if (mSinglePixel && !doPadding && !doPartialDecode) {
-    DoSingleColorFastPath(aContext, mSinglePixelColor, aFill);
+    DoSingleColorFastPath(aContext, mSinglePixelColor, aRegion.Rect());
     return true;
   }
 
-  gfxMatrix userSpaceToImageSpace = aUserSpaceToImageSpace;
-  gfxRect sourceRect = userSpaceToImageSpace.TransformBounds(aFill);
   gfxRect imageRect(0, 0, mSize.width + aPadding.LeftRight(),
                     mSize.height + aPadding.TopBottom());
-  gfxRect subimage(aSubimage.x, aSubimage.y, aSubimage.width, aSubimage.height);
-  gfxRect fill = aFill;
-
-  NS_ASSERTION(!sourceRect.Intersect(subimage).IsEmpty(),
-               "We must be allowed to sample *some* source pixels!");
 
   nsRefPtr<gfxASurface> surf = CachedThebesSurface();
   VolatileBufferPtr<unsigned char> ref(mVBuf);
@@ -541,18 +528,17 @@ bool imgFrame::Draw(gfxContext *aContext, GraphicsFilter aFilter,
     }
   }
 
-  bool doTile = !imageRect.Contains(sourceRect) &&
+  bool doTile = !imageRect.Contains(aRegion.Rect()) &&
                 !(aImageFlags & imgIContainer::FLAG_CLAMP);
+  ImageRegion region(aRegion);
   SurfaceWithFormat surfaceResult =
-    SurfaceForDrawing(doPadding, doPartialDecode, doTile, aPadding,
-                      userSpaceToImageSpace, fill, subimage, sourceRect,
-                      imageRect, surf);
+    SurfaceForDrawing(doPadding, doPartialDecode, doTile, aContext,
+                      aPadding, imageRect, region, surf);
 
   if (surfaceResult.IsValid()) {
     gfxUtils::DrawPixelSnapped(aContext, surfaceResult.mDrawable,
-                               userSpaceToImageSpace,
-                               subimage, sourceRect, imageRect, fill,
-                               surfaceResult.mFormat, aFilter, aImageFlags);
+                               imageRect.Size(), region, surfaceResult.mFormat,
+                               aFilter, aImageFlags);
   }
   return true;
 }
