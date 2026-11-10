@@ -24,7 +24,7 @@ using namespace mozilla::dom;
 
 #define kNullCh (char16_t('\0'))
 
-NS_IMPL_CYCLE_COLLECTION_INHERITED(ChangeStyleTxn, EditTxn, mElement)
+NS_IMPL_CYCLE_COLLECTION_INHERITED_1(ChangeStyleTxn, EditTxn, mElement)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(ChangeStyleTxn)
 NS_INTERFACE_MAP_END_INHERITING(EditTxn)

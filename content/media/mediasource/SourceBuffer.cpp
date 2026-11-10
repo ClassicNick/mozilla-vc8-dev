@@ -28,7 +28,9 @@
 #include "SourceBufferDecoder.h"
 #include "mozilla/Preferences.h"
 
+#ifdef MOZ_WEBM
 #include "WebMBufferedParser.h"
+#endif
 
 struct JSContext;
 class JSObject;
@@ -110,6 +112,7 @@ public:
   virtual bool ParseStartAndEndTimestamps(const uint8_t* aData, uint32_t aLength,
                                           double& aStart, double& aEnd)
   {
+#ifdef MOZ_WEBM
     // XXX: This is overly primitive, needs to collect data as it's appended
     // to the SB and handle, rather than assuming everything is present in a
     // single aData segment.
@@ -152,6 +155,9 @@ public:
               this, aStart, aEnd, mapping[0].mSyncOffset, mapping.LastElement().mEndOffset);
 
     return true;
+#else
+	return false;
+#endif
   }
 
 private:
