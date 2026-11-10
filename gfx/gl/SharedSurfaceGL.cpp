@@ -23,7 +23,6 @@ SharedSurface_Basic::Create(GLContext* gl,
                             const IntSize& size,
                             bool hasAlpha)
 {
-    UniquePtr<SharedSurface_Basic> ret;
     gl->MakeCurrent();
 
     GLContext::ScopedLocalErrorCheck localError(gl);
@@ -34,7 +33,7 @@ SharedSurface_Basic::Create(GLContext* gl,
     GLenum err = localError.GetLocalError();
     if (err) {
         gl->fDeleteTextures(1, &tex);
-        return Move(ret);
+        return nullptr;
     }
 
     SurfaceFormat format = SurfaceFormat::B8G8R8X8;
@@ -134,7 +133,7 @@ SharedSurface_GLTexture::Create(GLContext* prodGL,
 
     bool ownsTex = false;
 
-    UniquePtr<SharedSurface_GLTexture> ret;
+    nsAutoPtr<SharedSurface_GLTexture> ret;
 
     if (!tex) {
       GLContext::ScopedLocalErrorCheck localError(prodGL);
@@ -144,7 +143,7 @@ SharedSurface_GLTexture::Create(GLContext* prodGL,
       GLenum err = localError.GetLocalError();
       if (err) {
           prodGL->fDeleteTextures(1, &tex);
-          return Move(ret);
+          return ret;
       }
 
       ownsTex = true;

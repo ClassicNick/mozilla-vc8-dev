@@ -52,11 +52,11 @@ public:
                       nullptr),
       mIndexInInserted(aOther.mIndexInInserted), mIsFirst(aOther.mIsFirst) {}
 
-  ExplicitChildIterator(ExplicitChildIterator&& aOther)
-    : mParent(aOther.mParent), mChild(aOther.mChild),
-      mDefaultChild(aOther.mDefaultChild),
-      mShadowIterator(Move(aOther.mShadowIterator)),
-      mIndexInInserted(aOther.mIndexInInserted), mIsFirst(aOther.mIsFirst) {}
+  ExplicitChildIterator(MoveRef<ExplicitChildIterator> aOther)
+    : mParent(aOther->mParent), mChild(aOther->mChild),
+      mDefaultChild(aOther->mDefaultChild),
+      mShadowIterator(OldMove(aOther->mShadowIterator)),
+      mIndexInInserted(aOther->mIndexInInserted), mIsFirst(aOther->mIsFirst) {}
 
   nsIContent* GetNextChild();
 
@@ -132,8 +132,8 @@ public:
     Init(false);
   }
 
-  FlattenedChildIterator(FlattenedChildIterator&& aOther)
-    : ExplicitChildIterator(Move(aOther)), mXBLInvolved(aOther.mXBLInvolved) {}
+  FlattenedChildIterator(MoveRef<FlattenedChildIterator> aOther)
+    : ExplicitChildIterator(aOther), mXBLInvolved(aOther->mXBLInvolved) {}
 
   FlattenedChildIterator(const FlattenedChildIterator& aOther)
     : ExplicitChildIterator(aOther), mXBLInvolved(aOther.mXBLInvolved) {}
@@ -172,13 +172,13 @@ public:
     mOriginalContent(aNode), mFlags(aFlags),
     mPhase(eNeedBeforeKid) {}
 
-  AllChildrenIterator(AllChildrenIterator&& aOther)
-    : FlattenedChildIterator(Move(aOther)),
-      mOriginalContent(aOther.mOriginalContent),
-      mAnonKids(Move(aOther.mAnonKids)), mFlags(aOther.mFlags),
-      mPhase(aOther.mPhase)
+  AllChildrenIterator(MoveRef<AllChildrenIterator> aOther)
+    : FlattenedChildIterator(aOther),
+      mOriginalContent(aOther->mOriginalContent),
+      mAnonKids(OldMove(aOther->mAnonKids)), mFlags(aOther->mFlags),
+      mPhase(aOther->mPhase)
 #ifdef DEBUG
-      , mMutationGuard(aOther.mMutationGuard)
+      , mMutationGuard(aOther->mMutationGuard)
 #endif
       {}
 

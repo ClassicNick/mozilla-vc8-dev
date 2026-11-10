@@ -136,7 +136,7 @@ public:
   {
     NS_ASSERTION(NS_IsMainThread(), "Only call on main thread");
     return mVideoSource && !mStopped && !mVideoSource->IsAvailable() &&
-           mVideoSource->GetMediaSource() == MediaSourceType::Application;
+           mVideoSource->GetMediaSource() == Application;
   }
 
   void SetStopped()

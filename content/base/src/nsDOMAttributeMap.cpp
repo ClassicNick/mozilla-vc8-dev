@@ -255,7 +255,7 @@ void
 nsDOMAttributeMap::EnsureAttributeCache()
 {
   if (!mAttributeCache) {
-    mAttributeCache = MakeUnique<AttrCache>();
+    mAttributeCache = new AttrCache();
   }
 }
 

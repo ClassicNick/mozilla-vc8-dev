@@ -186,7 +186,7 @@ private:
   /**
    * Cache of Attrs. It's usually empty, and thus initialized lazily.
    */
-  mozilla::UniquePtr<AttrCache> mAttributeCache;
+  AttrCache* mAttributeCache;
 
   void EnsureAttributeCache();
 

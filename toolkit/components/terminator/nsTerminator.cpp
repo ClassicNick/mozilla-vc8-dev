@@ -31,7 +31,7 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
-#include "mozilla/UniquePtr.h"
+#include "nsAutoPtr.h"
 #include "mozilla/unused.h"
 
 // Normally, the number of milliseconds that AsyncShutdown waits until
@@ -69,7 +69,7 @@ Run(void* arg)
 
   // Let's copy and deallocate options, that's one less leak to worry
   // about.
-  UniquePtr<Options> options((Options*)arg);
+  nsAutoPtr<Options> options((Options*)arg);
   int32_t crashAfterMS = options->crashAfterMS;
   options = nullptr;
 
@@ -113,7 +113,7 @@ static char const *const sObserverTopics[] = {
   "xpcom-shutdown",
 };
 
-NS_IMPL_ISUPPORTS(nsTerminator, nsIObserver)
+NS_IMPL_ISUPPORTS1(nsTerminator, nsIObserver)
 
 nsTerminator::nsTerminator()
   : mInitialized(false)
@@ -151,7 +151,7 @@ nsTerminator::Start() {
   // AsyncShutdown.
   crashAfterMS += ADDITIONAL_WAIT_BEFORE_CRASH_MS;
 
-  UniquePtr<Options> options(new Options());
+  nsAutoPtr<Options> options(new Options());
   options->crashAfterMS = crashAfterMS;
 
   // Allocate and start the thread.
@@ -159,7 +159,7 @@ nsTerminator::Start() {
   PRThread* thread = PR_CreateThread(
     PR_SYSTEM_THREAD, /* This thread will not prevent the process from terminating */
     Run,
-    options.release(),
+    options.forget(),
     PR_PRIORITY_LOW,
     PR_GLOBAL_THREAD /* Make sure that the thread is never cooperatively scheduled */,
     PR_UNJOINABLE_THREAD,
