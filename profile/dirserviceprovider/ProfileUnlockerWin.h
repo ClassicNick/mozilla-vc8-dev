@@ -9,7 +9,7 @@
 
 #include <windows.h>
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
-#include <RestartManager.h>
+#include <restartmanager.h>
 #else
 #define PROCESS_QUERY_LIMITED_INFORMATION 0x1000
 // CCH_RM_MAX_APP_NAME - maximum character count of application friendly name
