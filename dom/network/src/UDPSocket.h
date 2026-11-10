@@ -124,7 +124,7 @@ public:
   bool
   Send(const StringOrBlobOrArrayBufferOrArrayBufferView& aData,
        const Optional<nsAString>& aRemoteAddress,
-       const Optional<Nullable<uint16_t>>& aRemotePort,
+       const Optional<Nullable<uint16_t> >& aRemotePort,
        ErrorResult& aRv);
 
 private:

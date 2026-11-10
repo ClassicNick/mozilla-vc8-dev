@@ -281,11 +281,7 @@ StreamTime
 MediaStreamGraphImpl::GraphTimeToStreamTimeOptimistic(MediaStream* aStream,
                                                       GraphTime aTime)
 {
-<<<<<<< HEAD
-  GraphTime computedUpToTime = NS_MIN(mStateComputedTime, aTime);
-=======
-  GraphTime computedUpToTime = std::min(CurrentDriver()->StateComputedTime(), aTime);
->>>>>>> 41fb73f
+  GraphTime computedUpToTime =  NS_MIN(CurrentDriver()->StateComputedTime(), aTime);
   StreamTime s = GraphTimeToStreamTime(aStream, computedUpToTime);
   return s + (aTime - computedUpToTime);
 }
@@ -315,11 +311,7 @@ MediaStreamGraphImpl::StreamTimeToGraphTime(MediaStream* aStream,
     GraphTime end;
     if (t < CurrentDriver()->StateComputedTime()) {
       blocked = aStream->mBlocked.GetAt(t, &end);
-<<<<<<< HEAD
-      end = NS_MIN(end, mStateComputedTime);
-=======
-      end = std::min(end, CurrentDriver()->StateComputedTime());
->>>>>>> 41fb73f
+      end = NS_MIN(end, CurrentDriver()->StateComputedTime());
     } else {
       blocked = false;
       end = GRAPH_TIME_MAX;
@@ -371,11 +363,7 @@ MediaStreamGraphImpl::UpdateCurrentTimeForStreams(GraphTime aPrevCurrentTime, Gr
       GraphTime end;
       bool blocked = stream->mBlocked.GetAt(t, &end);
       if (blocked) {
-<<<<<<< HEAD
-        blockedTime += NS_MIN(end, nextCurrentTime) - t;
-=======
-        blockedTime += std::min(end, aNextCurrentTime) - t;
->>>>>>> 41fb73f
+        blockedTime += NS_MIN(end, aNextCurrentTime) - t;
       }
       if (blocked != stream->mNotifiedBlocked) {
         for (uint32_t j = 0; j < stream->mListeners.Length(); ++j) {
@@ -502,29 +490,6 @@ MediaStreamGraphImpl::MarkConsumed(MediaStream* aStream)
   }
 }
 
-<<<<<<< HEAD
-static void AudioMixerCallback(AudioDataValue* aMixedBuffer,
-                               AudioSampleFormat aFormat,
-                               uint32_t aChannels,
-                               uint32_t aFrames,
-                               uint32_t aSampleRate)
-{
-  // Need an api to register mixer callbacks, bug 989921
-#ifdef MOZ_WEBRTC
-  if (aFrames > 0 && aChannels > 0) {
-    // XXX need Observer base class and registration API
-#ifdef MOZ_WEBRTC
-    if (gFarendObserver) {
-      gFarendObserver->InsertFarEnd(aMixedBuffer, aFrames, false,
-                                    aSampleRate, aChannels, aFormat);
-    }
-#endif
-  }
-#endif
-}
-
-=======
->>>>>>> 41fb73f
 void
 MediaStreamGraphImpl::UpdateStreamOrder()
 {
@@ -1413,42 +1378,6 @@ MediaStreamGraphImpl::OneIteration(GraphTime aFrom, GraphTime aTo,
 
   UpdateGraph(aStateEnd);
 
-<<<<<<< HEAD
-      // No need to wait in non-realtime mode, just churn through the input as soon
-      // as possible.
-      if (mRealtime) {
-        PRIntervalTime timeout = PR_INTERVAL_NO_TIMEOUT;
-        TimeStamp now = TimeStamp::Now();
-        bool pausedOutputs = false;
-        if (mNeedAnotherIteration) {
-          int64_t timeoutMS = MEDIA_GRAPH_TARGET_PERIOD_MS -
-            int64_t((now - mCurrentTimeStamp).ToMilliseconds());
-          // Make sure timeoutMS doesn't overflow 32 bits by waking up at
-          // least once a minute, if we need to wake up at all
-          timeoutMS = NS_MAX<int64_t>(0, NS_MIN<int64_t>(timeoutMS, 60*1000));
-          timeout = PR_MillisecondsToInterval(uint32_t(timeoutMS));
-          STREAM_LOG(PR_LOG_DEBUG+1, ("Waiting for next iteration; at %f, timeout=%f",
-                                     (now - mInitialTimeStamp).ToSeconds(), timeoutMS/1000.0));
-          mWaitState = WAITSTATE_WAITING_FOR_NEXT_ITERATION;
-        } else {
-          mWaitState = WAITSTATE_WAITING_INDEFINITELY;
-          PauseAllAudioOutputs();
-          pausedOutputs = true;
-        }
-        if (timeout > 0) {
-          mMonitor.Wait(timeout);
-          STREAM_LOG(PR_LOG_DEBUG+1, ("Resuming after timeout; at %f, elapsed=%f",
-                                     (TimeStamp::Now() - mInitialTimeStamp).ToSeconds(),
-                                     (TimeStamp::Now() - now).ToSeconds()));
-        }
-        if (pausedOutputs) {
-          ResumeAllAudioOutputs();
-        }
-      }
-      mWaitState = WAITSTATE_RUNNING;
-      mNeedAnotherIteration = false;
-      messageQueue.SwapElements(mMessageQueue);
-=======
   Process(aStateFrom, aStateEnd);
 
   // Send updates to the main thread and wait for the next control loop
@@ -1468,7 +1397,6 @@ MediaStreamGraphImpl::OneIteration(GraphTime aFrom, GraphTime aTo,
       // No need to Destroy streams here. The main-thread owner of each
       // stream is responsible for calling Destroy on them.
       return false;
->>>>>>> 41fb73f
     }
 
     CurrentDriver()->WaitForNextIteration();
@@ -2290,13 +2218,8 @@ SourceMediaStream::AddTrack(TrackID aID, TrackRate aRate, TrackTicks aStart,
   data->mCommands = TRACK_CREATE;
   data->mData = aSegment;
   data->mHaveEnough = false;
-<<<<<<< HEAD
   if (MediaStreamGraphImpl* graph = GraphImpl()) {
-    graph->EnsureNextIteration();
-=======
-  if (auto graph = GraphImpl()) {
     graph->CurrentDriver()->EnsureNextIteration();
->>>>>>> 41fb73f
   }
 }
 
@@ -2481,13 +2404,8 @@ SourceMediaStream::EndTrack(TrackID aID)
       track->mCommands |= TRACK_END;
     }
   }
-<<<<<<< HEAD
   if (MediaStreamGraphImpl* graph = GraphImpl()) {
-    graph->EnsureNextIteration();
-=======
-  if (auto graph = GraphImpl()) {
     graph->CurrentDriver()->EnsureNextIteration();
->>>>>>> 41fb73f
   }
 }
 
@@ -2497,13 +2415,8 @@ SourceMediaStream::AdvanceKnownTracksTime(StreamTime aKnownTime)
   MutexAutoLock lock(mMutex);
   MOZ_ASSERT(aKnownTime >= mUpdateKnownTracksTime);
   mUpdateKnownTracksTime = aKnownTime;
-<<<<<<< HEAD
   if (MediaStreamGraphImpl* graph = GraphImpl()) {
-    graph->EnsureNextIteration();
-=======
-  if (auto graph = GraphImpl()) {
     graph->CurrentDriver()->EnsureNextIteration();
->>>>>>> 41fb73f
   }
 }
 
@@ -2512,13 +2425,8 @@ SourceMediaStream::FinishWithLockHeld()
 {
   mMutex.AssertCurrentThreadOwns();
   mUpdateFinished = true;
-<<<<<<< HEAD
   if (MediaStreamGraphImpl* graph = GraphImpl()) {
-    graph->EnsureNextIteration();
-=======
-  if (auto graph = GraphImpl()) {
     graph->CurrentDriver()->EnsureNextIteration();
->>>>>>> 41fb73f
   }
 }
 

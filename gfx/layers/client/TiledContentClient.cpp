@@ -439,7 +439,7 @@ class TileExpiry MOZ_FINAL : public nsExpirationTracker<TileClient, 3>
     static void AddTile(TileClient* aTile)
     {
       if (!sTileExpiry) {
-        sTileExpiry = MakeUnique<TileExpiry>();
+        sTileExpiry = new TileExpiry();
       }
 
       sTileExpiry->AddObject(aTile);
@@ -460,9 +460,9 @@ class TileExpiry MOZ_FINAL : public nsExpirationTracker<TileClient, 3>
       aTile->DiscardBackBuffer();
     }
 
-    static UniquePtr<TileExpiry> sTileExpiry;
+    static TileExpiry* sTileExpiry;
 };
-UniquePtr<TileExpiry> TileExpiry::sTileExpiry;
+TileExpiry* TileExpiry::sTileExpiry;
 
 void ShutdownTileCache()
 {
