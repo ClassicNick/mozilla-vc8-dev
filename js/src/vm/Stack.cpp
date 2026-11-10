@@ -504,11 +504,6 @@ InterpreterStack::pushExecuteFrame(JSContext *cx, HandleScript script, const Val
 
 /*****************************************************************************/
 
-/* MSVC PGO causes xpcshell startup crashes. */
-#if defined(_MSC_VER)
-# pragma optimize("g", off)
-#endif
-
 void
 FrameIter::popActivation()
 {
@@ -1445,10 +1440,6 @@ FrameIter::frameSlotValue(size_t index) const
     }
     MOZ_CRASH("Unexpected state");
 }
-
-#if defined(_MSC_VER)
-# pragma optimize("", on)
-#endif
 
 #ifdef DEBUG
 bool

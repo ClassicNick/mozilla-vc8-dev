@@ -114,11 +114,11 @@ ChildDNSService::AsyncResolve(const nsACString  &hostname,
     MutexAutoLock lock(mPendingRequestsLock);
     nsCString key;
     GetDNSRecordHashKey(hostname, originalFlags, originalListener, key);
-    nsTArray<nsRefPtr<DNSRequestChild>> *hashEntry;
+    nsTArray<nsRefPtr<DNSRequestChild> > *hashEntry;
     if (mPendingRequests.Get(key, &hashEntry)) {
       hashEntry->AppendElement(childReq);
     } else {
-      hashEntry = new nsTArray<nsRefPtr<DNSRequestChild>>();
+      hashEntry = new nsTArray<nsRefPtr<DNSRequestChild> >();
       hashEntry->AppendElement(childReq);
       mPendingRequests.Put(key, hashEntry);
     }
@@ -141,7 +141,7 @@ ChildDNSService::CancelAsyncResolve(const nsACString  &aHostname,
   }
 
   MutexAutoLock lock(mPendingRequestsLock);
-  nsTArray<nsRefPtr<DNSRequestChild>> *hashEntry;
+  nsTArray<nsRefPtr<DNSRequestChild> > *hashEntry;
   nsCString key;
   GetDNSRecordHashKey(aHostname, aFlags, aListener, key);
   if (mPendingRequests.Get(key, &hashEntry)) {
@@ -197,7 +197,7 @@ ChildDNSService::NotifyRequestDone(DNSRequestChild *aDnsRequest)
   nsCString key;
   GetDNSRecordHashKey(aDnsRequest->mHost, originalFlags, originalListener, key);
 
-  nsTArray<nsRefPtr<DNSRequestChild>> *hashEntry;
+  nsTArray<nsRefPtr<DNSRequestChild> > *hashEntry;
 
   if (mPendingRequests.Get(key, &hashEntry)) {
     int idx;
