@@ -454,6 +454,7 @@ AndroidGeckoEvent::Init(JNIEnv *jenv, jobject jobj)
             break;
 
         case MOTION_EVENT:
+        case LONG_PRESS:
             mTime = jenv->GetLongField(jobj, jTimeField);
             mMetaState = jenv->GetIntField(jobj, jMetaStateField);
             mCount = jenv->GetIntField(jobj, jCountField);
@@ -471,8 +472,7 @@ AndroidGeckoEvent::Init(JNIEnv *jenv, jobject jobj)
             mStart = jenv->GetIntField(jobj, jStartField);
             mEnd = jenv->GetIntField(jobj, jEndField);
 
-            if (mAction == IME_REPLACE_TEXT ||
-                    mAction == IME_COMPOSE_TEXT) {
+            if (mAction == IME_REPLACE_TEXT) {
                 ReadCharactersField(jenv);
             } else if (mAction == IME_UPDATE_COMPOSITION ||
                     mAction == IME_ADD_COMPOSITION_RANGE) {

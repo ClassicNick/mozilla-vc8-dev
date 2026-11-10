@@ -158,6 +158,15 @@ this.PermissionsTable =  { geolocation: {
                              access: ["read", "write"],
                              additional: ["indexedDB-chrome-settings", "settings-api"]
                            },
+                           // This exists purely for tests, no app
+                           // should ever use it. It can only be
+                           // handed out by SpecialPowers.
+                           "settings-clear": {
+                             app: DENY_ACTION,
+                             privileged: DENY_ACTION,
+                             certified: DENY_ACTION,
+                             additional: ["indexedDB-chrome-settings", "settings-api"]
+                           },
                            permissions: {
                              app: DENY_ACTION,
                              privileged: DENY_ACTION,
@@ -405,6 +414,13 @@ this.PermissionsTable =  { geolocation: {
                              app: DENY_ACTION,
                              privileged: DENY_ACTION,
                              certified: ALLOW_ACTION
+                           },
+                           "settings:wallpaper.image": {
+                             app: DENY_ACTION,
+                             privileged: PROMPT_ACTION,
+                             certified: ALLOW_ACTION,
+                             access: ["read", "write"],
+                             additional: ["settings-api"]
                            }
                          };
 
