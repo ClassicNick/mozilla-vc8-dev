@@ -15,11 +15,11 @@
 #ifdef PR_LOGGING
 extern PRLogModuleInfo* GetSourceBufferResourceLog();
 
-#define SBR_DEBUG(...) PR_LOG(GetSourceBufferResourceLog(), PR_LOG_DEBUG, (__VA_ARGS__))
-#define SBR_DEBUGV(...) PR_LOG(GetSourceBufferResourceLog(), PR_LOG_DEBUG+1, (__VA_ARGS__))
+#define SBR_DEBUG(a) PR_LOG(GetSourceBufferResourceLog(), PR_LOG_DEBUG, (a))
+#define SBR_DEBUGV(a) PR_LOG(GetSourceBufferResourceLog(), PR_LOG_DEBUG+1, (a))
 #else
-#define SBR_DEBUG(...)
-#define SBR_DEBUGV(...)
+#define SBR_DEBUG(a)
+#define SBR_DEBUGV(a)
 #endif
 
 namespace mozilla {

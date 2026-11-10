@@ -8,7 +8,7 @@
 
 namespace mozilla {
 
-NS_IMPL_ISUPPORTS(MSCOMInitThreadPoolListener, nsIThreadPoolListener)
+NS_IMPL_ISUPPORTS1(MSCOMInitThreadPoolListener, nsIThreadPoolListener)
 
 NS_IMETHODIMP
 MSCOMInitThreadPoolListener::OnThreadCreated()

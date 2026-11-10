@@ -60,6 +60,25 @@ const size_t AsmJSPageSize = 4096;
 static const size_t AsmJSMappedSize = 4 * 1024ULL * 1024ULL * 1024ULL;
 #endif
 
+#ifdef JS_ION
+
+// Return whether asm.js optimization is inhibitted by the platform or
+// dynamically disabled:
+extern bool
+IsAsmJSCompilationAvailable(JSContext *cx, unsigned argc, JS::Value *vp);
+
+#else // JS_ION
+
+inline bool
+IsAsmJSCompilationAvailable(JSContext *cx, unsigned argc, Value *vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+    args.rval().set(BooleanValue(false));
+    return true;
+}
+
+#endif // JS_ION
+
 // From the asm.js spec Linking section:
 //  the heap object's byteLength must be either
 //    2^n for n in [12, 24)

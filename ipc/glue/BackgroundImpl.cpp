@@ -741,11 +741,7 @@ public:
   OpenChildProcessActorRunnable(already_AddRefed<ChildImpl> aActor,
                                 Transport* aTransport,
                                 ProcessHandle aProcessHandle)
-<<<<<<< HEAD
-  : CreateCallbackRunnable(aActor), mTransport(aTransport),
-=======
   : mActor(aActor), mTransport(aTransport),
->>>>>>> 76748cc
     mProcessHandle(aProcessHandle)
   {
     AssertIsOnMainThread();
@@ -777,11 +773,7 @@ public:
   OpenMainProcessActorRunnable(already_AddRefed<ChildImpl> aChildActor,
                                already_AddRefed<ParentImpl> aParentActor,
                                MessageLoop* aParentMessageLoop)
-<<<<<<< HEAD
-  : CreateCallbackRunnable(aChildActor), mParentActor(aParentActor),
-=======
   : mActor(aChildActor), mParentActor(aParentActor),
->>>>>>> 76748cc
     mParentMessageLoop(aParentMessageLoop)
   {
     AssertIsOnMainThread();

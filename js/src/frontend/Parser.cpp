@@ -1672,7 +1672,7 @@ Parser<FullParseHandler>::checkFunctionDefinition(HandlePropertyName funName,
              * end of functionBody.
              */
             if (!pc->funcStmts) {
-                pc->funcStmts = alloc.new_<FuncStmtSet>(alloc);
+                pc->funcStmts = alloc.new_<FuncStmtSet>(mozilla::OldMove((FuncStmtSet) alloc));
                 if (!pc->funcStmts || !pc->funcStmts->init())
                     return false;
             }

@@ -574,7 +574,7 @@ public:
       return NS_OK;
     }
 
-    nsTArray<nsRefPtr<ServiceWorkerRegistration>> array;
+    nsTArray<nsRefPtr<ServiceWorkerRegistration> > array;
 
     nsRefPtr<ServiceWorkerManager::ServiceWorkerDomainInfo> domainInfo =
       swm->GetDomainInfo(docURI);

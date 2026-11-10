@@ -72,7 +72,7 @@ ProfileUnlockerWin::~ProfileUnlockerWin()
 {
 }
 
-NS_IMPL_ISUPPORTS(ProfileUnlockerWin, nsIProfileUnlocker)
+NS_IMPL_ISUPPORTS1(ProfileUnlockerWin, nsIProfileUnlocker)
 
 nsresult
 ProfileUnlockerWin::Init()
