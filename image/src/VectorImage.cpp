@@ -779,6 +779,7 @@ struct SVGDrawingParameters
     , viewportSize(aSVGContext ? aSVGContext->GetViewportSize() : aSize)
     , animationTime(aAnimationTime)
     , flags(aFlags)
+    , opacity(aSVGContext ? aSVGContext->GetGlobalOpacity() : 1.0)
   { }
 
   gfxContext*                   context;
@@ -790,6 +791,7 @@ struct SVGDrawingParameters
   nsIntSize                     viewportSize;
   float                         animationTime;
   uint32_t                      flags;
+  gfxFloat                      opacity;
 };
 
 //******************************************************************************
@@ -927,7 +929,7 @@ VectorImage::Show(gfxDrawable* aDrawable, const SVGDrawingParameters& aParams)
                              ThebesIntSize(aParams.size),
                              aParams.region,
                              gfxImageFormat::ARGB32,
-                             aParams.filter, aParams.flags);
+                             aParams.filter, aParams.flags, aParams.opacity);
 
   MOZ_ASSERT(mRenderingObserver, "Should have a rendering observer by now");
   mRenderingObserver->ResumeHonoringInvalidations();

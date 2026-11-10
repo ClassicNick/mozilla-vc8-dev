@@ -2865,26 +2865,26 @@ class CGConstructorEnabled(CGAbstractMethod):
 
         if not iface.isExposedInWindow():
             exposedInWindowCheck = dedent(
-              """
-              if (NS_IsMainThread()) {
-                return false;
-              }
-              """)
+                """
+                if (NS_IsMainThread()) {
+                  return false;
+                }
+                """)
             body.append(CGGeneric(exposedInWindowCheck))
 
         if iface.isExposedInAnyWorker() and iface.isExposedOnlyInSomeWorkers():
             workerGlobals = sorted(iface.getWorkerExposureSet())
-            workerCondition = CGList((CGGeneric('strcmp(name, "%s")'% workerGlobal)
-                                        for workerGlobal in workerGlobals), " && ")
+            workerCondition = CGList((CGGeneric('strcmp(name, "%s")' % workerGlobal)
+                                      for workerGlobal in workerGlobals), " && ")
             exposedInWorkerCheck = fill(
-              """
-              if (!NS_IsMainThread()) {
-                const char* name = js::GetObjectClass(aObj)->name;
-                if (${workerCondition}) {
-                  return false;
+                """
+                if (!NS_IsMainThread()) {
+                  const char* name = js::GetObjectClass(aObj)->name;
+                  if (${workerCondition}) {
+                    return false;
+                  }
                 }
-              }
-              """, workerCondition=workerCondition.define())
+                """, workerCondition=workerCondition.define())
             body.append(CGGeneric(exposedInWorkerCheck))
 
         pref = iface.getExtendedAttribute("Pref")
@@ -2909,7 +2909,7 @@ class CGConstructorEnabled(CGAbstractMethod):
         conditionsWrapper = ""
         if len(conditions):
           conditionsWrapper = CGWrapper(CGList((CGGeneric(cond) for cond in conditions),
-                                        " &&\n"),
+                                               " &&\n"),
                                         pre="return ", post=";\n", reindent=True)
         else:
           conditionsWrapper = CGGeneric("return true;\n")
@@ -9045,12 +9045,15 @@ class ClassConstructor(ClassItem):
     body contains a string with the code for the constructor, defaults to empty.
     """
     def __init__(self, args, inline=False, bodyInHeader=False,
-                 visibility="private", explicit=False, baseConstructors=None,
+                 visibility="private", explicit=False, constexpr=False, baseConstructors=None,
                  body=""):
+        assert not (inline and constexpr)
+        assert not (bodyInHeader and constexpr)
         self.args = args
         self.inline = inline or bodyInHeader
-        self.bodyInHeader = bodyInHeader
+        self.bodyInHeader = bodyInHeader or constexpr
         self.explicit = explicit
+        self.constexpr = constexpr
         self.baseConstructors = baseConstructors or []
         self.body = body
         ClassItem.__init__(self, None, visibility)
@@ -9061,6 +9064,8 @@ class ClassConstructor(ClassItem):
             decorators.append('explicit')
         if self.inline and declaring:
             decorators.append('inline')
+        if self.constexpr and declaring:
+            decorators.append('MOZ_CONSTEXPR')
         if decorators:
             return ' '.join(decorators) + ' '
         return ''
@@ -10657,7 +10662,7 @@ class CGDOMJSProxyHandler(CGClass):
         constructors = [
             ClassConstructor(
                 [],
-                bodyInHeader=True,
+                constexpr=True,
                 visibility="public",
                 explicit=True)
         ]
@@ -11677,7 +11682,6 @@ class CGRegisterWorkerBindings(CGAbstractMethod):
                 condition = (
                     "%s::ConstructorEnabled(aCx, aObj) && " % bindingNS
                     + condition)
-
             conditions.append(condition)
         lines = [CGIfWrapper(CGGeneric("return false;\n"), condition) for
                  condition in conditions]
@@ -11967,7 +11971,13 @@ class CGBindingRoot(CGThing):
         hasWorkerStuff = len(config.getDescriptors(webIDLFile=webIDLFile,
                                                    workers=True)) != 0
         bindingHeaders["WorkerPrivate.h"] = hasWorkerStuff
-        bindingHeaders["nsThreadUtils.h"] = hasWorkerStuff
+
+        def descriptorHasThreadChecks(desc):
+            return ((not desc.workers and not desc.interface.isExposedInWindow()) or
+                    (desc.interface.isExposedInAnyWorker() and desc.interface.isExposedOnlyInSomeWorkers()))
+
+        hasThreadChecks = hasWorkerStuff or any(d.hasThreadChecks() for d in descriptors)
+        bindingHeaders["nsThreadUtils.h"] = hasThreadChecks
 
         dictionaries = config.getDictionaries(webIDLFile=webIDLFile)
         hasNonEmptyDictionaries = any(

@@ -2321,6 +2321,7 @@ GetUserMediaCallbackMediaStreamListener::StopScreenWindowSharing()
   NS_ASSERTION(NS_IsMainThread(), "Only call on main thread");
   if (mVideoSource && !mStopped &&
       (mVideoSource->GetMediaSource() == Screen ||
+       mVideoSource->GetMediaSource() == Application ||
        mVideoSource->GetMediaSource() == Window)) {
     // Stop the whole stream if there's no audio; just the video track if we have both
     nsRefPtr<MediaOperationRunnable> runnable(

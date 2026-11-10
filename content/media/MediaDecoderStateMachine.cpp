@@ -1054,7 +1054,7 @@ MediaDecoderStateMachine::CheckIfDecodeComplete()
   if (!IsVideoDecoding() && !IsAudioDecoding()) {
     // We've finished decoding all active streams,
     // so move to COMPLETED state.
-    mState = DECODER_STATE_COMPLETED;
+    SetState(DECODER_STATE_COMPLETED);
     DispatchDecodeTasksIfNeeded();
     ScheduleStateMachine();
   }
@@ -1225,6 +1225,30 @@ MediaDecoderOwner::NextFrameStatus MediaDecoderStateMachine::GetNextFrameStatus(
   return MediaDecoderOwner::NEXT_FRAME_UNAVAILABLE;
 }
 
+static const char* const gMachineStateStr[] = {
+  "NONE",
+  "DECODING_METADATA",
+  "WAIT_FOR_RESOURCES",
+  "DORMANT",
+  "DECODING",
+  "SEEKING",
+  "BUFFERING",
+  "COMPLETED",
+  "SHUTDOWN"
+};
+
+void MediaDecoderStateMachine::SetState(State aState)
+{
+  AssertCurrentThreadInMonitor();
+  if (mState == aState) {
+    return;
+  }
+  DECODER_LOG("Change machine state from %s to %s",
+              gMachineStateStr[mState], gMachineStateStr[aState]);
+
+  mState = aState;
+}
+
 void MediaDecoderStateMachine::SetVolume(double volume)
 {
   NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
@@ -1332,13 +1356,13 @@ void MediaDecoderStateMachine::SetDormant(bool aDormant)
 
   if (aDormant) {
     ScheduleStateMachine();
-    mState = DECODER_STATE_DORMANT;
+    SetState(DECODER_STATE_DORMANT);
     mDecoder->GetReentrantMonitor().NotifyAll();
   } else if ((aDormant != true) && (mState == DECODER_STATE_DORMANT)) {
     ScheduleStateMachine();
     mStartTime = 0;
     mCurrentFrameTime = 0;
-    mState = DECODER_STATE_DECODING_NONE;
+    SetState(DECODER_STATE_DECODING_NONE);
     mDecoder->GetReentrantMonitor().NotifyAll();
   }
 }
@@ -1353,7 +1377,7 @@ void MediaDecoderStateMachine::Shutdown()
   // Change state before issuing shutdown request to threads so those
   // threads can start exiting cleanly during the Shutdown call.
   DECODER_LOG("Changed state to SHUTDOWN");
-  mState = DECODER_STATE_SHUTDOWN;
+  SetState(DECODER_STATE_SHUTDOWN);
   mScheduler->ScheduleAndShutdown();
   if (mAudioSink) {
     mAudioSink->PrepareToShutdown();
@@ -1369,7 +1393,7 @@ void MediaDecoderStateMachine::StartDecoding()
   if (mState == DECODER_STATE_DECODING) {
     return;
   }
-  mState = DECODER_STATE_DECODING;
+  SetState(DECODER_STATE_DECODING);
 
   mDecodeStartTime = TimeStamp::Now();
 
@@ -1393,7 +1417,7 @@ void MediaDecoderStateMachine::StartWaitForResources()
   NS_ASSERTION(OnStateMachineThread() || OnDecodeThread(),
                "Should be on state machine or decode thread.");
   AssertCurrentThreadInMonitor();
-  mState = DECODER_STATE_WAIT_FOR_RESOURCES;
+  SetState(DECODER_STATE_WAIT_FOR_RESOURCES);
   DECODER_LOG("StartWaitForResources");
 }
 
@@ -1407,7 +1431,7 @@ void MediaDecoderStateMachine::NotifyWaitingForResourcesStatusChanged()
   DECODER_LOG("NotifyWaitingForResourcesStatusChanged");
   // The reader is no longer waiting for resources (say a hardware decoder),
   // we can now proceed to decode metadata.
-  mState = DECODER_STATE_DECODING_NONE;
+  SetState(DECODER_STATE_DECODING_NONE);
   ScheduleStateMachine();
 }
 
@@ -1420,7 +1444,7 @@ void MediaDecoderStateMachine::Play()
   ReentrantMonitorAutoEnter mon(mDecoder->GetReentrantMonitor());
   if (mState == DECODER_STATE_BUFFERING) {
     DECODER_LOG("Changed state from BUFFERING to DECODING");
-    mState = DECODER_STATE_DECODING;
+    SetState(DECODER_STATE_DECODING);
     mDecodeStartTime = TimeStamp::Now();
   }
   // Once we start playing, we don't want to minimize our prerolling, as we
@@ -1505,7 +1529,7 @@ void MediaDecoderStateMachine::Seek(const SeekTarget& aTarget)
   mSeekTarget = SeekTarget(seekTime, aTarget.mType);
 
   DECODER_LOG("Changed state to SEEKING (to %lld)", mSeekTarget.mTime);
-  mState = DECODER_STATE_SEEKING;
+  SetState(DECODER_STATE_SEEKING);
   if (mDecoder->GetDecodedStream()) {
     mDecoder->RecreateDecodedStream(seekTime - mStartTime);
   }
@@ -1762,7 +1786,7 @@ MediaDecoderStateMachine::StartAudioThread()
     nsresult rv = mAudioSink->Init();
     if (NS_FAILED(rv)) {
       DECODER_WARN("Changed state to SHUTDOWN because audio sink initialization failed");
-      mState = DECODER_STATE_SHUTDOWN;
+      SetState(DECODER_STATE_SHUTDOWN);
       mScheduler->ScheduleAndShutdown();
       return rv;
     }
@@ -1841,7 +1865,7 @@ MediaDecoderStateMachine::DecodeError()
   // and the HTMLMediaElement, so that our pipeline can start exiting
   // cleanly during the sync dispatch below.
   DECODER_WARN("Decode error, changed state to SHUTDOWN due to error");
-  mState = DECODER_STATE_SHUTDOWN;
+  SetState(DECODER_STATE_SHUTDOWN);
   mScheduler->ScheduleAndShutdown();
   mDecoder->GetReentrantMonitor().NotifyAll();
 
@@ -2166,7 +2190,7 @@ MediaDecoderStateMachine::SeekCompleted()
     stopEvent = NS_NewRunnableMethod(mDecoder, &MediaDecoder::SeekingStoppedAtEnd);
     // Explicitly set our state so we don't decode further, and so
     // we report playback ended to the media element.
-    mState = DECODER_STATE_COMPLETED;
+    SetState(DECODER_STATE_COMPLETED);
     DispatchDecodeTasksIfNeeded();
   } else {
     DECODER_LOG("Changed state from SEEKING (to %lld) to DECODING", seekTime);
@@ -2332,7 +2356,7 @@ nsresult MediaDecoderStateMachine::RunStateMachine()
     }
 
     case DECODER_STATE_DECODING_NONE: {
-      mState = DECODER_STATE_DECODING_METADATA;
+      SetState(DECODER_STATE_DECODING_METADATA);
       // Ensure we have a decode thread to decode metadata.
       return EnqueueDecodeMetadataTask();
     }
@@ -2919,7 +2943,7 @@ void MediaDecoderStateMachine::StartBuffering()
   // will check the current state and decide whether to tell
   // the element we're buffering or not.
   UpdateReadyState();
-  mState = DECODER_STATE_BUFFERING;
+  SetState(DECODER_STATE_BUFFERING);
   DECODER_LOG("Changed state from DECODING to BUFFERING, decoded for %.3lfs",
               decodeDuration.ToSeconds());
 #ifdef PR_LOGGING

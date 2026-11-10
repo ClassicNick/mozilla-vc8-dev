@@ -30,6 +30,7 @@ public:
     nsNotifyAddrListener();
 
     nsresult Init(void);
+    void CheckLinkStatus(void);
 
 protected:
     class ChangeEvent : public nsRunnable {
@@ -48,19 +49,28 @@ protected:
     bool mCheckAttempted;
 
     nsresult Shutdown(void);
-    nsresult SendEventToUI(const char *aEventID);
+    nsresult SendEvent(const char *aEventID);
 
     DWORD GetOperationalStatus(DWORD aAdapterIndex);
     DWORD CheckIPAddrTable(void);
     DWORD CheckAdaptersInfo(void);
     DWORD CheckAdaptersAddresses(void);
-    bool  CheckIsGateway(PIP_ADAPTER_ADDRESSES aAdapter);
+
+    // Checks for an Internet Connection Sharing (ICS) gateway.
+    bool  CheckICSGateway(PIP_ADAPTER_ADDRESSES aAdapter);
     bool  CheckICSStatus(PWCHAR aAdapterName);
-    void  CheckLinkStatus(void);
 
     nsCOMPtr<nsIThread> mThread;
 
     HANDLE        mShutdownEvent;
+
+private:
+    // This is a checksum of various meta data for all network interfaces
+    // considered UP at last check.
+    ULONG mIPInterfaceChecksum;
+
+    // Network changed events are enabled
+    bool mAllowChangedEvent;
 };
 
 #endif /* NSNOTIFYADDRLISTENER_H_ */

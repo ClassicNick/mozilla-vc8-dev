@@ -194,7 +194,7 @@ gfxWindowsNativeDrawing::IsDoublePass()
         return false;
     if (surf->GetType() != gfxSurfaceType::Win32 &&
         surf->GetType() != gfxSurfaceType::Win32Printing) {
-	return true;
+        return true;
     }
     if ((surf->GetContentType() != gfxContentType::COLOR ||
          (surf->GetContentType() == gfxContentType::COLOR_ALPHA &&
