@@ -24,9 +24,9 @@
 extern PRLogModuleInfo* GetMediaSourceLog();
 extern PRLogModuleInfo* GetMediaSourceAPILog();
 
-#define MSE_DEBUG(...) PR_LOG(GetMediaSourceLog(), PR_LOG_DEBUG, (__VA_ARGS__))
+#define MSE_DEBUG(a) PR_LOG(GetMediaSourceLog(), PR_LOG_DEBUG, (a))
 #else
-#define MSE_DEBUG(...)
+#define MSE_DEBUG(a)
 #endif
 
 #define UNIMPLEMENTED() MSE_DEBUG("SourceBufferResource(%p): UNIMPLEMENTED FUNCTION at line %d", this, __LINE__)
