@@ -131,7 +131,7 @@ GeckoChildProcessHost::GetPathToBinary(FilePath& exePath)
   if (ShouldHaveDirectoryService()) {
     MOZ_ASSERT(gGREPath);
 #ifdef OS_WIN
-    exePath = FilePath(gGREPath);
+    exePath = FilePath(char16ptr_t(gGREPath));
 #else
     nsCString path;
     NS_CopyUnicodeToNative(nsDependentString(gGREPath), path);
@@ -761,11 +761,44 @@ GeckoChildProcessHost::PerformAsyncLaunchInternal(std::vector<std::string>& aExt
     }
   }
 
-#if defined(XP_WIN) && defined(MOZ_CONTENT_SANDBOX)
-  if (mSandboxEnabled) {
-    // Tell the process that it should lower its rights after initialization.
-    cmdLine.AppendLooseValue(UTF8ToWide("-sandbox"));
-  }
+#if defined(XP_WIN)
+  bool shouldSandboxCurrentProcess = false;
+  switch (mProcessType) {
+    case GeckoProcessType_Content:
+#if defined(MOZ_CONTENT_SANDBOX)
+      if (!PR_GetEnv("MOZ_DISABLE_CONTENT_SANDBOX")) {
+        mSandboxBroker.SetSecurityLevelForContentProcess();
+        cmdLine.AppendLooseValue(UTF8ToWide("-sandbox"));
+        shouldSandboxCurrentProcess = true;
+      }
+#endif // MOZ_CONTENT_SANDBOX
+      break;
+    case GeckoProcessType_Plugin:
+      // XXX: We don't sandbox this process type yet
+      // mSandboxBroker.SetSecurityLevelForPluginProcess();
+      // cmdLine.AppendLooseValue(UTF8ToWide("-sandbox"));
+      // shouldSandboxCurrentProcess = true;
+      break;
+    case GeckoProcessType_IPDLUnitTest:
+      // XXX: We don't sandbox this process type yet
+      // mSandboxBroker.SetSecurityLevelForIPDLUnitTestProcess();
+      // cmdLine.AppendLooseValue(UTF8ToWide("-sandbox"));
+      // shouldSandboxCurrentProcess = true;
+      break;
+    case GeckoProcessType_GMPlugin:
+#ifdef MOZ_CONTENT_SANDBOX
+      if (!PR_GetEnv("MOZ_DISABLE_GMP_SANDBOX")) {
+        mSandboxBroker.SetSecurityLevelForGMPlugin();
+        cmdLine.AppendLooseValue(UTF8ToWide("-sandbox"));
+        shouldSandboxCurrentProcess = true;
+      }
+#endif
+      break;
+    case GeckoProcessType_Default:
+    default:
+      MOZ_CRASH("Bad process type in GeckoChildProcessHost");
+      break;
+  };
 #endif
 
   // Add the application directory path (-appdir path)
@@ -790,12 +823,10 @@ GeckoChildProcessHost::PerformAsyncLaunchInternal(std::vector<std::string>& aExt
   cmdLine.AppendLooseValue(UTF8ToWide(childProcessType));
 
 #if defined(XP_WIN) && defined(MOZ_CONTENT_SANDBOX)
-  if (mSandboxEnabled) {
-
-    mozilla::SandboxBroker sandboxBroker;
-    sandboxBroker.LaunchApp(cmdLine.program().c_str(),
-                            cmdLine.command_line_string().c_str(),
-                            &process);
+  if (shouldSandboxCurrentProcess) {
+    mSandboxBroker.LaunchApp(cmdLine.program().c_str(),
+                             cmdLine.command_line_string().c_str(),
+                             &process);
   } else
 #endif
   {

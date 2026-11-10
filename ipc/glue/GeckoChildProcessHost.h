@@ -20,6 +20,10 @@
 #include "nsXULAppAPI.h"        // for GeckoProcessType
 #include "nsString.h"
 
+#if defined(XP_WIN) && defined(MOZ_CONTENT_SANDBOX)
+#include "sandboxBroker.h"
+#endif
+
 class nsIFile;
 
 namespace mozilla {
@@ -166,7 +170,11 @@ protected:
 #ifdef XP_WIN
   void InitWindowsGroupID();
   nsString mGroupId;
+
+#ifdef MOZ_CONTENT_SANDBOX
+  SandboxBroker mSandboxBroker;
 #endif
+#endif // XP_WIN
 
 #if defined(OS_POSIX)
   base::file_handle_mapping_vector mFileMap;

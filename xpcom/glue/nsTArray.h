@@ -1151,13 +1151,6 @@ public:
     return ReplaceElementsAt(aIndex, 0, aArray.Elements(), aArray.Length());
   }
 
-  // A variation on the ReplaceElementsAt method defined above.
-  template<class Item>
-  elem_type* InsertElementAt(index_type aIndex, const Item& aItem)
-  {
-    return ReplaceElementsAt(aIndex, 0, &aItem, 1);
-  }
-
   // Insert a new element without copy-constructing. This is useful to avoid
   // temporaries.
   // @return A pointer to the newly inserted element, or null on OOM.
@@ -1261,7 +1254,7 @@ public:
     return AppendElements(aArray.Elements(), aArray.Length());
   }
 
-  // A variation on the AppendElements method defined above.
+  // Append a new element, move constructing if possible.
   template<class Item>
   elem_type* AppendElement(const Item& aItem)
   {

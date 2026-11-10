@@ -50,6 +50,11 @@ USE_LIBS += [
     'js',
 ]
 
+if CONFIG['MOZ_CONTENT_SANDBOX'] and CONFIG['OS_ARCH'] == 'WINNT':
+    USE_LIBS += [
+        'sandboxbroker',
+    ]
+
 if CONFIG['MOZ_DMD']:
     USE_LIBS += [
         'dmd',

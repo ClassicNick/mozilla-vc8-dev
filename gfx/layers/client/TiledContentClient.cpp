@@ -319,6 +319,7 @@ ClientTiledLayerBuffer::GetContentType(SurfaceMode* aMode) const
   if (mode == SurfaceMode::SURFACE_COMPONENT_ALPHA) {
 #if defined(MOZ_GFX_OPTIMIZE_MOBILE) || defined(MOZ_WIDGET_GONK)
      mode = SurfaceMode::SURFACE_SINGLE_CHANNEL_ALPHA;
+  }
 #else
       if (!mThebesLayer->GetParent() ||
           !mThebesLayer->GetParent()->SupportsComponentAlphaChildren() ||
@@ -327,13 +328,13 @@ ClientTiledLayerBuffer::GetContentType(SurfaceMode* aMode) const
       } else {
         content = gfxContentType::COLOR;
       }
-#endif
   } else if (mode == SurfaceMode::SURFACE_OPAQUE) {
     if (mThebesLayer->MayResample()) {
       mode = SurfaceMode::SURFACE_SINGLE_CHANNEL_ALPHA;
       content = gfxContentType::COLOR_ALPHA;
     }
   }
+#endif
 
   if (aMode) {
     *aMode = mode;
@@ -349,6 +350,7 @@ gfxMemorySharedReadLock::gfxMemorySharedReadLock()
 
 gfxMemorySharedReadLock::~gfxMemorySharedReadLock()
 {
+  MOZ_ASSERT(mReadCount == 0);
   MOZ_COUNT_DTOR(gfxMemorySharedReadLock);
 }
 
@@ -761,6 +763,11 @@ TileClient::GetBackBuffer(const nsIntRegion& aDirtyRegion,
     if (aMode == SurfaceMode::SURFACE_COMPONENT_ALPHA) {
       mBackBufferOnWhite = pool->GetTextureClient();
     }
+
+    if (mBackLock) {
+      // Before we Replacing the lock by another one we need to unlock it!
+      mBackLock->ReadUnlock();
+    }
     // Create a lock for our newly created back-buffer.
     if (mManager->AsShadowForwarder()->IsSameProcess()) {
       // If our compositor is in the same process, we can save some cycles by not
@@ -1147,12 +1154,6 @@ ClientTiledLayerBuffer::ValidateTile(TileClient aTile,
       }
     }
 
-    if (backBuffer->HasInternalBuffer()) {
-      // If our new buffer has an internal buffer, we don't want to keep another
-      // TextureClient around unnecessarily, so discard the back-buffer.
-      aTile.DiscardBackBuffer();
-    }
-
     // prepare an array of Moz2D tiles that will be painted into in PostValidate
     gfx::Tile moz2DTile;
     RefPtr<DrawTarget> dt = backBuffer->BorrowDrawTarget();
@@ -1184,8 +1185,8 @@ ClientTiledLayerBuffer::ValidateTile(TileClient aTile,
                             drawRect.width,
                             drawRect.height);
       gfx::IntPoint copyTarget(NS_roundf(drawRect.x), NS_roundf(drawRect.y));
-      // Mark the newly updated area as invalid in the front buffer
-      aTile.mInvalidFront.Or(aTile.mInvalidFront, nsIntRect(copyTarget.x, copyTarget.y, copyRect.width, copyRect.height));
+      // Mark the newly updated area as invalid in the back buffer
+      aTile.mInvalidBack.Or(aTile.mInvalidBack, nsIntRect(copyTarget.x, copyTarget.y, copyRect.width, copyRect.height));
 
       if (mode == SurfaceMode::SURFACE_COMPONENT_ALPHA) {
         dt->FillRect(drawRect, ColorPattern(Color(0.0, 0.0, 0.0, 1.0)));

@@ -883,6 +883,9 @@ RasterImage::CopyFrame(uint32_t aWhichFrame,
   // rect, implicitly padding the frame out to the image's size.
   nsRefPtr<gfxImageSurface> imgsurface = new gfxImageSurface(gfxIntSize(mSize.width, mSize.height),
                                                              gfxImageFormat::ARGB32);
+  if (NS_WARN_IF(!imgsurface)) {
+    return nullptr;
+  }
   gfxContext ctx(imgsurface);
   ctx.SetOperator(gfxContext::OPERATOR_SOURCE);
   ctx.Rectangle(framerect);

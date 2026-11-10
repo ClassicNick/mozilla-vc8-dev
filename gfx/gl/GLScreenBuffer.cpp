@@ -571,6 +571,8 @@ DrawBuffer::Create(GLContext* const gl,
             pStencilRB = nullptr;
     }
 
+    GLContext::ScopedLocalErrorCheck localError(gl);
+
     CreateRenderbuffersForOffscreen(gl, formats, size, caps.antialias,
                                     pColorMSRB, pDepthRB, pStencilRB);
 
@@ -581,7 +583,8 @@ DrawBuffer::Create(GLContext* const gl,
     ScopedDeletePtr<DrawBuffer> buffer;
     buffer = new DrawBuffer(gl, size, fb, colorMSRB, depthRB, stencilRB);
 
-    if (!gl->IsFramebufferComplete(fb))
+    GLenum err = localError.GetLocalError();
+    if (err || !gl->IsFramebufferComplete(fb))
         return false;
 
     *out_buffer = buffer.forget();
@@ -628,6 +631,8 @@ ReadBuffer::Create(GLContext* gl,
     GLuint* pDepthRB   = caps.depth   ? &depthRB   : nullptr;
     GLuint* pStencilRB = caps.stencil ? &stencilRB : nullptr;
 
+    GLContext::ScopedLocalErrorCheck localError(gl);
+
     CreateRenderbuffersForOffscreen(gl, formats, surf->mSize, caps.antialias,
                                     nullptr, pDepthRB, pStencilRB);
 
@@ -653,13 +658,14 @@ ReadBuffer::Create(GLContext* gl,
     gl->AttachBuffersToFB(colorTex, colorRB, depthRB, stencilRB, fb, target);
     gl->mFBOMapping[fb] = surf;
 
-
     ScopedDeletePtr<ReadBuffer> buffer;
     buffer = new ReadBuffer(gl,
                             fb, depthRB, stencilRB,
                             surf);
-    if (!gl->IsFramebufferComplete(fb))
+    GLenum err = localError.GetLocalError();
+    if (err || !gl->IsFramebufferComplete(fb)) {
         return nullptr;
+	}
 
     return buffer.forget();
 }

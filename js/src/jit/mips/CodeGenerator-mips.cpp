@@ -912,6 +912,16 @@ CodeGeneratorMIPS::visitUrshD(LUrshD *ins)
 }
 
 bool
+CodeGeneratorMIPS::visitClzI(LClzI *ins)
+{
+    Register input = ToRegister(ins->input());
+    Register output = ToRegister(ins->output());
+
+    masm.as_clz(output, input);
+    return true;
+}
+
+bool
 CodeGeneratorMIPS::visitPowHalfD(LPowHalfD *ins)
 {
     FloatRegister input = ToFloatRegister(ins->input());
@@ -2182,7 +2192,6 @@ CodeGeneratorMIPS::visitAsmJSLoadFuncPtr(LAsmJSLoadFuncPtr *ins)
     const MAsmJSLoadFuncPtr *mir = ins->mir();
 
     Register index = ToRegister(ins->index());
-    Register tmp = ToRegister(ins->temp());
     Register out = ToRegister(ins->output());
     unsigned addr = mir->globalDataOffset() - AsmJSGlobalRegBias;
 

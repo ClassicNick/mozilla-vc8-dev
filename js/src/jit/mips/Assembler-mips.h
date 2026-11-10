@@ -240,7 +240,7 @@ static const uint32_t FunctionMask = ((1 << FunctionBits) - 1) << FunctionShift;
 static const uint32_t RegMask = Registers::Total - 1;
 static const uint32_t StackAlignmentMask = StackAlignment - 1;
 
-static const int32_t MAX_BREAK_CODE = 1024 - 1;
+static const uint32_t MAX_BREAK_CODE = 1024 - 1;
 
 class Instruction;
 class InstReg;
@@ -898,7 +898,7 @@ class Assembler : public AssemblerShared
     BufferOffset as_movf(Register rd, Register rs, uint16_t cc = 0);
 
     // Bit twiddling.
-    BufferOffset as_clz(Register rd, Register rs, Register rt = Register::FromCode(0));
+    BufferOffset as_clz(Register rd, Register rs);
     BufferOffset as_ins(Register rt, Register rs, uint16_t pos, uint16_t size);
     BufferOffset as_ext(Register rt, Register rs, uint16_t pos, uint16_t size);
 
