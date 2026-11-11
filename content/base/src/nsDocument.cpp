@@ -11670,7 +11670,7 @@ void
 nsDocument::OnAppThemeChanged()
 {
   // Bail out if there is no theme support set up properly.
-  auto themeOrigin = Preferences::GetString("b2g.theme.origin");
+  nsAdoptingString themeOrigin = Preferences::GetString("b2g.theme.origin");
   if (!themeOrigin || !Preferences::GetBool("dom.mozApps.themable")) {
     return;
   }

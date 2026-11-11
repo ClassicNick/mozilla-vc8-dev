@@ -134,7 +134,7 @@ CSPService::ShouldLoad(uint32_t aContentType,
       case nsIContentPolicy::TYPE_STYLESHEET:
         {
           // Whitelist the theme resources.
-          auto themeOrigin = Preferences::GetCString("b2g.theme.origin");
+          nsAdoptingCString themeOrigin = Preferences::GetCString("b2g.theme.origin");
           nsAutoCString sourceOrigin;
           aRequestOrigin->GetPrePath(sourceOrigin);
 

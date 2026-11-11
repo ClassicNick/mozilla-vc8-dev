@@ -698,7 +698,7 @@ nsScriptSecurityManager::CheckLoadURIWithPrincipal(nsIPrincipal* aPrincipal,
             // have the webapps-manage permission but have the themeable one.
             // Resources from the theme origin are also allowed to load from
             // the theme origin (eg. stylesheets using images from the theme).
-            auto themeOrigin = Preferences::GetCString("b2g.theme.origin");
+            nsAdoptingCString themeOrigin = Preferences::GetCString("b2g.theme.origin");
             if (themeOrigin) {
                 nsAutoCString targetOrigin;
                 nsPrincipal::GetOriginForURI(targetBaseURI, getter_Copies(targetOrigin));
