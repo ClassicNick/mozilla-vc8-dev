@@ -144,7 +144,7 @@ private:
 class nsAnonymousContentList : public nsINodeList
 {
 public:
-  nsAnonymousContentList(nsIContent* aParent)
+  explicit nsAnonymousContentList(nsIContent* aParent)
     : mParent(aParent)
   {
     MOZ_COUNT_CTOR(nsAnonymousContentList);

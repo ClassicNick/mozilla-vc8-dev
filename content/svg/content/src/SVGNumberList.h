@@ -153,7 +153,7 @@ public:
     : mElement(nullptr)
   {}
 
-  SVGNumberListAndInfo(nsSVGElement *aElement)
+  explicit SVGNumberListAndInfo(nsSVGElement *aElement)
     : mElement(do_GetWeakReference(static_cast<nsINode*>(aElement)))
   {}
 

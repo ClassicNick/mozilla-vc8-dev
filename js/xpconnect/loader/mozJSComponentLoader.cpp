@@ -231,7 +231,7 @@ static const JSFunctionSpec gGlobalFun[] = {
 class MOZ_STACK_CLASS JSCLContextHelper
 {
 public:
-    JSCLContextHelper(JSContext* aCx);
+    explicit JSCLContextHelper(JSContext* aCx);
     ~JSCLContextHelper();
 
     void reportErrorAfterPop(char *buf);

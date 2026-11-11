@@ -21,7 +21,7 @@ class BodyRule: public nsIStyleRule
   virtual ~BodyRule();
 
 public:
-  BodyRule(HTMLBodyElement* aPart);
+  explicit BodyRule(HTMLBodyElement* aPart);
 
   NS_DECL_ISUPPORTS
 

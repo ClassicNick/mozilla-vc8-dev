@@ -67,7 +67,7 @@ class nsForceXMLListener : public nsIStreamListener
     virtual ~nsForceXMLListener();
 
 public:
-    nsForceXMLListener(nsIStreamListener* aListener);
+    explicit nsForceXMLListener(nsIStreamListener* aListener);
 
     NS_DECL_ISUPPORTS
     NS_FORWARD_NSISTREAMLISTENER(mListener->)

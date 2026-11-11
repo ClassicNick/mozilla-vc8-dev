@@ -301,7 +301,7 @@ nsJSEnvironmentObserver::Observe(nsISupports* aSubject, const char* aTopic,
 
 class AutoFree {
 public:
-  AutoFree(void *aPtr) : mPtr(aPtr) {
+  explicit AutoFree(void* aPtr) : mPtr(aPtr) {
   }
   ~AutoFree() {
     if (mPtr)
@@ -2548,7 +2548,7 @@ class NotifyGCEndRunnable : public nsRunnable
   nsString mMessage;
 
 public:
-  NotifyGCEndRunnable(const nsString& aMessage) : mMessage(aMessage) {}
+  explicit NotifyGCEndRunnable(const nsString& aMessage) : mMessage(aMessage) {}
 
   NS_DECL_NSIRUNNABLE
 };

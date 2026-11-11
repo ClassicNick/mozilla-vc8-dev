@@ -37,7 +37,7 @@ public:
     Init();
   }
 
-  nsTextNode(nsNodeInfoManager* aNodeInfoManager)
+  explicit nsTextNode(nsNodeInfoManager* aNodeInfoManager)
     : mozilla::dom::Text(aNodeInfoManager->GetTextNodeInfo())
   {
     Init();

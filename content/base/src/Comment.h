@@ -32,7 +32,7 @@ public:
     Init();
   }
 
-  Comment(nsNodeInfoManager* aNodeInfoManager)
+  explicit Comment(nsNodeInfoManager* aNodeInfoManager)
     : nsGenericDOMDataNode(aNodeInfoManager->GetCommentNodeInfo())
   {
     Init();

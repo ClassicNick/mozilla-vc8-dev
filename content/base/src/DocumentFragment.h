@@ -56,7 +56,7 @@ public:
     Init();
   }
 
-  DocumentFragment(nsNodeInfoManager* aNodeInfoManager)
+  explicit DocumentFragment(nsNodeInfoManager* aNodeInfoManager)
     : FragmentOrElement(aNodeInfoManager->GetNodeInfo(
                                             nsGkAtoms::documentFragmentNodeName,
                                             nullptr, kNameSpaceID_None,
