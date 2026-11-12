@@ -3028,10 +3028,6 @@ nsBrowserAccess.prototype = {
   isTabContentWindow: function(aWindow) {
     return BrowserApp.getBrowserForWindow(aWindow) != null;
   },
-
-  get contentWindow() {
-    return BrowserApp.selectedBrowser.contentWindow;
-  }
 };
 
 
@@ -4198,7 +4194,7 @@ Tab.prototype = {
 
     // In guest sessions, we refuse to let you open any file urls.
     if (BrowserApp.isGuest) {
-      let bannedSchemes = ["file", "chrome", "resource", "jar"];
+      let bannedSchemes = ["file", "chrome", "resource", "jar", "wyciwyg"];
 
       if (bannedSchemes.indexOf(fixedURI.scheme) > -1) {
         aRequest.cancel(Cr.NS_BINDING_ABORTED);

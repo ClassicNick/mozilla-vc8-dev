@@ -1338,7 +1338,7 @@ CodeGeneratorX86Shared::visitBitOpI(LBitOpI *ins)
                 masm.andl(ToOperand(rhs), ToRegister(lhs));
             break;
         default:
-            MOZ_ASSUME_UNREACHABLE("unexpected binary opcode");
+            MOZ_CRASH("unexpected binary opcode");
     }
 
     return true;
@@ -1372,7 +1372,7 @@ CodeGeneratorX86Shared::visitShiftI(LShiftI *ins)
             }
             break;
           default:
-            MOZ_ASSUME_UNREACHABLE("Unexpected shift op");
+            MOZ_CRASH("Unexpected shift op");
         }
     } else {
         JS_ASSERT(ToRegister(rhs) == ecx);
@@ -1393,7 +1393,7 @@ CodeGeneratorX86Shared::visitShiftI(LShiftI *ins)
             }
             break;
           default:
-            MOZ_ASSUME_UNREACHABLE("Unexpected shift op");
+            MOZ_CRASH("Unexpected shift op");
         }
     }
 
@@ -1535,7 +1535,7 @@ CodeGeneratorX86Shared::visitMathD(LMathD *math)
         masm.divsd(rhs, lhs);
         break;
       default:
-        MOZ_ASSUME_UNREACHABLE("unexpected opcode");
+        MOZ_CRASH("unexpected opcode");
     }
     return true;
 }
@@ -1562,8 +1562,7 @@ CodeGeneratorX86Shared::visitMathF(LMathF *math)
         masm.divss(rhs, lhs);
         break;
       default:
-        MOZ_ASSUME_UNREACHABLE("unexpected opcode");
-        return false;
+        MOZ_CRASH("unexpected opcode");
     }
     return true;
 }
@@ -1584,7 +1583,7 @@ CodeGeneratorX86Shared::visitFloor(LFloor *lir)
             return false;
 
         // Round toward -Infinity.
-        masm.roundsd(input, scratch, JSC::X86Assembler::RoundDown);
+        masm.roundsd(input, scratch, X86Assembler::RoundDown);
 
         if (!bailoutCvttsd2si(scratch, output, lir->snapshot()))
             return false;
@@ -1647,7 +1646,7 @@ CodeGeneratorX86Shared::visitFloorF(LFloorF *lir)
             return false;
 
         // Round toward -Infinity.
-        masm.roundss(input, scratch, JSC::X86Assembler::RoundDown);
+        masm.roundss(input, scratch, X86Assembler::RoundDown);
 
         if (!bailoutCvttss2si(scratch, output, lir->snapshot()))
             return false;
@@ -1718,7 +1717,7 @@ CodeGeneratorX86Shared::visitCeil(LCeil *lir)
         // x <= -1 or x > -0
         masm.bind(&lessThanMinusOne);
         // Round toward +Infinity.
-        masm.roundsd(input, scratch, JSC::X86Assembler::RoundUp);
+        masm.roundsd(input, scratch, X86Assembler::RoundUp);
         return bailoutCvttsd2si(scratch, output, lir->snapshot());
     }
 
@@ -1774,7 +1773,7 @@ CodeGeneratorX86Shared::visitCeilF(LCeilF *lir)
         // x <= -1 or x > -0
         masm.bind(&lessThanMinusOne);
         // Round toward +Infinity.
-        masm.roundss(input, scratch, JSC::X86Assembler::RoundUp);
+        masm.roundss(input, scratch, X86Assembler::RoundUp);
         return bailoutCvttss2si(scratch, output, lir->snapshot());
     }
 
@@ -1845,7 +1844,7 @@ CodeGeneratorX86Shared::visitRound(LRound *lir)
         // Add 0.5 and round toward -Infinity. The result is stored in the temp
         // register (currently contains 0.5).
         masm.addsd(input, temp);
-        masm.roundsd(temp, scratch, JSC::X86Assembler::RoundDown);
+        masm.roundsd(temp, scratch, X86Assembler::RoundDown);
 
         // Truncate.
         if (!bailoutCvttsd2si(scratch, output, lir->snapshot()))
@@ -1927,7 +1926,7 @@ CodeGeneratorX86Shared::visitRoundF(LRoundF *lir)
         // Add 0.5 and round toward -Infinity. The result is stored in the temp
         // register (currently contains 0.5).
         masm.addss(input, temp);
-        masm.roundss(temp, scratch, JSC::X86Assembler::RoundDown);
+        masm.roundss(temp, scratch, X86Assembler::RoundDown);
 
         // Truncate.
         if (!bailoutCvttss2si(scratch, output, lir->snapshot()))
@@ -2109,7 +2108,7 @@ CodeGeneratorX86Shared::visitSimdValueX4(LSimdValueX4 *ins)
         masm.loadAlignedFloat32x4(Address(StackPointer, 0), output);
         break;
       }
-      default: MOZ_ASSUME_UNREACHABLE("Unknown SIMD kind");
+      default: MOZ_CRASH("Unknown SIMD kind");
     }
 
     masm.freeStack(Simd128DataSize);
@@ -2177,7 +2176,7 @@ CodeGeneratorX86Shared::visitSimdBinaryArithIx4(LSimdBinaryArithIx4 *ins)
         // x86 doesn't have SIMD i32 div.
         break;
     }
-    MOZ_ASSUME_UNREACHABLE("unexpected SIMD op");
+    MOZ_CRASH("unexpected SIMD op");
 }
 
 bool
@@ -2202,7 +2201,7 @@ CodeGeneratorX86Shared::visitSimdBinaryArithFx4(LSimdBinaryArithFx4 *ins)
         masm.packedDivFloat32(rhs, lhs);
         return true;
     }
-    MOZ_ASSUME_UNREACHABLE("unexpected SIMD op");
+    MOZ_CRASH("unexpected SIMD op");
 }
 
 bool

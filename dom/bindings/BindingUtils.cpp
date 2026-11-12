@@ -1741,8 +1741,9 @@ ReparentWrapper(JSContext* aCx, JS::Handle<JSObject*> aObjArg)
   js::AssertSameCompartment(aCx, aObjArg);
 
   // Check if we're near the stack limit before we get anywhere near the
-  // transplanting code.
-  JS_CHECK_RECURSION(aCx, return NS_ERROR_FAILURE);
+  // transplanting code. We use a conservative check since we'll use a little
+  // more space before we actually hit the critical "can't fail" path.
+  JS_CHECK_RECURSION_CONSERVATIVE(aCx, return NS_ERROR_FAILURE);
 
   JS::Rooted<JSObject*> aObj(aCx, aObjArg);
   const DOMJSClass* domClass = GetDOMClass(aObj);
@@ -2356,6 +2357,14 @@ CheckPermissions(JSContext* aCx, JSObject* aObj, const char* const aPermissions[
 }
 
 bool
+CheckSafetyInPrerendering(JSContext* aCx, JSObject* aObj)
+{
+  //TODO: Check if page is being prerendered.
+  //Returning false for now.
+  return false;
+}
+
+bool
 GenericBindingGetter(JSContext* cx, unsigned argc, JS::Value* vp)
 {
   JS::CallArgs args = JS::CallArgsFromVp(argc, vp);
@@ -2644,6 +2653,13 @@ AssertReturnTypeMatchesJitinfo(const JSJitInfo* aJitInfo,
   }
 }
 #endif
+
+bool
+CallerSubsumes(JSObject *aObject)
+{
+  nsIPrincipal* objPrin = nsContentUtils::ObjectPrincipal(js::UncheckedUnwrap(aObject));
+  return nsContentUtils::SubjectPrincipal()->Subsumes(objPrin);
+}
 
 } // namespace dom
 } // namespace mozilla

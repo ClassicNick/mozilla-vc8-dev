@@ -868,7 +868,7 @@ gfxPlatform::InitializeSkiaCacheLimits()
   #endif
 
 #ifdef USE_SKIA_GPU
-    mSkiaGlue->GetGrContext()->setTextureCacheLimits(cacheItemLimit, cacheSizeLimit);
+    mSkiaGlue->GetGrContext()->setResourceCacheLimits(cacheItemLimit, cacheSizeLimit);
 #endif
   }
 }
