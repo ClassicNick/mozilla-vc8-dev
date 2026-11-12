@@ -60,7 +60,7 @@ void EbmlComposer::GenerateHeader()
   }
   MOZ_ASSERT(ebml.offset <= DEFAULT_HEADER_SIZE + mCodecPrivateData.Length(),
              "write more data > EBML_BUFFER_SIZE");
-  auto block = mClusterBuffs.AppendElement();
+  nsTArray<uint8_t>* block = mClusterBuffs.AppendElement();
   block->SetLength(ebml.offset);
   memcpy(block->Elements(), ebml.buf, ebml.offset);
   mFlushState |= FLUSH_METADATA;
@@ -116,7 +116,7 @@ EbmlComposer::WriteSimpleBlock(EncodedFrame* aFrame)
     FinishCluster();
   }
 
-  auto block = mClusterBuffs.AppendElement();
+  nsTArray<uint8_t>* block = mClusterBuffs.AppendElement();
   block->SetLength(aFrame->GetFrameData().Length() + DEFAULT_HEADER_SIZE);
   ebml.buf = block->Elements();
 

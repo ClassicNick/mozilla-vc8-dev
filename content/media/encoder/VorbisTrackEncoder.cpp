@@ -18,10 +18,10 @@ namespace mozilla {
 #undef LOG
 #ifdef PR_LOGGING
 PRLogModuleInfo* gVorbisTrackEncoderLog;
-#define VORBISLOG(msg, ...) PR_LOG(gVorbisTrackEncoderLog, PR_LOG_DEBUG, \
-                             (msg, ##__VA_ARGS__))
+#define VORBISLOG(msg, a) PR_LOG(gVorbisTrackEncoderLog, PR_LOG_DEBUG, \
+                             (msg, a))
 #else
-#define VORBISLOG(msg, ...)
+#define VORBISLOG(msg, a)
 #endif
 
 VorbisTrackEncoder::VorbisTrackEncoder()

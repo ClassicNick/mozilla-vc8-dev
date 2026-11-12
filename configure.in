@@ -3810,6 +3810,7 @@ MOZ_WAVE=1
 MOZ_SAMPLE_TYPE_FLOAT32=
 MOZ_SAMPLE_TYPE_S16=
 MOZ_OPUS=1
+MOZ_OGG=1
 MOZ_WEBM=1
 MOZ_GSTREAMER=
 MOZ_DIRECTSHOW=
@@ -5128,6 +5129,19 @@ MOZ_ARG_DISABLE_BOOL(opus,
 [  --disable-opus          Disable support for Opus audio],
     MOZ_OPUS=,
     MOZ_OPUS=1)
+	
+dnl ========================================================
+dnl = Disable VP8 decoder support
+dnl ========================================================
+MOZ_ARG_DISABLE_BOOL(ogg,
+[  --disable-ogg          Disable support for Theora video (ogg container)],
+    MOZ_OGG=,
+    MOZ_OGG=1)
+
+if test -n "$MOZ_OGG"; then
+    AC_DEFINE(MOZ_OGG)
+    MOZ_OGG=1
+fi;
 
 dnl ========================================================
 dnl = Disable VP8 decoder support
@@ -8864,6 +8878,7 @@ AC_SUBST(MOZ_VORBIS)
 AC_SUBST(MOZ_TREMOR)
 AC_SUBST(MOZ_OPUS)
 AC_SUBST(MOZ_WEBM)
+AC_SUBST(MOZ_OGG)
 AC_SUBST(MOZ_WMF)
 AC_SUBST(MOZ_FFMPEG)
 AC_SUBST(MOZ_FMP4)

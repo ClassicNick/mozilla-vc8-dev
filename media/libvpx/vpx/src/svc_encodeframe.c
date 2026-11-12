@@ -33,7 +33,7 @@ _CRTIMP char *__cdecl strtok_s(char *str, const char *delim, char **context);
 
 #ifdef _MSC_VER
 #define strdup _strdup
-#define strtok_r strtok_s
+#define strtok_r strtok
 #endif
 
 #define SVC_REFERENCE_FRAMES 8
@@ -233,7 +233,7 @@ static int svc_log(SvcContext *svc_ctx, int level, const char *fmt, ...) {
   }
 
   va_start(ap, fmt);
-  retval = vsnprintf(buf, sizeof(buf), fmt, ap);
+  retval = _vsnprintf(buf, sizeof(buf), fmt, ap);
   va_end(ap);
 
   if (svc_ctx->log_print) {

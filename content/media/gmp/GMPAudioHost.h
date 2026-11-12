@@ -18,8 +18,8 @@ namespace gmp {
 
 class GMPAudioSamplesImpl : public GMPAudioSamples {
 public:
-  GMPAudioSamplesImpl(GMPAudioFormat aFormat);
-  GMPAudioSamplesImpl(const GMPAudioEncodedSampleData& aData);
+  explicit GMPAudioSamplesImpl(GMPAudioFormat aFormat);
+  explicit GMPAudioSamplesImpl(const GMPAudioEncodedSampleData& aData);
   virtual ~GMPAudioSamplesImpl();
 
   virtual GMPAudioFormat GetFormat() MOZ_OVERRIDE;

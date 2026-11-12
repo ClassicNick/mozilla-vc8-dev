@@ -27,7 +27,7 @@ class HTMLImageElement MOZ_FINAL : public nsGenericHTMLElement,
 {
   friend class HTMLSourceElement;
 public:
-  HTMLImageElement(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
+  explicit HTMLImageElement(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
 
   static already_AddRefed<HTMLImageElement>
     Image(const GlobalObject& aGlobal,

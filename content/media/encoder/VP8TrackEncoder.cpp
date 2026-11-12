@@ -11,17 +11,16 @@
 #include "VideoUtils.h"
 #include "prsystem.h"
 #include "WebMWriter.h"
-#include "libyuv.h"
 
 namespace mozilla {
 
 #ifdef PR_LOGGING
 PRLogModuleInfo* gVP8TrackEncoderLog;
-#define VP8LOG(msg, ...) PR_LOG(gVP8TrackEncoderLog, PR_LOG_DEBUG, \
-                                  (msg, ##__VA_ARGS__))
+#define VP8LOG(msg, a) PR_LOG(gVP8TrackEncoderLog, PR_LOG_DEBUG, \
+                                  (msg, a))
 // Debug logging macro with object pointer and class name.
 #else
-#define VP8LOG(msg, ...)
+#define VP8LOG(msg, a)
 #endif
 
 #define DEFAULT_BITRATE 2500 // in kbit/s
@@ -317,6 +316,7 @@ nsresult VP8TrackEncoder::PrepareRawFrame(VideoChunk &aChunk)
       uint8_t *cb = mI420Frame.Elements() + yPlaneSize;
       uint8_t *cr = mI420Frame.Elements() + yPlaneSize + uvPlaneSize;
 
+#if !defined(_MSC_VER) || _MSC_VER >= 1400
       if (isYUV420(data) && data->mCbSkip) {
         // If mCbSkip is set, we assume it's nv12 or nv21.
         if (data->mCbChannel < data->mCrChannel) { // nv12
@@ -354,6 +354,7 @@ nsresult VP8TrackEncoder::PrepareRawFrame(VideoChunk &aChunk)
         VP8LOG("Unsupported planar format\n");
         return NS_ERROR_NOT_IMPLEMENTED;
       }
+#endif
 
       mVPXImageWrapper->planes[PLANE_Y] = y;
       mVPXImageWrapper->planes[PLANE_U] = cb;

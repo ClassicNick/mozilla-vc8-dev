@@ -142,6 +142,6 @@ int vp9_block_energy(VP9_COMP *cpi, MACROBLOCK *x, BLOCK_SIZE bs) {
   // if (var <= 1000)
   //   return 0;
 
-  energy = 0.9*(logf(var + 1) - 10.0);
+  energy = 0.9*(log(var + 1) - 10.0);
   return clamp(round(energy), ENERGY_MIN, ENERGY_MAX);
 }
