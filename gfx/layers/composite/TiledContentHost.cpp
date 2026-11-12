@@ -147,14 +147,21 @@ TiledLayerBufferComposite::ValidateTile(TileHost aTile,
 #endif
 
   MOZ_ASSERT(aTile.mTextureHost->GetFlags() & TextureFlags::IMMEDIATE_UPLOAD);
+
+#ifdef MOZ_GFX_OPTIMIZE_MOBILE
+  MOZ_ASSERT(!aTile.mTextureHostOnWhite);
   // We possibly upload the entire texture contents here. This is a purposeful
   // decision, as sub-image upload can often be slow and/or unreliable, but
   // we may want to reevaluate this in the future.
   // For !HasInternalBuffer() textures, this is likely a no-op.
   aTile.mTextureHost->Updated(nullptr);
+#else
+  nsIntRegion tileUpdated = aDirtyRect.MovedBy(-aTileOrigin);
+  aTile.mTextureHost->Updated(&tileUpdated);
   if (aTile.mTextureHostOnWhite) {
-    aTile.mTextureHostOnWhite->Updated(nullptr);
+    aTile.mTextureHostOnWhite->Updated(&tileUpdated);
   }
+#endif
 
 #ifdef GFX_TILEDLAYER_PREF_WARNINGS
   if (PR_IntervalNow() - start > 1) {
@@ -371,16 +378,16 @@ TiledContentHost::Composite(EffectChain& aEffectChain,
         ? gfxPrefs::LowPrecisionOpacity() : 1.0f;
 
   nsIntRegion tmpRegion;
-  const nsIntRegion* renderRegion;
+  const nsIntRegion* renderRegion = aVisibleRegion;
+#ifndef MOZ_GFX_OPTIMIZE_MOBILE
   if (PaintWillResample()) {
     // If we're resampling, then the texture image will contain exactly the
     // entire visible region's bounds, and we should draw it all in one quad
     // to avoid unexpected aliasing.
     tmpRegion = aVisibleRegion->GetBounds();
     renderRegion = &tmpRegion;
-  } else {
-    renderRegion = aVisibleRegion;
   }
+#endif
 
   // Render the low and high precision buffers.
   RenderLayerBuffer(mLowPrecisionTiledBuffer,
@@ -427,8 +434,8 @@ TiledContentHost::RenderTile(const TileHost& aTile,
   Rect layerQuad(screenBounds.x, screenBounds.y, screenBounds.width, screenBounds.height);
   RenderTargetRect quad = RenderTargetRect::FromUnknown(aTransform.TransformBounds(layerQuad));
 
-  if (!quad.Intersects(mCompositor->ClipRectInLayersCoordinates(
-        RenderTargetIntRect(aClipRect.x, aClipRect.y, aClipRect.width, aClipRect.height)))) {
+  if (!quad.Intersects(mCompositor->ClipRectInLayersCoordinates(mLayer,
+      RenderTargetIntRect(aClipRect.x, aClipRect.y, aClipRect.width, aClipRect.height)))) {
     return;
   }
 

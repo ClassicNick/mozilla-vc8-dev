@@ -850,7 +850,8 @@ DisassembleInstruction(uint32_t pc)
     sprintf(llvmcmd, "bash -c \"echo -n '%p'; echo '%s' | "
             "llvm-mc -disassemble -arch=mipsel -mcpu=mips32r2 | "
             "grep -v pure_instructions | grep -v .text\"", static_cast<void*>(bytes), hexbytes);
-    system(llvmcmd);
+    if (system(llvmcmd))
+        printf("Cannot disassemble instruction.\n");
 }
 
 void
@@ -927,7 +928,7 @@ MipsDebugger::debug()
                         printAllRegsIncludingFPU();
                     } else {
                         Register reg = Register::FromName(arg1);
-                        FloatRegister fReg = FloatRegister::FromName(arg1);
+                        FloatRegister fReg(FloatRegister::FromName(arg1));
                         if (reg != InvalidReg) {
                             value = getRegisterValue(reg.code());
                             printf("%s: 0x%08x %d \n", arg1, value, value);

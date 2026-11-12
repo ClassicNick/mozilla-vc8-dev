@@ -52,6 +52,7 @@
 #include "mozilla/EventStates.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/UniquePtr.h"
 #include "ActiveLayerTracker.h"
 #include "nsContentUtils.h"
 #include "nsPrintfCString.h"
@@ -1258,9 +1259,10 @@ void nsDisplayList::PaintForFrame(nsDisplayListBuilder* aBuilder,
                              (!layerManager->IsCompositingCheap() && layerManager->NeedsWidgetInvalidation())) &&
                             widgetTransaction;
 
-  nsAutoPtr<LayerProperties> props(computeInvalidRect ? 
-                                     LayerProperties::CloneFrom(layerManager->GetRoot()) : 
-                                     nullptr);
+  UniquePtr<LayerProperties> props;
+  if (computeInvalidRect) {
+    props = LayerProperties::CloneFrom(layerManager->GetRoot());
+  }
 
   ContainerLayerParameters containerParameters
     (presShell->GetXResolution(), presShell->GetYResolution());
@@ -2435,6 +2437,8 @@ nsDisplayThemedBackground::nsDisplayThemedBackground(nsDisplayListBuilder* aBuil
     case NS_THEME_WINDOW_BUTTON_BOX:
     case NS_THEME_MOZ_MAC_FULLSCREEN_BUTTON:
     case NS_THEME_WINDOW_BUTTON_BOX_MAXIMIZED:
+    case NS_THEME_MAC_VIBRANCY_LIGHT:
+    case NS_THEME_MAC_VIBRANCY_DARK:
       RegisterThemeGeometry(aBuilder, aFrame);
       break;
     case NS_THEME_WIN_BORDERLESS_GLASS:

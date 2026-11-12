@@ -144,20 +144,28 @@ ChooseConfig(GLContext* gl,
     return config;
 }
 
-// Returns EGL_NO_SURFACE on error.
+// Returns `EGL_NO_SURFACE` (`0`) on error.
 static EGLSurface
 CreatePBufferSurface(GLLibraryEGL* egl,
                      EGLDisplay display,
                      EGLConfig config,
                      const gfx::IntSize& size)
 {
+    const int32_t width = size.width;
+    const int32_t height = size.height;
+
     EGLint attribs[] = {
-        LOCAL_EGL_WIDTH, size.width,
-        LOCAL_EGL_HEIGHT, size.height,
+        LOCAL_EGL_WIDTH, width,
+        LOCAL_EGL_HEIGHT, height,
         LOCAL_EGL_NONE
     };
 
+    DebugOnly<EGLint> preCallErr = egl->fGetError();
+    MOZ_ASSERT(preCallErr == LOCAL_EGL_SUCCESS);
     EGLSurface surface = egl->fCreatePbufferSurface(display, config, attribs);
+    EGLint err = egl->fGetError();
+    if (err != LOCAL_EGL_SUCCESS)
+        return 0;
 
     return surface;
 }
