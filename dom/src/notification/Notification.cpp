@@ -876,7 +876,7 @@ void Notification::InitFromBase64(JSContext* aCx, const nsAString& aData,
     return;
   }
 
-  auto container = new nsStructuredCloneContainer();
+  nsStructuredCloneContainer* container = new nsStructuredCloneContainer();
   aRv = container->InitFromBase64(aData, JS_STRUCTURED_CLONE_VERSION,
                                   aCx);
   mDataObjectContainer = container;

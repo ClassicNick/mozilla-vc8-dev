@@ -233,7 +233,7 @@ APZCTreeManager::PrepareAPZCForLayer(const Layer* aLayer,
   // that is supposed to scroll together is split into multiple layers because of
   // e.g. non-scrolling content interleaved in z-index order.
   ScrollableLayerGuid guid(aLayersId, aMetrics);
-  auto insertResult = aState.mApzcMap.insert(std::make_pair(guid, static_cast<AsyncPanZoomController*>(nullptr)));
+  std::pair<std::map<ScrollableLayerGuid, AsyncPanZoomController*>::iterator, bool> insertResult = aState.mApzcMap.insert(std::make_pair(guid, static_cast<AsyncPanZoomController*>(nullptr)));
   if (!insertResult.second) {
     apzc = insertResult.first->second;
   }
@@ -900,10 +900,6 @@ APZCTreeManager::DispatchScroll(AsyncPanZoomController* aPrev,
 
   if (next == nullptr || next->IsDestroyed()) {
     return false;
-  }
-
-  if (next->GetGuid().mLayersId != aPrev->GetGuid().mLayersId) {
-    NS_WARNING("Handing off scroll across a layer tree boundary; may need to revise approach to bug 1031067");
   }
 
   // Convert the start and end points from |aPrev|'s coordinate space to

@@ -401,6 +401,35 @@ ComputeColorMatrix(uint32_t aColorMatrixType, const nsTArray<float>& aValues,
       break;
     }
 
+    case SVG_FECOLORMATRIX_TYPE_SEPIA:
+    {
+      if (aValues.Length() != 1)
+        return NS_ERROR_FAILURE;
+
+      float amount = aValues[0];
+
+      if (amount < 0 || amount > 1)
+        return NS_ERROR_FAILURE;
+
+      PodCopy(aOutMatrix, identityMatrix, 20);
+
+      float s = 1 - amount;
+
+      aOutMatrix[0] = 0.393f + 0.607f * s;
+      aOutMatrix[1] = 0.769f - 0.769f * s;
+      aOutMatrix[2] = 0.189f - 0.189f * s;
+
+      aOutMatrix[5] = 0.349f - 0.349f * s;
+      aOutMatrix[6] = 0.686f + 0.314f * s;
+      aOutMatrix[7] = 0.168f - 0.168f * s;
+
+      aOutMatrix[10] = 0.272f - 0.272f * s;
+      aOutMatrix[11] = 0.534f - 0.534f * s;
+      aOutMatrix[12] = 0.131f + 0.869f * s;
+
+      break;
+    }
+
     default:
       return NS_ERROR_FAILURE;
 
@@ -1226,10 +1255,10 @@ ResultChangeRegionForPrimitive(const FilterPrimitiveDescription& aDescription,
       Size kernelUnitLength = atts.GetSize(eConvolveMatrixKernelUnitLength);
       IntSize kernelSize = atts.GetIntSize(eConvolveMatrixKernelSize);
       IntPoint target = atts.GetIntPoint(eConvolveMatrixTarget);
-      nsIntMargin m(ceil(kernelUnitLength.width * (target.x)),
-                    ceil(kernelUnitLength.height * (target.y)),
-                    ceil(kernelUnitLength.width * (kernelSize.width - target.x - 1)),
-                    ceil(kernelUnitLength.height * (kernelSize.height - target.y - 1)));
+      nsIntMargin m(ceill(kernelUnitLength.width * (target.x)),
+                    ceill(kernelUnitLength.height * (target.y)),
+                    ceill(kernelUnitLength.width * (kernelSize.width - target.x - 1)),
+                    ceill(kernelUnitLength.height * (kernelSize.height - target.y - 1)));
       return aInputChangeRegions[0].Inflated(m);
     }
 
@@ -1452,10 +1481,10 @@ SourceNeededRegionForPrimitive(const FilterPrimitiveDescription& aDescription,
       Size kernelUnitLength = atts.GetSize(eConvolveMatrixKernelUnitLength);
       IntSize kernelSize = atts.GetIntSize(eConvolveMatrixKernelSize);
       IntPoint target = atts.GetIntPoint(eConvolveMatrixTarget);
-      nsIntMargin m(ceil(kernelUnitLength.width * (kernelSize.width - target.x - 1)),
-                    ceil(kernelUnitLength.height * (kernelSize.height - target.y - 1)),
-                    ceil(kernelUnitLength.width * (target.x)),
-                    ceil(kernelUnitLength.height * (target.y)));
+      nsIntMargin m(ceill(kernelUnitLength.width * (kernelSize.width - target.x - 1)),
+                    ceill(kernelUnitLength.height * (kernelSize.height - target.y - 1)),
+                    ceill(kernelUnitLength.width * (target.x)),
+                    ceill(kernelUnitLength.height * (target.y)));
       return aResultNeededRegion.Inflated(m);
     }
 
