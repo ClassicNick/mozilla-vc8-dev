@@ -8,8 +8,6 @@ DIRS += [
     'jsurl',
     'storage',
     'offline',
-    'json',
-    'geolocation',
     'notification',
 ]
 
