@@ -385,7 +385,8 @@ permissions.forEach(function (perm) {
         if hasattr(self, 'test_container') and self.test_container:
             self.switch_into_test_container()
         else:
-            if self.marionette.session_capabilities['b2g'] == True:
+            if self.marionette.session_capabilities.has_key('b2g') \
+            and self.marionette.session_capabilities['b2g'] == True:
                 self.close_test_container()
 
     def tearDown(self):
