@@ -176,10 +176,10 @@ IMEHandler::NotifyIME(nsWindow* aWindow,
         return nsTextStore::OnTextChange(aIMENotification);
       case NOTIFY_IME_OF_FOCUS:
         return nsTextStore::OnFocusChange(true, aWindow,
-                 aWindow->GetInputContext().mIMEState);
+                                          aWindow->GetInputContext());
       case NOTIFY_IME_OF_BLUR:
         return nsTextStore::OnFocusChange(false, aWindow,
-                 aWindow->GetInputContext().mIMEState);
+                                          aWindow->GetInputContext());
       case NOTIFY_IME_OF_MOUSE_BUTTON_EVENT:
         return nsTextStore::OnMouseButtonEvent(aIMENotification);
       case REQUEST_TO_COMMIT_COMPOSITION:
@@ -217,7 +217,7 @@ IMEHandler::NotifyIME(nsWindow* aWindow,
       // the blur.
       if (nsTextStore::ThinksHavingFocus()) {
         return nsTextStore::OnFocusChange(false, aWindow,
-                                          aWindow->GetInputContext().mIMEState);
+                                          aWindow->GetInputContext());
       }
       return NS_ERROR_NOT_IMPLEMENTED;
 #endif //NS_ENABLE_TSF
@@ -296,7 +296,7 @@ IMEHandler::SetInputContext(nsWindow* aWindow,
   if (sIsInTSFMode) {
     nsTextStore::SetInputContext(aWindow, aInputContext, aAction);
     if (IsTSFAvailable()) {
-      aInputContext.mNativeIMEContext = nsTextStore::GetTextStore();
+      aInputContext.mNativeIMEContext = nsTextStore::GetThreadManager();
       if (sIsIMMEnabled) {
         // Associate IME context for IMM-IMEs.
         AssociateIMEContext(aWindow, enable);
@@ -361,7 +361,7 @@ IMEHandler::InitInputContext(nsWindow* aWindow, InputContext& aInputContext)
     nsTextStore::SetInputContext(aWindow, aInputContext,
       InputContextAction(InputContextAction::CAUSE_UNKNOWN,
                          InputContextAction::GOT_FOCUS));
-    aInputContext.mNativeIMEContext = nsTextStore::GetTextStore();
+    aInputContext.mNativeIMEContext = nsTextStore::GetThreadManager();
     MOZ_ASSERT(aInputContext.mNativeIMEContext);
     // IME context isn't necessary in pure TSF mode.
     if (!sIsIMMEnabled) {

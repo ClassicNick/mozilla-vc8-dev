@@ -12,6 +12,8 @@
 #include "mozilla/gfx/Rect.h"           // for RoundedIn
 #include "mozilla/gfx/ScaleFactor.h"    // for ScaleFactor
 #include "mozilla/gfx/Logging.h"        // for Log
+#include "gfxColor.h"
+#include "nsString.h"
 
 namespace IPC {
 template <typename T> struct ParamTraits;
@@ -58,10 +60,6 @@ namespace layers {
  * time of a layer-tree transaction.  These metrics are especially
  * useful for shadow layers, because the metrics values are updated
  * atomically with new pixels.
- *
- * Note that the FrameMetrics struct is sometimes stored in shared
- * memory and shared across processes, so it should be a "Plain Old
- * Data (POD)" type with no members that use dynamic memory.
  */
 struct FrameMetrics {
   friend struct IPC::ParamTraits<mozilla::layers::FrameMetrics>;
@@ -97,7 +95,9 @@ public:
     , mUseDisplayPortMargins(false)
     , mPresShellId(-1)
     , mViewport(0, 0, 0, 0)
-  {}
+    , mBackgroundColor(0, 0, 0, 0)
+  {
+  }
 
   // Default copy ctor and operator= are fine
 
@@ -122,7 +122,8 @@ public:
            mScrollParentId == aOther.mScrollParentId &&
            mScrollOffset == aOther.mScrollOffset &&
            mHasScrollgrab == aOther.mHasScrollgrab &&
-           mUpdateScrollOffset == aOther.mUpdateScrollOffset;
+           mUpdateScrollOffset == aOther.mUpdateScrollOffset &&
+           mBackgroundColor == aOther.mBackgroundColor;
   }
   bool operator!=(const FrameMetrics& aOther) const
   {
@@ -238,6 +239,16 @@ public:
   {
     mScrollOffset = aOther.mScrollOffset;
     mScrollGeneration = aOther.mScrollGeneration;
+  }
+
+  // Make a copy of this FrameMetrics object which does not have any pointers
+  // to heap-allocated memory (i.e. is Plain Old Data, or 'POD'), and is
+  // therefore safe to be placed into shared memory.
+  FrameMetrics MakePODObject() const
+  {
+    FrameMetrics copy = *this;
+    copy.mContentDescription.Truncate();
+    return copy;
   }
 
   // ---------------------------------------------------------------------------
@@ -467,6 +478,26 @@ public:
     return mViewport;
   }
 
+  const gfxRGBA& GetBackgroundColor() const
+  {
+    return mBackgroundColor;
+  }
+
+  void SetBackgroundColor(const gfxRGBA& aBackgroundColor)
+  {
+    mBackgroundColor = aBackgroundColor;
+  }
+
+  const nsCString& GetContentDescription() const
+  {
+    return mContentDescription;
+  }
+
+  void SetContentDescription(const nsCString& aContentDescription)
+  {
+    mContentDescription = aContentDescription;
+  }
+
 private:
   // New fields from now on should be made private and old fields should
   // be refactored to be private.
@@ -535,6 +566,14 @@ private:
   // iframe. For layers that don't correspond to a document, this metric is
   // meaningless and invalid.
   CSSRect mViewport;
+
+  // The background color to use when overscrolling.
+  gfxRGBA mBackgroundColor;
+
+  // A description of the content element corresponding to this frame.
+  // This is empty unless this is a scrollable layer and the
+  // apz.printtree pref is turned on.
+  nsCString mContentDescription;
 };
 
 /**
