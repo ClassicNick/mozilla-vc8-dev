@@ -668,6 +668,8 @@ public:
     return SupportsMixBlendModes(modes);
   }
 
+  virtual float RequestProperty(const nsAString& property) { return -1; }
+
 protected:
   nsRefPtr<Layer> mRoot;
   gfx::UserData mUserData;

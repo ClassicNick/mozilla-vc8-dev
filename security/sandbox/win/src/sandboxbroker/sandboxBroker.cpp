@@ -9,6 +9,9 @@
 #include "sandbox/win/src/sandbox_factory.h"
 #include "sandbox/win/src/security_level.h"
 #include "mozilla/NullPtr.h"
+#if defined(MOZ_CONTENT_SANDBOX)
+#include "mozilla/warnonlysandbox/warnOnlySandbox.h"
+#endif
 
 namespace mozilla
 {
@@ -61,8 +64,9 @@ SandboxBroker::LaunchApp(const wchar_t *aPath,
   return true;
 }
 
+#if defined(MOZ_CONTENT_SANDBOX)
 bool
-SandboxBroker::SetSecurityLevelForContentProcess()
+SandboxBroker::SetSecurityLevelForContentProcess(bool inWarnOnlyMode)
 {
   if (!mPolicy) {
     return false;
@@ -79,8 +83,13 @@ SandboxBroker::SetSecurityLevelForContentProcess()
   ret = ret && (sandbox::SBOX_ALL_OK == result);
   result = mPolicy->SetAlternateDesktop(true);
   ret = ret && (sandbox::SBOX_ALL_OK == result);
+
+  if (inWarnOnlyMode) {
+    mozilla::warnonlysandbox::ApplyWarnOnlyPolicy(*mPolicy);
+  }
   return ret;
 }
+#endif
 
 bool
 SandboxBroker::SetSecurityLevelForPluginProcess()
