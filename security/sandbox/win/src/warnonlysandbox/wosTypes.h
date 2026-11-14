@@ -7,7 +7,8 @@
 #ifndef security_sandbox_wosTypes_h__
 #define security_sandbox_wosTypes_h__
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
+#include "mozilla/NullPtr.h"
 
 namespace mozilla {
 namespace warnonlysandbox {

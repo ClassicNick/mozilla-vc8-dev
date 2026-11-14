@@ -69,7 +69,7 @@ InefficientNonFlatteningStringHashPolicy::hash(const Lookup &l)
 {
     return l->hasLatin1Chars()
            ? HashStringChars<Latin1Char>(l)
-           : HashStringChars<jschar>(l);
+           : HashStringChars<char16_t>(l);
 }
 
 template <typename Char1, typename Char2>
@@ -111,12 +111,12 @@ InefficientNonFlatteningStringHashPolicy::match(const JSString *const &k, const 
     if (k->hasLatin1Chars()) {
         return l->hasLatin1Chars()
                ? EqualStringsPure<Latin1Char, Latin1Char>(s1, l)
-               : EqualStringsPure<Latin1Char, jschar>(s1, l);
+               : EqualStringsPure<Latin1Char, char16_t>(s1, l);
     }
 
     return l->hasLatin1Chars()
-           ? EqualStringsPure<jschar, Latin1Char>(s1, l)
-           : EqualStringsPure<jschar, jschar>(s1, l);
+           ? EqualStringsPure<char16_t, Latin1Char>(s1, l)
+           : EqualStringsPure<char16_t, char16_t>(s1, l);
 }
 
 /* static */ HashNumber
@@ -176,7 +176,7 @@ NotableStringInfo::NotableStringInfo(JSString *str, const StringInfo &info)
     if (str->hasLatin1Chars())
         StoreStringChars<Latin1Char>(buffer, bufferSize, str);
     else
-        StoreStringChars<jschar>(buffer, bufferSize, str);
+        StoreStringChars<char16_t>(buffer, bufferSize, str);
 }
 
 NotableStringInfo::NotableStringInfo(const NotableStringInfo& info)
@@ -348,7 +348,6 @@ StatsCompartmentCallback(JSRuntime *rt, void *data, JSCompartment *compartment)
                                         &cStats.compartmentTables,
                                         &cStats.crossCompartmentWrappersTable,
                                         &cStats.regexpCompartment,
-                                        &cStats.debuggeesSet,
                                         &cStats.savedStacksSet);
 }
 

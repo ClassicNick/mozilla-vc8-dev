@@ -1738,9 +1738,9 @@ EvalReturningScope(JSContext *cx, unsigned argc, jsval *vp)
     if (!strChars.initTwoByte(cx, str))
         return false;
 
-    mozilla::Range<const jschar> chars = strChars.twoByteRange();
+    mozilla::Range<const char16_t> chars = strChars.twoByteRange();
     size_t srclen = chars.length();
-    const jschar *src = chars.start().get();
+    const char16_t *src = chars.start().get();
 
     JS::AutoFilename filename;
     unsigned lineno;

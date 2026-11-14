@@ -1753,18 +1753,19 @@ HeapTypeSetKey::constant(CompilerConstraintList *constraints, Value *valOut)
         return false;
 
     // Only singleton object properties can be marked as constants.
-    if (!object()->singleton())
+    JSObject *obj = object()->singleton();
+    if (!obj || !obj->isNative())
         return false;
 
     if (maybeTypes() && maybeTypes()->nonConstantProperty())
         return false;
 
     // Get the current value of the property.
-    Shape *shape = object()->singleton()->nativeLookupPure(id());
+    Shape *shape = obj->nativeLookupPure(id());
     if (!shape || !shape->hasDefaultGetter() || !shape->hasSlot() || shape->hadOverwrite())
         return false;
 
-    Value val = object()->singleton()->nativeGetSlot(shape->slot());
+    Value val = obj->nativeGetSlot(shape->slot());
 
     // If the value is a pointer to an object in the nursery, don't optimize.
     if (val.isGCThing() && IsInsideNursery(val.toGCThing()))
@@ -3886,7 +3887,7 @@ TypeNewScript::maybeAnalyze(JSContext *cx, TypeObject *type, bool *regenerate, b
     if (!jit::AnalyzeNewScriptDefiniteProperties(cx, fun, type, templateRoot, &initializerVector))
         return false;
 
-    if (type->unknownProperties())
+    if (!type->newScript())
         return true;
 
     JS_ASSERT(OnlyHasDataProperties(templateObject()->lastProperty()));
