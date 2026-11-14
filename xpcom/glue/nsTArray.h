@@ -1337,11 +1337,6 @@ public:
     aArray.ShiftData(0, otherLen, 0, sizeof(elem_type), MOZ_ALIGNOF(elem_type));
     return Elements() + len;
   }
-  template<class Item, class Allocator>
-  elem_type* MoveElementsFrom(nsTArray_Impl<Item, Allocator>&& aArray)
-  {
-    return MoveElementsFrom<Item, Allocator>(aArray);
-  }
 
   // This method removes a range of elements from this array.
   // @param aStart The starting index of the elements to remove.
@@ -1748,7 +1743,7 @@ public:
   {
   }
   template<class Allocator>
-  MOZ_IMPLICIT nsTArray(nsTArray_Impl<E, Allocator>&& aOther)
+  explicit nsTArray(nsTArray_Impl<E, Allocator>&& aOther)
     : base_type(mozilla::Move(aOther))
   {
   }
