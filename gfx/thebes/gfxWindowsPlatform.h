@@ -264,6 +264,7 @@ public:
 #endif
 #ifdef MOZ_ENABLE_D3D10_LAYER
     ID3D11Device *GetD3D11Device();
+    ID3D11Device *GetD3D11ContentDevice();
 
     mozilla::layers::ReadbackManagerD3D11* GetReadbackManager();
 #endif
@@ -278,6 +279,7 @@ protected:
 
 private:
     void Init();
+    void InitD3D11Devices();
     IDXGIAdapter1 *GetDXGIAdapter();
 
     bool mUseDirectWrite;
@@ -296,6 +298,7 @@ private:
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
     mozilla::RefPtr<IDXGIAdapter1> mAdapter;
     mozilla::RefPtr<ID3D11Device> mD3D11Device;
+    mozilla::RefPtr<ID3D11Device> mD3D11ContentDevice;
     bool mD3D11DeviceInitialized;
 	mozilla::RefPtr<mozilla::layers::ReadbackManagerD3D11> mD3D11ReadbackManager;
 #endif

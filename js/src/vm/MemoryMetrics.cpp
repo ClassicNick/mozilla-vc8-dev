@@ -346,6 +346,7 @@ StatsCompartmentCallback(JSRuntime *rt, void *data, JSCompartment *compartment)
                                         &cStats.typeInferenceObjectTypeTables,
                                         &cStats.compartmentObject,
                                         &cStats.compartmentTables,
+                                        &cStats.innerViewsTable,
                                         &cStats.crossCompartmentWrappersTable,
                                         &cStats.regexpCompartment,
                                         &cStats.savedStacksSet);
