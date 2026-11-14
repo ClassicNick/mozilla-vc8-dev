@@ -2979,7 +2979,7 @@ WrappedJSToDictionary(nsISupports* aObject, T& aDictionary)
 
 template<class T, class S>
 inline nsRefPtr<T>
-StrongOrRawPtr(already_AddRefed<S>&& aPtr)
+StrongOrRawPtr(already_AddRefed<S> aPtr)
 {
   return aPtr.template downcast<T>();
 }
@@ -2993,7 +2993,7 @@ StrongOrRawPtr(T* aPtr)
 
 template<class T, template<typename> class SmartPtr, class S>
 inline void
-StrongOrRawPtr(SmartPtr<S>&& aPtr) MOZ_DELETE;
+StrongOrRawPtr(SmartPtr<S> aPtr) MOZ_DELETE;
 
 } // namespace dom
 } // namespace mozilla

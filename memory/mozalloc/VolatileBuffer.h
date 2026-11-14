@@ -9,6 +9,7 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/NullPtr.h"
+#include "mozilla/Move.h"
 
 /* VolatileBuffer
  *
@@ -126,10 +127,10 @@ public:
   explicit VolatileBufferPtr(VolatileBuffer* vbuf) : VolatileBufferPtr_base(vbuf) {}
   VolatileBufferPtr() : VolatileBufferPtr_base(nullptr) {}
 
-  VolatileBufferPtr(VolatileBufferPtr&& aOther)
-    : VolatileBufferPtr_base(aOther.mVBuf)
+  VolatileBufferPtr(MoveRef<VolatileBufferPtr> aOther)
+    : VolatileBufferPtr_base(aOther->mVBuf)
   {
-    aOther.Set(nullptr);
+    aOther->Set(nullptr);
   }
 
   operator T*() const {
@@ -142,11 +143,10 @@ public:
     return *this;
   }
 
-  VolatileBufferPtr& operator=(VolatileBufferPtr&& aOther)
+  VolatileBufferPtr& operator=(MoveRef<VolatileBufferPtr> aOther)
   {
-    MOZ_ASSERT(this != &aOther, "Self-moves are prohibited");
-    Set(aOther.mVBuf);
-    aOther.Set(nullptr);
+    Set(aOther->mVBuf);
+    aOther->Set(nullptr);
     return *this;
   }
 

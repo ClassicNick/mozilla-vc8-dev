@@ -5968,7 +5968,7 @@ def getRetvalDeclarationForType(returnType, descriptorProvider,
             result = CGTemplatedType("nsRefPtr", result)
         else:
             conversion = CGGeneric("StrongOrRawPtr<%s>" % result.define())
-            result = CGGeneric("auto")
+            result = CGWrapper(result, post="*")
         return result, None, None, None, conversion
     if returnType.isCallback():
         name = returnType.unroll().identifier.name

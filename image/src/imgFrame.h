@@ -200,16 +200,15 @@ public:
     }
   }
 
-  DrawableFrameRef(DrawableFrameRef&& aOther)
-    : mFrame(aOther.mFrame.forget())
-    , mRef(Move(aOther.mRef))
+  DrawableFrameRef(MoveRef<DrawableFrameRef> aOther)
+    : mFrame(aOther->mFrame.forget())
+    , mRef(OldMove(aOther->mRef))
   { }
 
-  DrawableFrameRef& operator=(DrawableFrameRef&& aOther)
+  DrawableFrameRef& operator=(MoveRef<DrawableFrameRef> aOther)
   {
-    MOZ_ASSERT(this != &aOther, "Self-moves are prohibited");
-    mFrame = aOther.mFrame.forget();
-    mRef = Move(aOther.mRef);
+    mFrame = aOther->mFrame.forget();
+    mRef = OldMove(aOther->mRef);
     return *this;
   }
 
@@ -276,8 +275,8 @@ public:
     }
   }
 
-  RawAccessFrameRef(RawAccessFrameRef&& aOther)
-    : mFrame(aOther.mFrame.forget())
+  RawAccessFrameRef(MoveRef<RawAccessFrameRef> aOther)
+    : mFrame(aOther->mFrame.forget())
   { }
 
   ~RawAccessFrameRef()
@@ -287,15 +286,13 @@ public:
     }
   }
 
-  RawAccessFrameRef& operator=(RawAccessFrameRef&& aOther)
+  RawAccessFrameRef& operator=(MoveRef<RawAccessFrameRef> aOther)
   {
-    MOZ_ASSERT(this != &aOther, "Self-moves are prohibited");
-
     if (mFrame) {
       mFrame->UnlockImageData();
     }
 
-    mFrame = aOther.mFrame.forget();
+    mFrame = aOther->mFrame.forget();
 
     return *this;
   }

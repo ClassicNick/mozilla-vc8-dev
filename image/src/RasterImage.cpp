@@ -189,9 +189,9 @@ class ScaleRequest
 public:
   ScaleRequest(RasterImage* aImage,
                const nsIntSize& aSize,
-               RawAccessFrameRef&& aSrcRef)
+               MoveRef<RawAccessFrameRef> aSrcRef)
     : weakImage(aImage)
-    , srcRef(Move(aSrcRef))
+    , srcRef(aSrcRef)
     , srcRect(srcRef->GetRect())
     , dstSize(aSize)
     , done(false)
@@ -237,7 +237,7 @@ public:
       }
 
       dstFrame = tentativeDstFrame.forget();
-      dstRef = Move(tentativeDstRef);
+      dstRef = OldMove(tentativeDstRef);
     }
 
     return true;
@@ -319,9 +319,9 @@ class ScaleRunner : public nsRunnable
 public:
   ScaleRunner(RasterImage* aImage,
               const nsIntSize& aSize,
-              RawAccessFrameRef&& aSrcRef)
+              MoveRef<RawAccessFrameRef> aSrcRef)
   {
-    nsAutoPtr<ScaleRequest> req(new ScaleRequest(aImage, aSize, Move(aSrcRef)));
+    nsAutoPtr<ScaleRequest> req(new ScaleRequest(aImage, aSize, OldMove(aSrcRef)));
     if (!req->AcquireResources()) {
       return;
     }
@@ -2625,7 +2625,7 @@ RasterImage::RequestScale(imgFrame* aFrame, nsIntSize aSize)
     mScaleRequest->stopped = true;
   }
 
-  nsRefPtr<ScaleRunner> runner = new ScaleRunner(this, aSize, Move(frameRef));
+  nsRefPtr<ScaleRunner> runner = new ScaleRunner(this, aSize, OldMove(frameRef));
   if (runner->IsOK()) {
     if (!sScaleWorkerThread) {
       NS_NewNamedThread("Image Scaler", getter_AddRefs(sScaleWorkerThread));

@@ -344,7 +344,7 @@ enum nsRestyleHint {
 
 // The functions below need an integral type to cast to to avoid
 // infinite recursion.
-typedef decltype(nsRestyleHint(0) + nsRestyleHint(0)) nsRestyleHint_size_t;
+typedef size_t nsRestyleHint_size_t;
 
 inline nsRestyleHint operator|(nsRestyleHint aLeft, nsRestyleHint aRight)
 {
