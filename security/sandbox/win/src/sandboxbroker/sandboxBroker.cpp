@@ -68,7 +68,7 @@ SandboxBroker::SetSecurityLevelForContentProcess()
     return false;
   }
 
-  auto result = mPolicy->SetJobLevel(sandbox::JOB_NONE, 0);
+  sandbox::ResultCode result = mPolicy->SetJobLevel(sandbox::JOB_NONE, 0);
   bool ret = (sandbox::SBOX_ALL_OK == result);
   result =
     mPolicy->SetTokenLevel(sandbox::USER_RESTRICTED_SAME_ACCESS,
@@ -89,7 +89,7 @@ SandboxBroker::SetSecurityLevelForPluginProcess()
     return false;
   }
 
-  auto result = mPolicy->SetJobLevel(sandbox::JOB_NONE, 0);
+  sandbox::ResultCode result = mPolicy->SetJobLevel(sandbox::JOB_NONE, 0);
   bool ret = (sandbox::SBOX_ALL_OK == result);
   result = mPolicy->SetTokenLevel(sandbox::USER_UNPROTECTED,
                                   sandbox::USER_UNPROTECTED);
@@ -104,7 +104,7 @@ SandboxBroker::SetSecurityLevelForIPDLUnitTestProcess()
     return false;
   }
 
-  auto result = mPolicy->SetJobLevel(sandbox::JOB_NONE, 0);
+  sandbox::ResultCode result = mPolicy->SetJobLevel(sandbox::JOB_NONE, 0);
   bool ret = (sandbox::SBOX_ALL_OK == result);
   result =
     mPolicy->SetTokenLevel(sandbox::USER_RESTRICTED_SAME_ACCESS,
@@ -120,7 +120,7 @@ SandboxBroker::SetSecurityLevelForGMPlugin()
     return false;
   }
 
-  auto result = mPolicy->SetJobLevel(sandbox::JOB_LOCKDOWN, 0);
+  sandbox::ResultCode result = mPolicy->SetJobLevel(sandbox::JOB_LOCKDOWN, 0);
   bool ret = (sandbox::SBOX_ALL_OK == result);
   result =
     mPolicy->SetTokenLevel(sandbox::USER_RESTRICTED_SAME_ACCESS,
@@ -217,7 +217,7 @@ SandboxBroker::SetSecurityLevelForGMPlugin()
 bool
 SandboxBroker::AllowReadFile(wchar_t const *file)
 {
-  auto result =
+  sandbox::ResultCode result =
     mPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_FILES,
                      sandbox::TargetPolicy::FILES_ALLOW_READONLY,
                      file);
@@ -227,7 +227,7 @@ SandboxBroker::AllowReadFile(wchar_t const *file)
 bool
 SandboxBroker::AllowReadWriteFile(wchar_t const *file)
 {
-  auto result =
+  sandbox::ResultCode result =
     mPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_FILES,
                      sandbox::TargetPolicy::FILES_ALLOW_ANY,
                      file);
@@ -237,7 +237,7 @@ SandboxBroker::AllowReadWriteFile(wchar_t const *file)
 bool
 SandboxBroker::AllowDirectory(wchar_t const *dir)
 {
-  auto result =
+  sandbox::ResultCode result =
     mPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_FILES,
                      sandbox::TargetPolicy::FILES_ALLOW_DIR_ANY,
                      dir);
