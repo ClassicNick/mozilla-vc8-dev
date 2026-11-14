@@ -1865,7 +1865,7 @@ protected:
     this->AppendElements(aOther);
   }
 
-  explicit nsAutoArrayBase(const TArrayBase &aOther)
+  nsAutoArrayBase(const TArrayBase &aOther)
   {
     Init();
     this->AppendElements(aOther);
