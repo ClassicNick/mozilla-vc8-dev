@@ -842,7 +842,7 @@ InnerViewTable::addView(JSContext *cx, ArrayBufferObject *obj, ArrayBufferViewOb
         if (!views.append(view))
             return false;
     } else {
-        if (!map.add(p, obj, ViewVector()))
+        if (!map.add(p, mozilla::OldMove(obj), mozilla::OldMove(ViewVector())))
             return false;
         JS_ALWAYS_TRUE(p->value().append(view));
     }

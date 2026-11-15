@@ -1438,43 +1438,7 @@ gfxWindowsPlatform::GetD3D11Device()
     return mD3D11Device;
   }
 
-<<<<<<< HEAD
-  mD3D11DeviceInitialized = true;
-
-  nsModuleHandle d3d11Module(LoadLibrarySystem32(L"d3d11.dll"));
-  D3D11CreateDeviceFunc d3d11CreateDevice = (D3D11CreateDeviceFunc)
-    GetProcAddress(d3d11Module, "D3D11CreateDevice");
-
-  if (!d3d11CreateDevice) {
-    return nullptr;
-  }
-
-  nsTArray<D3D_FEATURE_LEVEL> featureLevels;
-  if (IsWin8OrLater()) {
-    featureLevels.AppendElement(D3D_FEATURE_LEVEL_11_1);
-  }
-  featureLevels.AppendElement(D3D_FEATURE_LEVEL_11_0);
-  featureLevels.AppendElement(D3D_FEATURE_LEVEL_10_1);
-  featureLevels.AppendElement(D3D_FEATURE_LEVEL_10_0);
-  featureLevels.AppendElement(D3D_FEATURE_LEVEL_9_3);
-
-  RefPtr<IDXGIAdapter1> adapter = GetDXGIAdapter();
-
-  if (!adapter) {
-    return nullptr;
-  }
-
-  HRESULT hr = d3d11CreateDevice(adapter, D3D_DRIVER_TYPE_UNKNOWN, nullptr,
-                                 D3D11_CREATE_DEVICE_BGRA_SUPPORT,
-                                 featureLevels.Elements(), featureLevels.Length(),
-                                 D3D11_SDK_VERSION, byRef(mD3D11Device), nullptr, nullptr);
-
-  // We leak these everywhere and we need them our entire runtime anyway, let's
-  // leak it here as well.
-  d3d11Module.disown();
-=======
   InitD3D11Devices();
->>>>>>> 46d101f
 
   return mD3D11Device;
 }
@@ -1577,9 +1541,6 @@ gfxWindowsPlatform::GetDXGIAdapter()
 
   return mAdapter;
 }
-<<<<<<< HEAD
-#endif
-=======
 
 void
 gfxWindowsPlatform::InitD3D11Devices()
@@ -1640,5 +1601,4 @@ gfxWindowsPlatform::InitD3D11Devices()
   // leak it here as well.
   d3d11Module.disown();
 }
-
->>>>>>> 46d101f
+#endif

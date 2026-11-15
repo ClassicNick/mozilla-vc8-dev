@@ -126,6 +126,12 @@ class VolatileBufferPtr : public VolatileBufferPtr_base
 public:
   explicit VolatileBufferPtr(VolatileBuffer* vbuf) : VolatileBufferPtr_base(vbuf) {}
   VolatileBufferPtr() : VolatileBufferPtr_base(nullptr) {}
+  
+  explicit VolatileBufferPtr(VolatileBufferPtr& aOther)
+    : VolatileBufferPtr_base(aOther.mVBuf)
+  {
+    aOther.Set(nullptr);
+  }
 
   VolatileBufferPtr(MoveRef<VolatileBufferPtr> aOther)
     : VolatileBufferPtr_base(aOther->mVBuf)
@@ -142,6 +148,13 @@ public:
     Set(aVBuf);
     return *this;
   }
+  
+  VolatileBufferPtr& operator=(VolatileBufferPtr& aOther)
+  {
+    Set(aOther.mVBuf);
+    aOther->Set(nullptr);
+    return *this;
+  }
 
   VolatileBufferPtr& operator=(MoveRef<VolatileBufferPtr> aOther)
   {
@@ -149,9 +162,6 @@ public:
     aOther->Set(nullptr);
     return *this;
   }
-
-private:
-  VolatileBufferPtr(VolatileBufferPtr const& vbufptr) MOZ_DELETE;
 };
 
 }; /* namespace mozilla */

@@ -3090,7 +3090,7 @@ void MPEG4Source::lookForMoof() {
     off64_t size;
     while (true) {
         uint32_t hdr[2];
-        auto x = mDataSource->readAt(offset, hdr, 8);
+        size_t x = mDataSource->readAt(offset, hdr, 8);
         if (x < 8) {
             break;
         }

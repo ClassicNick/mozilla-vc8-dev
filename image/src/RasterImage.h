@@ -553,7 +553,7 @@ private:
   nsresult FinishedSomeDecoding(eShutdownIntent intent = eShutdownIntent_Done,
                                 DecodeRequest* request = nullptr);
 
-  void DrawWithPreDownscaleIfNeeded(DrawableFrameRef&& aFrameRef,
+  void DrawWithPreDownscaleIfNeeded(MoveRef<DrawableFrameRef> aFrameRef,
                                     gfxContext* aContext,
                                     const nsIntSize& aSize,
                                     const ImageRegion& aRegion,

@@ -2632,7 +2632,7 @@ RasterImage::RequestScale(imgFrame* aFrame, nsIntSize aSize)
 }
 
 void
-RasterImage::DrawWithPreDownscaleIfNeeded(DrawableFrameRef&& aFrameRef,
+RasterImage::DrawWithPreDownscaleIfNeeded(MoveRef<DrawableFrameRef> aFrameRef,
                                           gfxContext* aContext,
                                           const nsIntSize& aSize,
                                           const ImageRegion& aRegion,
@@ -2643,6 +2643,7 @@ RasterImage::DrawWithPreDownscaleIfNeeded(DrawableFrameRef&& aFrameRef,
   gfx::Size scale(double(aSize.width) / mSize.width,
                   double(aSize.height) / mSize.height);
 
+#if 0
   if (CanScale(aFilter, scale, aFlags) && !aFrameRef->IsSinglePixel()) {
     // FIXME: Current implementation doesn't support pre-downscale
     // mechanism for multiple sizes from same src, since we cache
@@ -2657,14 +2658,15 @@ RasterImage::DrawWithPreDownscaleIfNeeded(DrawableFrameRef&& aFrameRef,
       // We either didn't have a complete scaled frame, it didn't match, or the
       // OS threw it away. Fall back to aFrame, and request a new scaled frame
       // if we're not already working on the one we need.
-      RequestScale(aFrameRef.get(), aSize);
+      RequestScale(aFrameRef->get(), aSize);
     }
   }
+#endif
 
   gfxContextMatrixAutoSaveRestore saveMatrix(aContext);
   ImageRegion region(aRegion);
   if (!frameRef) {
-    frameRef = Move(aFrameRef);
+    frameRef = OldMove(aFrameRef);
   }
 
   // By now we may have a frame with the requested size. If not, we need to
@@ -2682,7 +2684,7 @@ RasterImage::DrawWithPreDownscaleIfNeeded(DrawableFrameRef&& aFrameRef,
   // frame of a non-animated image requires padding. We'll fix that in bug
   // 1060200, because dependencies between bugs make it hard to fix here.
   nsIntMargin padding(0, 0, 0, 0);
-  if (!aFrameRef) {
+  if (!aFrameRef->get()) {
     padding = nsIntMargin(finalFrameRect.y,
                           mSize.width - finalFrameRect.XMost(),
                           mSize.height - finalFrameRect.YMost(),
@@ -2777,7 +2779,7 @@ RasterImage::Draw(gfxContext* aContext,
     return NS_OK; // Getting the frame (above) touches the image and kicks off decoding
   }
 
-  DrawWithPreDownscaleIfNeeded(Move(ref), aContext, aSize, aRegion, aFilter, aFlags);
+  DrawWithPreDownscaleIfNeeded(OldMove(ref), aContext, aSize, aRegion, aFilter, aFlags);
 
   if (mDecoded && !mDrawStartTime.IsNull()) {
       TimeDuration drawLatency = TimeStamp::Now() - mDrawStartTime;
