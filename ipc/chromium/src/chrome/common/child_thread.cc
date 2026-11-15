@@ -89,7 +89,7 @@ ChildThread* ChildThread::current() {
 }
 
 void ChildThread::Init() {
-  channel_ = mozilla::MakeUnique<IPC::Channel>(channel_name_,
+  channel_ = mozilla::MakeConstUnique<IPC::Channel>(channel_name_,
                                                IPC::Channel::MODE_CLIENT,
                                                this);
 

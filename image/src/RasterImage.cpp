@@ -238,7 +238,7 @@ public:
     }
 
     // Everything worked, so commit to these objects and mark ourselves ready.
-    mDstRef = Move(tentativeDstRef);
+    mDstRef = OldMove(tentativeDstRef);
     mState = eReady;
 
     // Insert the new surface into the cache immediately. We need to do this so
@@ -2595,7 +2595,7 @@ RasterImage::DrawWithPreDownscaleIfNeeded(MoveRef<DrawableFrameRef> aFrameRef,
       // We either didn't have a matching scaled frame or the OS threw it away.
       // Request a new one so we'll be ready next time. For now, we'll fall back
       // to aFrameRef below.
-      RequestScale(aFrameRef.get(), aFlags, aSize);
+      RequestScale(aFrameRef->get(), aFlags, aSize);
     }
     if (frameRef && !frameRef->ImageComplete()) {
       frameRef.reset();  // We're still scaling, so we can't use this yet.

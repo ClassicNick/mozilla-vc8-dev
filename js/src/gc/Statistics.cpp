@@ -559,14 +559,14 @@ Statistics::formatPhaseTimes(int64_t *phaseTimes)
         if (ownTime > 0) {
             JS_snprintf(buffer, sizeof(buffer), "      %s%s: %.3fms\n",
                         LevelToIndent[level], phases[i].name, t(ownTime));
-            if (!fragments.append(make_string_copy(buffer)))
+            if (!fragments.append(mozilla::OldMove(make_string_copy(buffer))))
                 return UniqueChars(nullptr);
 
             if (childTime && (ownTime - childTime) > MaxUnaccountedChildTimeUS) {
                 MOZ_ASSERT(level < 3);
                 JS_snprintf(buffer, sizeof(buffer), "      %s%s: %.3fms\n",
                             LevelToIndent[level + 1], "Other", t(ownTime - childTime));
-                if (!fragments.append(make_string_copy(buffer)))
+                if (!fragments.append(mozilla::OldMove(make_string_copy(buffer))))
                     return UniqueChars(nullptr);
             }
         }
@@ -579,20 +579,20 @@ Statistics::formatDetailedMessage()
 {
     FragmentVector fragments;
 
-    if (!fragments.append(formatDescription()))
+    if (!fragments.append(mozilla::OldMove(formatDescription())))
         return UniqueChars(nullptr);
 
     if (slices.length() > 1) {
         for (unsigned i = 0; i < slices.length(); i++) {
-            if (!fragments.append(formatSliceDescription(i, slices[i])))
+            if (!fragments.append(mozilla::OldMove(formatSliceDescription(i, slices[i]))))
                 return UniqueChars(nullptr);
-            if (!fragments.append(formatPhaseTimes(slices[i].phaseTimes)))
+            if (!fragments.append(mozilla::OldMove(formatPhaseTimes(slices[i].phaseTimes))))
                 return UniqueChars(nullptr);
         }
     }
-    if (!fragments.append(formatTotals()))
+    if (!fragments.append(mozilla::OldMove(formatTotals())))
         return UniqueChars(nullptr);
-    if (!fragments.append(formatPhaseTimes(phaseTimes)))
+    if (!fragments.append(mozilla::OldMove(formatPhaseTimes(phaseTimes))))
         return UniqueChars(nullptr);
 
     return Join(fragments);

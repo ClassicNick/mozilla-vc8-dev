@@ -1900,7 +1900,7 @@ StopSharingCallback(MediaManager *aThis,
                     void *aData)
 {
   if (aListeners) {
-    auto length = aListeners->Length();
+    size_t length = aListeners->Length();
     for (size_t i = 0; i < length; ++i) {
       GetUserMediaCallbackMediaStreamListener *listener = aListeners->ElementAt(i);
 
@@ -2244,7 +2244,7 @@ CaptureWindowStateCallback(MediaManager *aThis,
   struct CaptureWindowStateData *data = (struct CaptureWindowStateData *) aData;
 
   if (aListeners) {
-    auto length = aListeners->Length();
+    size_t length = aListeners->Length();
     for (size_t i = 0; i < length; ++i) {
       GetUserMediaCallbackMediaStreamListener *listener = aListeners->ElementAt(i);
 
@@ -2307,7 +2307,7 @@ StopScreensharingCallback(MediaManager *aThis,
                           void *aData)
 {
   if (aListeners) {
-    auto length = aListeners->Length();
+    size_t length = aListeners->Length();
     for (size_t i = 0; i < length; ++i) {
       aListeners->ElementAt(i)->StopScreenWindowSharing();
     }

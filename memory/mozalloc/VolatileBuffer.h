@@ -152,7 +152,7 @@ public:
   VolatileBufferPtr& operator=(VolatileBufferPtr& aOther)
   {
     Set(aOther.mVBuf);
-    aOther->Set(nullptr);
+    aOther.Set(nullptr);
     return *this;
   }
 

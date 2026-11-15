@@ -523,7 +523,7 @@ NS_InitXPCOM2(nsIServiceManager** aResult,
 
   if (XRE_GetProcessType() == GeckoProcessType_Default &&
       !BrowserProcessSubThread::GetMessageLoop(BrowserProcessSubThread::IO)) {
-    UniquePtr<BrowserProcessSubThread> ioThread = MakeUnique<BrowserProcessSubThread>(BrowserProcessSubThread::IO);
+    UniquePtr<BrowserProcessSubThread> ioThread = MakeConstUnique<BrowserProcessSubThread>(BrowserProcessSubThread::IO);
 
     base::Thread::Options options;
     options.message_loop_type = MessageLoop::TYPE_IO;

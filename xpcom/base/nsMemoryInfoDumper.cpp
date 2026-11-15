@@ -486,7 +486,7 @@ public:
   HandleReportAndFinishReportingCallbacks(UniquePtr<JSONWriter> aWriter,
                                           nsIFinishDumpingCallback* aFinishDumping,
                                           nsISupports* aFinishDumpingData)
-    : mWriter(Move(aWriter))
+    : mWriter(aWriter)
     , mFinishDumping(aFinishDumping)
     , mFinishDumpingData(aFinishDumpingData)
   {
@@ -662,8 +662,8 @@ DumpMemoryInfoToFile(
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
-  auto jsonWriter =
-    MakeUnique<JSONWriter>(MakeUnique<GZWriterWrapper>(gzWriter));
+  UniquePtr<JSONWriter> jsonWriter =
+    MakeUnique<JSONWriter>(MakeConstUnique<GZWriterWrapper>(gzWriter));
 
   nsCOMPtr<nsIMemoryReporterManager> mgr =
     do_GetService("@mozilla.org/memory-reporter-manager;1");
@@ -681,7 +681,7 @@ DumpMemoryInfoToFile(
 
   nsRefPtr<HandleReportAndFinishReportingCallbacks>
     handleReportAndFinishReporting =
-      new HandleReportAndFinishReportingCallbacks(Move(jsonWriter),
+      new HandleReportAndFinishReportingCallbacks(jsonWriter,
                                                   aFinishDumping,
                                                   aFinishDumpingData);
   rv = mgr->GetReportsExtended(handleReportAndFinishReporting, nullptr,

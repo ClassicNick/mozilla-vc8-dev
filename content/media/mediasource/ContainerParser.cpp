@@ -185,7 +185,7 @@ public:
   bool TimestampsFuzzyEqual(int64_t aLhs, int64_t aRhs)
   {
     int64_t error = mParser.GetTimecodeScale() / NS_PER_USEC;
-    return llabs(aLhs - aRhs) <= error * 2;
+    return _abs64(aLhs - aRhs) <= error * 2;
   }
 
 private:
