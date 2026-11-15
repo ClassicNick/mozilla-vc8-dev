@@ -1362,7 +1362,7 @@ DrawTargetD2D::Init(const IntSize &aSize, SurfaceFormat aFormat)
   mFormat = aFormat;
 
   if (!Factory::GetDirect3D10Device()) {
-    gfxDebug() << "Failed to Init Direct2D DrawTarget (No D3D10 Device set.)";
+    gfxCriticalError() << "Failed to Init Direct2D DrawTarget (No D3D10 Device set.)";
     return false;
   }
   mDevice = Factory::GetDirect3D10Device();
@@ -1376,7 +1376,7 @@ DrawTargetD2D::Init(const IntSize &aSize, SurfaceFormat aFormat)
   hr = mDevice->CreateTexture2D(&desc, nullptr, byRef(mTexture));
 
   if (FAILED(hr)) {
-    gfxDebug() << "Failed to init Direct2D DrawTarget. Size: " << mSize << " Code: " << hr;
+    gfxCriticalError() << "Failed to init Direct2D DrawTarget. Size: " << mSize << " Code: " << hr;
     return false;
   }
 
@@ -1407,7 +1407,7 @@ DrawTargetD2D::Init(ID3D10Texture2D *aTexture, SurfaceFormat aFormat)
   hr = device->QueryInterface((ID3D10Device1**)byRef(mDevice));
 
   if (FAILED(hr)) {
-    gfxWarning() << "Failed to get D3D10 device from texture.";
+    gfxCriticalError() << "Failed to get D3D10 device from texture.";
     return false;
   }
 
@@ -1526,6 +1526,7 @@ bool
 DrawTargetD2D::InitD2DRenderTarget()
 {
   if (!factory()) {
+    gfxCriticalError() << "No valid D2D factory available.";
     return false;
   }
 
@@ -1974,7 +1975,7 @@ DrawTargetD2D::CreateRTForTexture(ID3D10Texture2D *aTexture, SurfaceFormat aForm
   hr = aTexture->QueryInterface((IDXGISurface**)byRef(surface));
 
   if (FAILED(hr)) {
-    gfxWarning() << "Failed to QI texture to surface.";
+    gfxCriticalError() << "Failed to QI texture to surface. Code: " << hr;
     return nullptr;
   }
 
@@ -1992,7 +1993,7 @@ DrawTargetD2D::CreateRTForTexture(ID3D10Texture2D *aTexture, SurfaceFormat aForm
   hr = factory()->CreateDxgiSurfaceRenderTarget(surface, props, byRef(rt));
 
   if (FAILED(hr)) {
-    gfxWarning() << "Failed to create D2D render target for texture.";
+    gfxCriticalError() << "Failed to create D2D render target for texture. Code:" << hr << " " << mSize << " Format: " << uint32_t(aFormat);
     return nullptr;
   }
 

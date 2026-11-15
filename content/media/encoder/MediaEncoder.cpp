@@ -8,6 +8,7 @@
 #include "nsMimeTypes.h"
 #include "prlog.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPtr.h"
 
 #undef MOZ_WEBM_ENCODER
 
@@ -210,6 +211,9 @@ MediaEncoder::GetEncodedData(nsTArray<nsTArray<uint8_t> >* aOutputBufs,
 
       rv = mWriter->GetContainerData(aOutputBufs,
                                      ContainerWriter::GET_HEADER);
+      if (aOutputBufs != nullptr) {
+        mSizeOfBuffer = aOutputBufs->SizeOfExcludingThis(MallocSizeOf);
+      }
       if (NS_FAILED(rv)) {
        LOG(PR_LOG_ERROR,("Error! writer fail to generate header!"));
        mState = ENCODE_ERROR;
@@ -242,6 +246,9 @@ MediaEncoder::GetEncodedData(nsTArray<nsTArray<uint8_t> >* aOutputBufs,
       rv = mWriter->GetContainerData(aOutputBufs,
                                      isAudioCompleted && isVideoCompleted ?
                                      ContainerWriter::FLUSH_NEEDED : 0);
+      if (aOutputBufs != nullptr) {
+        mSizeOfBuffer = aOutputBufs->SizeOfExcludingThis(MallocSizeOf);
+      }
       if (NS_SUCCEEDED(rv)) {
         // Successfully get the copy of final container data from writer.
         reloop = false;
@@ -256,6 +263,7 @@ MediaEncoder::GetEncodedData(nsTArray<nsTArray<uint8_t> >* aOutputBufs,
     case ENCODE_DONE:
     case ENCODE_ERROR:
       LOG(PR_LOG_DEBUG, ("MediaEncoder has been shutdown."));
+      mSizeOfBuffer = 0;
       mShutdown = true;
       reloop = false;
       break;
@@ -328,5 +336,22 @@ MediaEncoder::IsOMXEncoderEnabled()
   return Preferences::GetBool("media.encoder.omx.enabled");
 }
 #endif
+
+/*
+ * SizeOfExcludingThis measures memory being used by the Media Encoder.
+ * Currently it measures the size of the Encoder buffer and memory occupied
+ * by mAudioEncoder and mVideoEncoder.
+ */
+size_t
+MediaEncoder::SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
+{
+  size_t amount = 0;
+  if (mState == ENCODE_TRACK) {
+    amount = mSizeOfBuffer +
+             (mAudioEncoder != nullptr ? mAudioEncoder->SizeOfExcludingThis(aMallocSizeOf) : 0) +
+             (mVideoEncoder != nullptr ? mVideoEncoder->SizeOfExcludingThis(aMallocSizeOf) : 0);
+  }
+  return amount;
+}
 
 }

@@ -155,6 +155,10 @@
                 returnValue = action.params.url;
                 break;
               }
+              case "keyword": {
+                returnValue = action.params.input;
+                break;
+              }
             }
           }
 
@@ -313,8 +317,10 @@
                 if (switchToTabHavingURI(url) &&
                     isTabEmpty(prevTab))
                   gBrowser.removeTab(prevTab);
+                return;
+              } else if (action.type == "keyword") {
+                url = action.params.url;
               }
-              return;
             }
             continueOperation.call(this);
           }
@@ -1005,10 +1011,18 @@
             // Check if this is meant to be an action
             let action = this.mInput._parseActionUrl(url);
             if (action) {
-              if (action.type == "switchtab")
-                url = action.param;
-              else
-                return;
+              // TODO (bug 1054816): Centralise the implementation of actions
+              // into a JS module.
+              switch (action.type) {
+                case "switchtab": //Fall through.
+                case "keyword": {
+                  url = action.params.url;
+                  break;
+                }
+                default: {
+                  return;
+                }
+              }
             }
 
             // respect the usual clicking subtleties
@@ -1628,7 +1642,7 @@
   <binding id="bad-content-notification" extends="chrome://global/content/bindings/notification.xml#popup-notification">
     <content>
       <xul:hbox align="start">
-        <xul:image class="popup-notification-icon" xbl:inherits="popupid"/>
+        <xul:image class="popup-notification-icon" xbl:inherits="popupid,mixedblockdisabled,trackingblockdisabled"/>
         <xul:vbox>
           <!-- header -->
           <xul:vbox>
@@ -1992,7 +2006,7 @@
             return;
           }
 
-          let host = gPluginHandler._getHostFromPrincipal(this.notification.browser.contentWindow.document.nodePrincipal);
+          let host = this.notification.options.host;
           this._setupDescription("pluginActivateMultiple.message", null, host);
 
           var showBox = document.getAnonymousElementByAttribute(this, "anonid", "plugin-notification-showbox");
