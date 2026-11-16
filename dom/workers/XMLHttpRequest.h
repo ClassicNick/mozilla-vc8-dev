@@ -281,7 +281,7 @@ private:
 
   void
   SendInternal(const nsAString& aStringBody,
-               JSAutoStructuredCloneBuffer&& aBody,
+               mozilla::MoveRef<JSAutoStructuredCloneBuffer> aBody,
                nsTArray<nsCOMPtr<nsISupports> >& aClonedObjects,
                ErrorResult& aRv);
 };

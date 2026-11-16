@@ -178,8 +178,10 @@ class JS_PUBLIC_API(JSAutoStructuredCloneBuffer) {
           callbacks_(callbacks), closure_(closure)
     {}
 
-    JSAutoStructuredCloneBuffer(JSAutoStructuredCloneBuffer &&other);
-    JSAutoStructuredCloneBuffer &operator=(JSAutoStructuredCloneBuffer &&other);
+	explicit JSAutoStructuredCloneBuffer(JSAutoStructuredCloneBuffer& other);
+    JSAutoStructuredCloneBuffer &operator=(JSAutoStructuredCloneBuffer& other);
+    JSAutoStructuredCloneBuffer(mozilla::MoveRef<JSAutoStructuredCloneBuffer> other);
+    JSAutoStructuredCloneBuffer &operator=(mozilla::MoveRef<JSAutoStructuredCloneBuffer> other);
 
     ~JSAutoStructuredCloneBuffer() { clear(); }
 

@@ -139,7 +139,7 @@ protected:
       mCursor->mObjectKey = mObjectKey;
       mCursor->mContinueToKey.Unset();
 
-      mCursor->mCloneReadInfo = Move(mCloneReadInfo);
+      mCursor->mCloneReadInfo = OldMove(mCloneReadInfo);
       mCloneReadInfo.mCloneBuffer.clear();
     }
   }
@@ -227,7 +227,7 @@ IDBCursor::Create(IDBRequest* aRequest,
                   const nsACString& aContinueQuery,
                   const nsACString& aContinueToQuery,
                   const Key& aKey,
-                  StructuredCloneReadInfo&& aCloneReadInfo)
+                  mozilla::MoveRef<StructuredCloneReadInfo> aCloneReadInfo)
 {
   NS_ASSERTION(aObjectStore, "Null pointer!");
   NS_ASSERTION(!aKey.IsUnset(), "Bad key!");
@@ -240,7 +240,7 @@ IDBCursor::Create(IDBRequest* aRequest,
   cursor->mObjectStore = aObjectStore;
   cursor->mType = OBJECTSTORE;
   cursor->mKey = aKey;
-  cursor->mCloneReadInfo = Move(aCloneReadInfo);
+  cursor->mCloneReadInfo = OldMove(aCloneReadInfo);
 
   return cursor.forget();
 }
@@ -312,7 +312,7 @@ IDBCursor::Create(IDBRequest* aRequest,
                   const nsACString& aContinueToQuery,
                   const Key& aKey,
                   const Key& aObjectKey,
-                  StructuredCloneReadInfo&& aCloneReadInfo)
+                  mozilla::MoveRef<StructuredCloneReadInfo> aCloneReadInfo)
 {
   NS_ASSERTION(aIndex, "Null pointer!");
   NS_ASSERTION(!aKey.IsUnset(), "Bad key!");
@@ -328,7 +328,7 @@ IDBCursor::Create(IDBRequest* aRequest,
   cursor->mType = INDEXOBJECT;
   cursor->mKey = aKey;
   cursor->mObjectKey = aObjectKey;
-  cursor->mCloneReadInfo = Move(aCloneReadInfo);
+  cursor->mCloneReadInfo = OldMove(aCloneReadInfo);
 
   return cursor.forget();
 }

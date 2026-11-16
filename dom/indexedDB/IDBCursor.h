@@ -82,7 +82,7 @@ public:
          const nsACString& aContinueQuery,
          const nsACString& aContinueToQuery,
          const Key& aKey,
-         StructuredCloneReadInfo&& aCloneReadInfo);
+         mozilla::MoveRef<StructuredCloneReadInfo> aCloneReadInfo);
 
   // For OBJECTSTOREKEY cursors.
   static
@@ -121,7 +121,7 @@ public:
          const nsACString& aContinueToQuery,
          const Key& aKey,
          const Key& aObjectKey,
-         StructuredCloneReadInfo&& aCloneReadInfo);
+         mozilla::MoveRef<StructuredCloneReadInfo> aCloneReadInfo);
 
   IDBTransaction* Transaction() const
   {

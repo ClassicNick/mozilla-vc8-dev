@@ -1202,10 +1202,10 @@ public:
     : WorkerRunnable(aPromiseWorkerProxy->GetWorkerPrivate(),
                      WorkerThreadUnchangedBusyCount)
     , mPromiseWorkerProxy(aPromiseWorkerProxy)
+	, mBuffer(OldMove(aBuffer))
     , mCallbacks(aCallbacks)
     , mFunc(aFunc)
   {
-	mBuffer.swap(aBuffer);
     MOZ_ASSERT(NS_IsMainThread());
     MOZ_ASSERT(mPromiseWorkerProxy);
   }

@@ -75,12 +75,6 @@ public:
     }
   }
 
-  nsRefPtr(nsRefPtr<T>&& aRefPtr)
-    : mRawPtr(aRefPtr.mRawPtr)
-  {
-    aRefPtr.mRawPtr = nullptr;
-  }
-
   // construct from a raw pointer (of the right type)
 
   MOZ_IMPLICIT nsRefPtr(T* aRawPtr)
@@ -92,16 +86,9 @@ public:
   }
 
   template <typename I>
-  nsRefPtr(already_AddRefed<I>& aSmartPtr)
-    : mRawPtr(aSmartPtr.take())
+  nsRefPtr(const already_AddRefed<I>& aSmartPtr)
+    : mRawPtr(aSmartPtr.mRawPtr)
     // construct from |already_AddRefed|
-  {
-  }
-
-  template <typename I>
-  nsRefPtr(already_AddRefed<I>&& aSmartPtr)
-    : mRawPtr(aSmartPtr.take())
-    // construct from |otherRefPtr.forget()|
   {
   }
 
@@ -134,19 +121,10 @@ public:
 
   template <typename I>
   nsRefPtr<T>&
-  operator=(already_AddRefed<I>& aRhs)
+  operator=(const already_AddRefed<I>& aRhs)
   // assign from |already_AddRefed|
   {
-    assign_assuming_AddRef(aRhs.take());
-    return *this;
-  }
-
-  template <typename I>
-  nsRefPtr<T>&
-  operator=(already_AddRefed<I> && aRhs)
-  // assign from |otherRefPtr.forget()|
-  {
-    assign_assuming_AddRef(aRhs.take());
+    assign_assuming_AddRef(aRhs.mRawPtr);
     return *this;
   }
 
@@ -158,14 +136,6 @@ public:
       newRawPtr = 0;
     }
     assign_assuming_AddRef(static_cast<T*>(newRawPtr));
-    return *this;
-  }
-
-  nsRefPtr<T>&
-  operator=(nsRefPtr<T> && aRefPtr)
-  {
-    assign_assuming_AddRef(aRefPtr.mRawPtr);
-    aRefPtr.mRawPtr = nullptr;
     return *this;
   }
 

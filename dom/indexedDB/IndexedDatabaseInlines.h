@@ -22,14 +22,14 @@ StructuredCloneWriteInfo::StructuredCloneWriteInfo()
 
 inline
 StructuredCloneWriteInfo::StructuredCloneWriteInfo(
-                                    StructuredCloneWriteInfo&& aCloneWriteInfo)
-: mCloneBuffer(Move(aCloneWriteInfo.mCloneBuffer))
-, mTransaction(aCloneWriteInfo.mTransaction)
-, mOffsetToKeyProp(aCloneWriteInfo.mOffsetToKeyProp)
+                                    mozilla::MoveRef<StructuredCloneWriteInfo> aCloneWriteInfo)
+: mCloneBuffer(OldMove(aCloneWriteInfo->mCloneBuffer))
+, mTransaction(aCloneWriteInfo->mTransaction)
+, mOffsetToKeyProp(aCloneWriteInfo->mOffsetToKeyProp)
 {
-  mFiles.SwapElements(aCloneWriteInfo.mFiles);
-  aCloneWriteInfo.mTransaction = nullptr;
-  aCloneWriteInfo.mOffsetToKeyProp = 0;
+  mFiles.SwapElements(aCloneWriteInfo->mFiles);
+  aCloneWriteInfo->mTransaction = nullptr;
+  aCloneWriteInfo->mOffsetToKeyProp = 0;
 }
 
 inline
@@ -56,15 +56,15 @@ StructuredCloneReadInfo::StructuredCloneReadInfo()
 }
 
 inline StructuredCloneReadInfo&
-StructuredCloneReadInfo::operator=(StructuredCloneReadInfo&& aCloneReadInfo)
+StructuredCloneReadInfo::operator=(mozilla::MoveRef<StructuredCloneReadInfo> aCloneReadInfo)
 {
   MOZ_ASSERT(&aCloneReadInfo != this);
 
-  mCloneBuffer = Move(aCloneReadInfo.mCloneBuffer);
+  mCloneBuffer = OldMove(aCloneReadInfo->mCloneBuffer);
   mFiles.Clear();
-  mFiles.SwapElements(aCloneReadInfo.mFiles);
-  mDatabase = aCloneReadInfo.mDatabase;
-  aCloneReadInfo.mDatabase = nullptr;
+  mFiles.SwapElements(aCloneReadInfo->mFiles);
+  mDatabase = aCloneReadInfo->mDatabase;
+  aCloneReadInfo->mDatabase = nullptr;
   return *this;
 }
 

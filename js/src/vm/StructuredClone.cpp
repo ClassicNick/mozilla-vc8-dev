@@ -1985,17 +1985,31 @@ JS_StructuredClone(JSContext *cx, HandleValue value, MutableHandleValue vp,
     return buf.read(cx, vp, callbacks, closure);
 }
 
-JSAutoStructuredCloneBuffer::JSAutoStructuredCloneBuffer(JSAutoStructuredCloneBuffer &&other)
+JSAutoStructuredCloneBuffer::JSAutoStructuredCloneBuffer(JSAutoStructuredCloneBuffer &other)
 {
     other.steal(&data_, &nbytes_, &version_);
 }
 
 JSAutoStructuredCloneBuffer&
-JSAutoStructuredCloneBuffer::operator=(JSAutoStructuredCloneBuffer &&other)
+JSAutoStructuredCloneBuffer::operator=(JSAutoStructuredCloneBuffer &other)
 {
     JS_ASSERT(&other != this);
     clear();
     other.steal(&data_, &nbytes_, &version_);
+    return *this;
+}
+
+JSAutoStructuredCloneBuffer::JSAutoStructuredCloneBuffer(mozilla::MoveRef<JSAutoStructuredCloneBuffer> other)
+{
+    other->steal(&data_, &nbytes_, &version_);
+}
+
+JSAutoStructuredCloneBuffer&
+JSAutoStructuredCloneBuffer::operator=(mozilla::MoveRef<JSAutoStructuredCloneBuffer> other)
+{
+    JS_ASSERT(&other != this);
+    clear();
+    other->steal(&data_, &nbytes_, &version_);
     return *this;
 }
 

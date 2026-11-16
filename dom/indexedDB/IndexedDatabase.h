@@ -58,7 +58,7 @@ struct StructuredCloneReadInfo
   inline StructuredCloneReadInfo();
 
   inline StructuredCloneReadInfo&
-  operator=(StructuredCloneReadInfo&& aCloneReadInfo);
+  operator=(mozilla::MoveRef<StructuredCloneReadInfo> aCloneReadInfo);
 
   // In IndexedDatabaseInlines.h
   inline bool
@@ -101,7 +101,7 @@ struct StructuredCloneWriteInfo
 {
   // In IndexedDatabaseInlines.h
   inline StructuredCloneWriteInfo();
-  inline StructuredCloneWriteInfo(StructuredCloneWriteInfo&& aCloneWriteInfo);
+  inline StructuredCloneWriteInfo(mozilla::MoveRef<StructuredCloneWriteInfo> aCloneWriteInfo);
 
   bool operator==(const StructuredCloneWriteInfo& aOther) const
   {
