@@ -212,7 +212,7 @@ GetPropertyOperation(JSContext *cx, InterpreterFrame *fp, HandleScript script, j
     JSOp op = JSOp(*pc);
 
     if (op == JSOP_LENGTH) {
-        if (IsOptimizedArguments(fp, lval.address())) {
+        if (IsOptimizedArguments(fp, lval)) {
             vp.setInt32(fp->numActualArgs());
             return true;
         }
@@ -223,7 +223,7 @@ GetPropertyOperation(JSContext *cx, InterpreterFrame *fp, HandleScript script, j
 
     RootedId id(cx, NameToId(script->getName(pc)));
 
-    if (id == NameToId(cx->names().callee) && IsOptimizedArguments(fp, lval.address())) {
+    if (id == NameToId(cx->names().callee) && IsOptimizedArguments(fp, lval)) {
         vp.setObject(fp->callee());
         return true;
     }
@@ -267,8 +267,8 @@ GetPropertyOperation(JSContext *cx, InterpreterFrame *fp, HandleScript script, j
 static inline bool
 NameOperation(JSContext *cx, InterpreterFrame *fp, jsbytecode *pc, MutableHandleValue vp)
 {
-    RootedScript script(cx, fp->script());
-    PropertyName *name = script->getName(pc);
+    JSObject *obj = fp->scopeChain();
+    PropertyName *name = fp->script()->getName(pc);
 
     /*
      * Skip along the scope chain to the enclosing global object. This is
@@ -279,7 +279,6 @@ NameOperation(JSContext *cx, InterpreterFrame *fp, jsbytecode *pc, MutableHandle
      * the actual behavior even if the id could be found on the scope chain
      * before the global object.
      */
-    JSObject *obj = fp->scopeChain();
     if (IsGlobalOp(JSOp(*pc)))
         obj = &obj->global();
 
@@ -300,10 +299,10 @@ NameOperation(JSContext *cx, InterpreterFrame *fp, jsbytecode *pc, MutableHandle
     /* Kludge to allow (typeof foo == "undefined") tests. */
     JSOp op2 = JSOp(pc[JSOP_NAME_LENGTH]);
     if (op2 == JSOP_TYPEOF) {
-        if (!FetchName<true>(cx, script, pc, scopeRoot, pobjRoot, nameRoot, shapeRoot, vp))
+        if (!FetchName<true>(cx, scopeRoot, pobjRoot, nameRoot, shapeRoot, vp))
             return false;
     } else {
-        if (!FetchName<false>(cx, script, pc, scopeRoot, pobjRoot, nameRoot, shapeRoot, vp))
+        if (!FetchName<false>(cx, scopeRoot, pobjRoot, nameRoot, shapeRoot, vp))
             return false;
     }
 
@@ -583,7 +582,8 @@ js::InvokeConstructor(JSContext *cx, CallArgs args)
 }
 
 bool
-js::InvokeConstructor(JSContext *cx, Value fval, unsigned argc, const Value *argv, Value *rval)
+js::InvokeConstructor(JSContext *cx, Value fval, unsigned argc, const Value *argv,
+                      MutableHandleValue rval)
 {
     InvokeArgs args(cx);
     if (!args.init(argc))
@@ -596,7 +596,7 @@ js::InvokeConstructor(JSContext *cx, Value fval, unsigned argc, const Value *arg
     if (!InvokeConstructor(cx, args))
         return false;
 
-    *rval = args.rval();
+    rval.set(args.rval());
     return true;
 }
 
@@ -2508,8 +2508,7 @@ END_CASE(JSOP_SPREADCALL)
 CASE(JSOP_FUNAPPLY)
 {
     CallArgs args = CallArgsFromSp(GET_ARGC(REGS.pc), REGS.sp);
-    if (!GuardFunApplyArgumentsOptimization(cx, REGS.fp(), args.calleev(), args.array(),
-                                            args.length()))
+    if (!GuardFunApplyArgumentsOptimization(cx, REGS.fp(), args))
         goto error;
     /* FALL THROUGH */
 }
@@ -3538,9 +3537,7 @@ js::CallProperty(JSContext *cx, HandleValue v, HandlePropertyName name, MutableH
 }
 
 bool
-js::GetScopeName(JSContext *cx, HandleScript script, jsbytecode *pc,
-                 HandleObject scopeChain, HandlePropertyName name,
-                 MutableHandleValue vp)
+js::GetScopeName(JSContext *cx, HandleObject scopeChain, HandlePropertyName name, MutableHandleValue vp)
 {
     RootedShape shape(cx);
     RootedObject obj(cx), pobj(cx);
@@ -3548,7 +3545,9 @@ js::GetScopeName(JSContext *cx, HandleScript script, jsbytecode *pc,
         return false;
 
     if (!shape) {
-        js_ReportIsNotDefined(cx, script, pc, name);
+        JSAutoByteString printable;
+        if (AtomToPrintableString(cx, name, &printable))
+            js_ReportIsNotDefined(cx, printable.ptr());
         return false;
     }
 

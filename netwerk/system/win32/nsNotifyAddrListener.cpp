@@ -27,9 +27,12 @@
 #include "nsAutoPtr.h"
 #include "mozilla/Services.h"
 #include "nsCRT.h"
+#include "mozilla/Preferences.h"
 
 #include <iptypes.h>
 #include <iphlpapi.h>
+
+using namespace mozilla;
 
 typedef  IP_ADAPTER_UNICAST_ADDRESS_XP IP_ADAPTER_UNICAST_ADDRESS;
 typedef  IP_ADAPTER_UNICAST_ADDRESS_XP *PIP_ADAPTER_UNICAST_ADDRESS;
@@ -83,6 +86,8 @@ static void InitIPHelperLibrary(void)
 }
 
 static HMODULE sIphlpapi;
+
+#define NETWORK_NOTIFY_CHANGED_PREF "network.notify.changed"
 
 static void InitIphlpapi(void)
 {
@@ -149,6 +154,7 @@ nsNotifyAddrListener::nsNotifyAddrListener()
     , mCheckAttempted(false)
     , mShutdownEvent(nullptr)
     , mIPInterfaceChecksum(0)
+    , mAllowChangedEvent(true)
 {
     InitIphlpapi();
 }
@@ -280,6 +286,9 @@ nsNotifyAddrListener::Init(void)
     nsresult rv = observerService->AddObserver(this, "xpcom-shutdown-threads",
                                                false);
     NS_ENSURE_SUCCESS(rv, rv);
+
+    Preferences::AddBoolVarCache(&mAllowChangedEvent,
+                                 NETWORK_NOTIFY_CHANGED_PREF, true);
 
     mShutdownEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
     NS_ENSURE_TRUE(mShutdownEvent, NS_ERROR_OUT_OF_MEMORY);
@@ -687,8 +696,8 @@ nsNotifyAddrListener::CheckLinkStatus(void)
             mozilla::TimeDuration since = mozilla::TimeStamp::Now() - mChangedTime;
 
             // Network is online. Topology has changed. Always send CHANGED
-            // before UP - after having cooled down.
-            if (since.ToMilliseconds() > 2000) {
+            // before UP - if allowed to and having cooled down.
+            if (mAllowChangedEvent && (since.ToMilliseconds() > 2000)) {
                 SendEvent(NS_NETWORK_LINK_DATA_CHANGED);
             }
         }
