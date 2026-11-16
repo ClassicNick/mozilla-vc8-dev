@@ -26,6 +26,7 @@ Cu.import("resource://gre/modules/Promise.jsm");
 Cu.import("resource://gre/modules/osfile.jsm", this);
 Cu.import("resource://gre/modules/Task.jsm");
 Cu.import("resource://gre/modules/FxAccountsOAuthClient.jsm");
+Cu.importGlobalProperties(["URL"]);
 
 this.EXPORTED_SYMBOLS = ["MozLoopService", "LOOP_SESSION_TYPE"];
 
@@ -1355,6 +1356,12 @@ this.MozLoopService = {
     MozLoopServiceInternal.clearError("registration");
   }),
 
+  openFxASettings: function() {
+    let url = new URL("/settings", gFxAOAuthClient.parameters.content_uri);
+    let win = Services.wm.getMostRecentWindow("navigator:browser");
+    win.switchToTabHavingURI(url.toString(), true);
+  },
+
   /**
    * Performs a hawk based request to the loop server.
    *
@@ -1372,6 +1379,6 @@ this.MozLoopService = {
    */
   hawkRequest: function(sessionType, path, method, payloadObj) {
     return MozLoopServiceInternal.hawkRequest(sessionType, path, method, payloadObj).catch(
-      error => {this._hawkRequestError(error);});
+      error => {MozLoopServiceInternal._hawkRequestError(error);});
   },
 };
