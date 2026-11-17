@@ -18,6 +18,7 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.ProgressBar;
 
+import org.mozilla.gecko.AppConstants;
 import org.mozilla.gecko.Telemetry;
 import org.mozilla.gecko.TelemetryContract;
 
@@ -80,6 +81,7 @@ public class PostSearchFragment extends Fragment {
         // Only load URLs if they're different than what's already
         // loaded in the webview.
         if (!TextUtils.equals(webview.getUrl(), url)) {
+            webview.loadUrl("about:blank");
             webview.loadUrl(url);
         }
     }
@@ -100,6 +102,7 @@ public class PostSearchFragment extends Fragment {
                         TelemetryContract.Method.CONTENT, "search-result");
                 view.stopLoading();
                 Intent i = new Intent(Intent.ACTION_VIEW);
+                i.setClassName(AppConstants.ANDROID_PACKAGE_NAME, AppConstants.BROWSER_INTENT_CLASS_NAME);
                 i.setData(Uri.parse(url));
                 startActivity(i);
             }

@@ -25,17 +25,9 @@
 #ifndef mozilla_pkix__pkixtypes_h
 #define mozilla_pkix__pkixtypes_h
 
-<<<<<<< HEAD
-#include "pkix/enumclass.h"
-#include "pkix/nullptr.h"
-#include "prtime.h"
-#include "seccomon.h"
-#include "mozilla/StandardInteger.h"
-=======
 #include "pkix/Input.h"
 #include "pkix/Time.h"
-#include "stdint.h"
->>>>>>> 8b524c6
+#include "mozilla/StandardInteger.h"
 
 namespace mozilla { namespace pkix {
 
