@@ -12,7 +12,7 @@
 #include "jsfun.h"
 #include "jsscript.h"
 
-#include "jit/AsmJSFrameIterator.h"
+#include "asmjs/AsmJSFrameIterator.h"
 #include "jit/JitFrameIterator.h"
 #ifdef CHECK_OSIPOINT_REGISTERS
 #include "jit/Registers.h" // for RegisterDump
@@ -133,11 +133,6 @@ class AbstractFramePtr
       : ptr_(fp ? uintptr_t(fp) | Tag_RematerializedFrame : 0)
     {
         MOZ_ASSERT_IF(fp, asRematerializedFrame() == fp);
-    }
-
-    explicit AbstractFramePtr(JSAbstractFramePtr frame)
-        : ptr_(uintptr_t(frame.raw()))
-    {
     }
 
     static AbstractFramePtr FromRaw(void *raw) {
@@ -1679,8 +1674,6 @@ class FrameIter
     void popJitFrame();
     void popAsmJSFrame();
     void settleOnActivation();
-
-    friend class ::JSBrokenFrameIterator;
 };
 
 class ScriptFrameIter : public FrameIter

@@ -25,11 +25,9 @@ JS::Zone::Zone(JSRuntime *rt)
     types(this),
     compartments(),
     gcGrayRoots(),
-    gcHeapGrowthFactor(3.0),
     gcMallocBytes(0),
     gcMallocGCTriggered(false),
     usage(&rt->gc.usage),
-    gcTriggerBytes(0),
     data(nullptr),
     isSystem(false),
     usedByExclusiveThread(false),
@@ -46,6 +44,7 @@ JS::Zone::Zone(JSRuntime *rt)
     JS_ASSERT(reinterpret_cast<JS::shadow::Zone *>(this) ==
               static_cast<JS::shadow::Zone *>(this));
 
+    threshold.updateAfterGC(8192, GC_NORMAL, rt->gc.tunables, rt->gc.schedulingState);
     setGCMaxMallocBytes(rt->gc.maxMallocBytesAllocated() * 0.9);
 }
 
@@ -58,13 +57,14 @@ Zone::~Zone()
     js_delete(jitZone_);
 }
 
-bool Zone::init()
+bool Zone::init(bool isSystemArg)
 {
+    isSystem = isSystemArg;
     return gcZoneGroupEdges.init();
 }
 
 void
-Zone::setNeedsBarrier(bool needs, ShouldUpdateJit updateJit)
+Zone::setNeedsIncrementalBarrier(bool needs, ShouldUpdateJit updateJit)
 {
     if (updateJit == UpdateJit && needs != jitUsingBarriers_) {
         jit::ToggleBarriers(this, needs);
@@ -75,7 +75,7 @@ Zone::setNeedsBarrier(bool needs, ShouldUpdateJit updateJit)
         JS_ASSERT(!runtimeFromMainThread()->exclusiveThreadsPresent());
 
     JS_ASSERT_IF(needs, canCollect());
-    needsBarrier_ = needs;
+    needsIncrementalBarrier_ = needs;
 }
 
 void

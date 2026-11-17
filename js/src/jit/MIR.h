@@ -225,6 +225,12 @@ class MNode : public TempObject
         getUseFor(index)->discardProducer();
     }
 
+#if DEBUG
+    bool operandDiscarded(size_t index) const {
+        return !getUseFor(index)->hasProducer();
+    }
+#endif
+
     inline MDefinition *toDefinition();
     inline MResumePoint *toResumePoint();
 
@@ -4001,6 +4007,7 @@ class MMinMax
     AliasSet getAliasSet() const {
         return AliasSet::None();
     }
+    MDefinition *foldsTo(TempAllocator &alloc);
     void computeRange(TempAllocator &alloc);
     bool writeRecoverData(CompactBufferWriter &writer) const;
     bool canRecoverOnBailout() const {

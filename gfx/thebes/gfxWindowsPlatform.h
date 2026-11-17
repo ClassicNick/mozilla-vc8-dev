@@ -48,6 +48,7 @@
 namespace mozilla {
 namespace layers {
 class DeviceManagerD3D9;
+class ReadbackManagerD3D11;
 }
 }
 struct IDirect3DDevice9;
@@ -258,6 +259,8 @@ public:
 #endif
     ID3D11Device *GetD3D11Device();
 
+    mozilla::layers::ReadbackManagerD3D11* GetReadbackManager();
+
     static bool IsOptimus();
 
 protected:
@@ -287,6 +290,7 @@ private:
     mozilla::RefPtr<IDXGIAdapter1> mAdapter;
     mozilla::RefPtr<ID3D11Device> mD3D11Device;
     bool mD3D11DeviceInitialized;
+	mozilla::RefPtr<mozilla::layers::ReadbackManagerD3D11> mD3D11ReadbackManager;
 #endif
 
     virtual void GetPlatformCMSOutputProfile(void* &mem, size_t &size);

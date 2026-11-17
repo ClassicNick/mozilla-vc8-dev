@@ -23,6 +23,7 @@
 #include "nsIDocument.h"
 #include "nsISupportsPrimitives.h"
 #include "nsIInterfaceRequestorUtils.h"
+#include "nsIIDNService.h"
 #include "nsNetUtil.h"
 #include "mozilla/Types.h"
 #include "mozilla/PeerIdentity.h"
@@ -51,6 +52,13 @@
 
 #ifdef MOZ_B2G
 #include "MediaPermissionGonk.h"
+#endif
+
+#if defined(XP_MACOSX)
+#include "nsCocoaFeatures.h"
+#endif
+#if defined (XP_WIN)
+#include "mozilla/WindowsVersion.h"
 #endif
 
 // GetCurrentTime is defined in winbase.h as zero argument macro forwarding to
@@ -99,6 +107,59 @@ using dom::Sequence;
 using dom::OwningBooleanOrMediaTrackConstraints;
 using dom::SupportedAudioConstraints;
 using dom::SupportedVideoConstraints;
+
+
+static bool
+HostHasPermission(nsIURI &docURI)
+{
+  nsAdoptingCString hostName;
+  docURI.GetAsciiHost(hostName); //normalize UTF8 to ASCII equivalent
+  nsAdoptingCString domainWhiteList =
+    Preferences::GetCString("media.getusermedia.screensharing.allowed_domains");
+  domainWhiteList.StripWhitespace();
+
+  if (domainWhiteList.IsEmpty() || hostName.IsEmpty()) {
+    return false;
+  }
+
+  nsresult rv;
+  // Get UTF8 to ASCII domain name normalization service
+  nsCOMPtr<nsIIDNService> idnService
+    = do_GetService("@mozilla.org/network/idn-service;1", &rv);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return false;
+  }
+
+  PRUint32 begin = 0;
+  PRUint32 end = 0;
+  nsCString domainName;
+  /* 
+     Test each domain name in the comma separated list
+     after converting from UTF8 to ASCII. Each domain
+     must match exactly: no wildcards are used.
+  */
+  do {
+    end = domainWhiteList.FindChar(',', begin);
+    if (end == (PRUint32)-1) {
+      // Last or only domain name in the comma separated list
+      end = domainWhiteList.Length();
+    }
+
+    rv = idnService->ConvertUTF8toACE(Substring(domainWhiteList, begin, end - begin),
+                                      domainName);
+    if (NS_SUCCEEDED(rv)) {
+      if (hostName.EqualsIgnoreCase(domainName.Data(), domainName.Length())) {
+        return true;
+      }
+    } else {
+      NS_WARNING("Failed to convert UTF-8 host to ASCII");
+    }
+
+    begin = end + 1;
+  } while (end < domainWhiteList.Length());
+
+  return false;
+}
 
 ErrorCallbackRunnable::ErrorCallbackRunnable(
   nsCOMPtr<nsIDOMGetUserMediaSuccessCallback>& aSuccess,
@@ -1488,12 +1549,25 @@ MediaManager::GetUserMedia(bool aPrivileged,
       onError.forget(), windowID, listener, mPrefs);
   }
 
-  // deny screensharing request if support is disabled
-  if (c.mVideo.IsMediaTrackConstraints() &&
-      !Preferences::GetBool("media.getusermedia.screensharing.enabled", false)) {
+  nsIURI* docURI = aWindow->GetDocumentURI();
+
+  if (c.mVideo.IsMediaTrackConstraints()) {
     MediaTrackConstraints& tc = c.mVideo.GetAsMediaTrackConstraints();
-    if (tc.mMediaSource != dom::MediaSourceEnum::Camera && tc.mMediaSource != dom::MediaSourceEnum::Browser) {
-      return runnable->Denied(NS_LITERAL_STRING("PERMISSION_DENIED"));
+    // deny screensharing request if support is disabled
+    if (tc.mMediaSource != dom::MediaSourceEnum::Camera) {
+      if (!Preferences::GetBool("media.getusermedia.screensharing.enabled", false) ||
+          // Block screen/window sharing on Mac OSX 10.6 and WinXP until proved that they work
+#if defined(XP_MACOSX)
+          !nsCocoaFeatures::OnLionOrLater() ||
+#endif
+#if defined (XP_WIN)
+          !IsVistaOrLater() ||
+#endif
+          /* Deny screensharing if the requesting document is not from a host
+             on the whitelist. */
+          !HostHasPermission(*docURI)) {
+        return runnable->Denied(NS_LITERAL_STRING("PERMISSION_DENIED"));
+      }
     }
   }
 
@@ -1510,7 +1584,6 @@ MediaManager::GetUserMedia(bool aPrivileged,
     return NS_OK;
   }
 #endif
-  nsIURI* docURI = aWindow->GetDocumentURI();
 
   bool isLoop = false;
   nsCOMPtr<nsIURI> loopURI;
