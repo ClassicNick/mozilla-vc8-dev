@@ -143,7 +143,7 @@ void WebMBufferedParser::Append(const unsigned char* aBuffer, uint32_t aLength,
           uint32_t idx = aMapping.IndexOfFirstElementGt(mBlockOffset);
           if (idx == 0 || !(aMapping[idx - 1] == mBlockOffset)) {
             // Don't insert invalid negative timecodes.
-            if (mBlockOffset > 0 || mClusterTimecode > uint16_t(abs(mBlockOffset))) {
+            if (mBlockOffset > 0 || mClusterTimecode > uint16_t(_abs64(mBlockOffset))) {
               WebMTimeDataOffset entry(mBlockOffset,
                                        mClusterTimecode + mBlockTimecode,
                                        mClusterOffset);

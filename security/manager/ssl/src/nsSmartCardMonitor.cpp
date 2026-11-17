@@ -56,7 +56,7 @@ private:
   nsString mTokenName;
 };
 
-NS_IMPL_ISUPPORTS(nsTokenEventRunnable, nsIRunnable)
+NS_IMPL_ISUPPORTS1(nsTokenEventRunnable, nsIRunnable)
 
 NS_IMETHODIMP
 nsTokenEventRunnable::Run()

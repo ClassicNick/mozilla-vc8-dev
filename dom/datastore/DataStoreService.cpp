@@ -385,7 +385,7 @@ GetAppManifestURLsEnumerator(const uint32_t& aAppId,
   AssertIsInMainProcess();
   MOZ_ASSERT(NS_IsMainThread());
 
-  auto* manifestURLs = static_cast<nsIMutableArray*>(aUserData);
+  nsIMutableArray* manifestURLs = static_cast<nsIMutableArray*>(aUserData);
   nsCOMPtr<nsISupportsString> manifestURL(do_CreateInstance(NS_SUPPORTS_STRING_CONTRACTID));
   if (manifestURL) {
     manifestURL->SetData(aInfo->mManifestURL);
