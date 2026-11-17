@@ -93,7 +93,7 @@ struct CrossCompartmentKey
 struct WrapperHasher : public DefaultHasher<CrossCompartmentKey>
 {
     static HashNumber hash(const CrossCompartmentKey &key) {
-        JS_ASSERT(!IsPoisonedPtr(key.wrapped));
+        MOZ_ASSERT(!IsPoisonedPtr(key.wrapped));
         return uint32_t(uintptr_t(key.wrapped)) | uint32_t(key.kind);
     }
 
@@ -160,7 +160,7 @@ struct JSCompartment
     const JS::CompartmentOptions &options() const { return options_; }
 
     JSRuntime *runtimeFromMainThread() {
-        JS_ASSERT(CurrentThreadCanAccessRuntime(runtime_));
+        MOZ_ASSERT(CurrentThreadCanAccessRuntime(runtime_));
         return runtime_;
     }
 
@@ -367,7 +367,6 @@ struct JSCompartment
 #ifdef JSGC_COMPACTING
     void fixupInitialShapeTable();
     void fixupNewTypeObjectTable(js::types::TypeObjectWithNewScriptSet &table);
-    void fixupCrossCompartmentWrappers(JSTracer *trc);
     void fixupAfterMovingGC();
     void fixupGlobal();
 #endif
@@ -551,7 +550,7 @@ class AssertCompartmentUnchanged
     }
 
     ~AssertCompartmentUnchanged() {
-        JS_ASSERT(cx->compartment() == oldCompartment);
+        MOZ_ASSERT(cx->compartment() == oldCompartment);
     }
 
   protected:

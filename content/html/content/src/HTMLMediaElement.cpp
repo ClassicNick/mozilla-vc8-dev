@@ -509,14 +509,6 @@ HTMLMediaElement::GetMozSrcObject() const
   return stream.forget();
 }
 
-NS_IMETHODIMP
-HTMLMediaElement::GetMozSrcObject(nsIDOMMediaStream** aStream)
-{
-  nsRefPtr<DOMMediaStream> stream = GetMozSrcObject();
-  stream.forget(aStream);
-  return NS_OK;
-}
-
 void
 HTMLMediaElement::SetMozSrcObject(DOMMediaStream& aValue)
 {
@@ -524,12 +516,10 @@ HTMLMediaElement::SetMozSrcObject(DOMMediaStream& aValue)
   Load();
 }
 
-NS_IMETHODIMP
-HTMLMediaElement::SetMozSrcObject(nsIDOMMediaStream* aStream)
+void
+HTMLMediaElement::SetMozSrcObject(DOMMediaStream* aValue)
 {
-  DOMMediaStream* stream = static_cast<DOMMediaStream*>(aStream);
-  SetMozSrcObject(*stream);
-  return NS_OK;
+  SetMozSrcObject(*aValue);
 }
 
 /* readonly attribute nsIDOMHTMLMediaElement mozAutoplayEnabled; */
@@ -1148,7 +1138,7 @@ nsresult HTMLMediaElement::LoadResource()
   }
 
   if (IsMediaStreamURI(mLoadingSrc)) {
-    nsCOMPtr<nsIDOMMediaStream> stream;
+    nsRefPtr<DOMMediaStream> stream;
     rv = NS_GetStreamForMediaStreamURI(mLoadingSrc, getter_AddRefs(stream));
     if (NS_FAILED(rv)) {
       nsCString specUTF8;
@@ -1158,7 +1148,7 @@ nsresult HTMLMediaElement::LoadResource()
       ReportLoadError("MediaLoadInvalidURI", params, ArrayLength(params));
       return rv;
     }
-    SetupSrcMediaStreamPlayback(static_cast<DOMMediaStream*>(stream.get()));
+    SetupSrcMediaStreamPlayback(stream);
     return NS_OK;
   }
 
@@ -1877,13 +1867,6 @@ HTMLMediaElement::MozCaptureStream(ErrorResult& aRv)
   return stream.forget();
 }
 
-NS_IMETHODIMP HTMLMediaElement::MozCaptureStream(nsIDOMMediaStream** aStream)
-{
-  ErrorResult rv;
-  *aStream = MozCaptureStream(rv).take();
-  return rv.ErrorCode();
-}
-
 already_AddRefed<DOMMediaStream>
 HTMLMediaElement::MozCaptureStreamUntilEnded(ErrorResult& aRv)
 {
@@ -1894,13 +1877,6 @@ HTMLMediaElement::MozCaptureStreamUntilEnded(ErrorResult& aRv)
   }
 
   return stream.forget();
-}
-
-NS_IMETHODIMP HTMLMediaElement::MozCaptureStreamUntilEnded(nsIDOMMediaStream** aStream)
-{
-  ErrorResult rv;
-  *aStream = MozCaptureStreamUntilEnded(rv).take();
-  return rv.ErrorCode();
 }
 
 NS_IMETHODIMP HTMLMediaElement::GetMozAudioCaptured(bool* aCaptured)
@@ -2059,6 +2035,7 @@ HTMLMediaElement::HTMLMediaElement(already_AddRefed<mozilla::dom::NodeInfo> aNod
     mMediaSecurityVerified(false),
     mCORSMode(CORS_NONE),
     mHasAudio(false),
+    mHasVideo(false),
     mDownloadSuspendedByCache(false),
     mAudioChannelFaded(false),
     mPlayingThroughTheAudioChannel(false),
@@ -2866,6 +2843,8 @@ void HTMLMediaElement::SetupSrcMediaStreamPlayback(DOMMediaStream* aStream)
     GetSrcMediaStream()->AddVideoOutput(container);
   }
 
+  // Note: we must call DisconnectTrackListListeners(...)  before dropping
+  // mSrcStream
   mSrcStream->ConstructMediaTracks(AudioTracks(), VideoTracks());
 
   ChangeReadyState(nsIDOMHTMLMediaElement::HAVE_METADATA);
@@ -2882,6 +2861,8 @@ void HTMLMediaElement::EndSrcMediaStreamPlayback()
   if (stream) {
     stream->RemoveListener(mSrcStreamListener);
   }
+  mSrcStream->DisconnectTrackListListeners(AudioTracks(), VideoTracks());
+
   // Kill its reference to this element
   mSrcStreamListener->Forget();
   mSrcStreamListener = nullptr;
@@ -2922,6 +2903,7 @@ void HTMLMediaElement::MetadataLoaded(const MediaInfo* aInfo,
                                       const MetadataTags* aTags)
 {
   mHasAudio = aInfo->HasAudio();
+  mHasVideo = aInfo->HasVideo();
   mTags = aTags;
   mLoadedDataFired = false;
   ChangeReadyState(nsIDOMHTMLMediaElement::HAVE_METADATA);
@@ -3114,14 +3096,6 @@ void HTMLMediaElement::UpdateReadyStateForData(MediaDecoderOwner::NextFrameStatu
     // aNextFrame might have a next frame because the decoder can advance
     // on its own thread before MetadataLoaded gets a chance to run.
     // The arrival of more data can't change us out of this readyState.
-    return;
-  }
-
-  // Section 2.4.3.1 of the Media Source Extensions spec requires
-  // changing to HAVE_METADATA when seeking into an unbuffered
-  // range.
-  if (aNextFrame == MediaDecoderOwner::NEXT_FRAME_WAIT_FOR_MSE_DATA) {
-    ChangeReadyState(nsIDOMHTMLMediaElement::HAVE_METADATA);
     return;
   }
 
@@ -3328,13 +3302,15 @@ VideoFrameContainer* HTMLMediaElement::GetVideoFrameContainer()
     return nullptr;
   }
 
-  if (mVideoFrameContainer)
-    return mVideoFrameContainer;
-
   // Only video frames need an image container.
   if (!IsVideo()) {
     return nullptr;
   }
+
+  mHasVideo = true;
+
+  if (mVideoFrameContainer)
+    return mVideoFrameContainer;
 
   mVideoFrameContainer =
     new VideoFrameContainer(this, LayerManager::CreateAsynchronousImageContainer());

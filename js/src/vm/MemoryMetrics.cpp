@@ -301,7 +301,7 @@ DecommittedArenasChunkCallback(JSRuntime *rt, void *data, gc::Chunk *chunk)
         if (chunk->decommittedArenas.get(i))
             n += gc::ArenaSize;
     }
-    JS_ASSERT(n > 0);
+    MOZ_ASSERT(n > 0);
     *static_cast<size_t *>(data) += n;
 }
 
@@ -774,7 +774,7 @@ JS::CollectRuntimeStats(JSRuntime *rt, RuntimeStats *rtStats, ObjectPrivateVisit
     size_t totalArenaSize = rtStats->zTotals.gcHeapArenaAdmin +
                             rtStats->zTotals.unusedGCThings +
                             rtStats->gcHeapGCThings;
-    JS_ASSERT(totalArenaSize % gc::ArenaSize == 0);
+    MOZ_ASSERT(totalArenaSize % gc::ArenaSize == 0);
 #endif
 
     for (CompartmentsIter comp(rt, WithAtoms); !comp.done(); comp.next())
@@ -867,7 +867,7 @@ AddSizeOfTab(JSRuntime *rt, HandleObject obj, MallocSizeOf mallocSizeOf, ObjectP
                                        StatsCompartmentCallback, StatsArenaCallback,
                                        StatsCellCallback<CoarseGrained>);
 
-    JS_ASSERT(rtStats.zoneStatsVector.length() == 1);
+    MOZ_ASSERT(rtStats.zoneStatsVector.length() == 1);
     rtStats.zTotals.addSizes(rtStats.zoneStatsVector[0]);
 
     for (size_t i = 0; i < rtStats.compartmentStatsVector.length(); i++)

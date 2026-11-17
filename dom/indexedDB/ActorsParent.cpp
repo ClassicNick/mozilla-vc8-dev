@@ -10342,7 +10342,7 @@ FactoryOp::FactoryOp(Factory* aFactory,
                      const CommonFactoryRequestParams& aCommonParams,
                      bool aDeleting)
   : mFactory(aFactory)
-  , mContentParent(Move(aContentParent))
+  , mContentParent(aContentParent)
   , mCommonParams(aCommonParams)
   , mState(State_Initial)
   , mStoragePrivilege(mozilla::dom::quota::Content)

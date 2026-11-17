@@ -44,6 +44,7 @@
 #include "jsobjinlines.h"
 
 #include "vm/ArrayBufferObject-inl.h"
+#include "vm/ObjectImpl-inl.h"
 
 using namespace js;
 using namespace js::jit;
@@ -117,7 +118,7 @@ HasPureCoercion(JSContext *cx, HandleValue v)
     jsid toString = NameToId(cx->names().toString);
     if (v.toObject().is<JSFunction>() &&
         HasObjectValueOf(&v.toObject(), cx) &&
-        ClassMethodIsNative(cx, &v.toObject(), &JSFunction::class_, toString, fun_toString))
+        ClassMethodIsNative(cx, &v.toObject().as<JSFunction>(), &JSFunction::class_, toString, fun_toString))
     {
         return true;
     }
@@ -129,7 +130,7 @@ static bool
 ValidateGlobalVariable(JSContext *cx, const AsmJSModule &module, AsmJSModule::Global &global,
                        HandleValue importVal)
 {
-    JS_ASSERT(global.which() == AsmJSModule::Global::Variable);
+    MOZ_ASSERT(global.which() == AsmJSModule::Global::Variable);
 
     void *datum = module.globalVarToGlobalDatum(global);
 
@@ -435,7 +436,7 @@ LinkModuleToHeap(JSContext *cx, AsmJSModule &module, Handle<ArrayBufferObjectMay
 
     // This check is sufficient without considering the size of the loaded datum because heap
     // loads and stores start on an aligned boundary and the heap byteLength has larger alignment.
-    JS_ASSERT((module.minHeapLength() - 1) <= INT32_MAX);
+    MOZ_ASSERT((module.minHeapLength() - 1) <= INT32_MAX);
     if (heapLength < module.minHeapLength()) {
         ScopedJSFreePtr<char> msg(
             JS_smprintf("ArrayBuffer byteLength of 0x%x is less than 0x%x (which is the "
@@ -777,7 +778,7 @@ SendFunctionsToVTune(JSContext *cx, AsmJSModule &module)
 
         uint8_t *start = base + func.pod.startCodeOffset;
         uint8_t *end   = base + func.pod.endCodeOffset;
-        JS_ASSERT(end >= start);
+        MOZ_ASSERT(end >= start);
 
         unsigned method_id = iJIT_GetNewMethodID();
         if (method_id == 0)
@@ -820,7 +821,7 @@ SendFunctionsToPerf(JSContext *cx, AsmJSModule &module)
         const AsmJSModule::ProfiledFunction &func = module.profiledFunction(i);
         uintptr_t start = base + (unsigned long) func.pod.startCodeOffset;
         uintptr_t end   = base + (unsigned long) func.pod.endCodeOffset;
-        JS_ASSERT(end >= start);
+        MOZ_ASSERT(end >= start);
         size_t size = end - start;
 
         JSAutoByteString bytes;
@@ -897,7 +898,7 @@ CreateExportObject(JSContext *cx, Handle<AsmJSModuleObject*> moduleObj)
     }
 
     gc::AllocKind allocKind = gc::GetGCObjectKind(module.numExportedFunctions());
-    RootedObject obj(cx, NewBuiltinClassInstance(cx, &JSObject::class_, allocKind));
+    RootedNativeObject obj(cx, NewNativeBuiltinClassInstance(cx, &JSObject::class_, allocKind));
     if (!obj)
         return nullptr;
 
@@ -908,7 +909,7 @@ CreateExportObject(JSContext *cx, Handle<AsmJSModuleObject*> moduleObj)
         if (!fun)
             return nullptr;
 
-        JS_ASSERT(func.maybeFieldName() != nullptr);
+        MOZ_ASSERT(func.maybeFieldName() != nullptr);
         RootedId id(cx, NameToId(func.maybeFieldName()));
         RootedValue val(cx, ObjectValue(*fun));
         if (!DefineNativeProperty(cx, obj, id, val, nullptr, nullptr, JSPROP_ENUMERATE))
@@ -1174,7 +1175,7 @@ js::AsmJSFunctionToString(JSContext *cx, HandleFunction fun)
 
     // asm.js functions cannot have been created with a Function constructor
     // as they belong within a module.
-    JS_ASSERT(!(begin == 0 && end == source->length() && source->argumentsNotIncluded()));
+    MOZ_ASSERT(!(begin == 0 && end == source->length() && source->argumentsNotIncluded()));
 
     if (!out.append("function "))
         return nullptr;
@@ -1185,7 +1186,7 @@ js::AsmJSFunctionToString(JSContext *cx, HandleFunction fun)
         // the function name and the rest (arguments + body).
 
         // asm.js functions can't be anonymous
-        JS_ASSERT(fun->atom());
+        MOZ_ASSERT(fun->atom());
         if (!out.append(fun->atom()))
             return nullptr;
 

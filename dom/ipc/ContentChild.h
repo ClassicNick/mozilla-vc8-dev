@@ -293,6 +293,8 @@ public:
 
     virtual bool RecvGeolocationUpdate(const GeoPosition& somewhere) MOZ_OVERRIDE;
 
+    virtual bool RecvUpdateDictionaryList(const InfallibleTArray<nsString>& aDictionaries) MOZ_OVERRIDE;
+
     virtual bool RecvAddPermission(const IPC::Permission& permission) MOZ_OVERRIDE;
 
     virtual bool RecvScreenSizeChanged(const gfxIntSize &size) MOZ_OVERRIDE;
@@ -380,8 +382,8 @@ public:
                                          const uint64_t& aID,
                                          const bool& aIsForApp,
                                          const bool& aIsForBrowser) MOZ_OVERRIDE;
-    virtual PDocAccessibleChild* AllocPDocAccessibleChild(PDocAccessibleChild*, const uint64_t&) MOZ_OVERRIDE;
-    virtual bool DeallocPDocAccessibleChild(PDocAccessibleChild*) MOZ_OVERRIDE;
+
+    void GetAvailableDictionaries(InfallibleTArray<nsString>& aDictionaries);
 
 private:
     virtual void ActorDestroy(ActorDestroyReason why) MOZ_OVERRIDE;
@@ -398,6 +400,8 @@ private:
     nsRefPtr<ConsoleListener> mConsoleListener;
 
     nsTHashtable<nsPtrHashKey<nsIObserver>> mIdleObservers;
+
+    InfallibleTArray<nsString> mAvailableDictionaries;
 
     /**
      * An ID unique to the process containing our corresponding
