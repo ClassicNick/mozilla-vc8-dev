@@ -133,7 +133,7 @@ nsSimplePageSequenceFrame::ComputeCenteringMargin(
   // print-preview scale factor, via ComputePageSequenceTransform().
   // We really want to center *that scaled-up rendering* inside of
   // aContainerContentBoxWidth.  So, we scale up its margin-box here...
-  auto ppScale = PresContext()->GetPrintPreviewScale();
+  float ppScale = PresContext()->GetPrintPreviewScale();
   nscoord scaledChildMarginBoxWidth =
     NSToCoordRound(childMarginBoxWidth * ppScale);
 

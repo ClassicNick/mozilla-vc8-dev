@@ -21,7 +21,6 @@
 #include "imgRequestProxy.h"
 #include "jsapi.h"
 #include "jsfriendapi.h"
-#include "js/OldDebugAPI.h"
 #include "js/Value.h"
 #include "Layers.h"
 #include "MediaDecoder.h"
@@ -3238,7 +3237,8 @@ static const char gPropertiesFiles[nsContentUtils::PropertiesFile_COUNT][56] = {
   "chrome://branding/locale/brand.properties",
   "chrome://global/locale/commonDialogs.properties",
   "chrome://global/locale/mathml/mathml.properties",
-  "chrome://global/locale/security/security.properties"
+  "chrome://global/locale/security/security.properties",
+  "chrome://necko/locale/necko.properties"
 };
 
 /* static */ nsresult
@@ -5983,7 +5983,8 @@ nsContentUtils::CreateArrayBuffer(JSContext *aCx, const nsACString& aData,
 
   if (dataLen > 0) {
     NS_ASSERTION(JS_IsArrayBufferObject(*aResult), "What happened?");
-    memcpy(JS_GetArrayBufferData(*aResult), aData.BeginReading(), dataLen);
+    JS::AutoCheckCannotGC nogc;
+    memcpy(JS_GetArrayBufferData(*aResult, nogc), aData.BeginReading(), dataLen);
   }
 
   return NS_OK;
