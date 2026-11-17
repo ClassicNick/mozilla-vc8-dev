@@ -2193,7 +2193,7 @@ XMLHttpRequest::Send(File& aBody, ErrorResult& aRv)
     return;
   }
 
-  SendInternal(EmptyString(), Move(buffer), clonedObjects, aRv);
+  SendInternal(EmptyString(), OldMove(buffer), clonedObjects, aRv);
 }
 
 void

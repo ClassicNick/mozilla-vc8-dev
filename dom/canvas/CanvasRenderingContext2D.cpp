@@ -116,7 +116,6 @@
 #undef free // apparently defined by some windows header, clashing with a free()
             // method in SkTypes.h
 #include "SkiaGLGlue.h"
-#ifdef USE_SKIA
 #include "SurfaceTypes.h"
 #endif
 
@@ -1023,6 +1022,7 @@ CanvasRenderingContext2D::Redraw(const mgfx::Rect &r)
 void
 CanvasRenderingContext2D::DidRefresh()
 {
+#ifdef USE_SKIA
   if (IsTargetValid() && SkiaGLTex()) {
     SkiaGLGlue* glue = gfxPlatform::GetPlatform()->GetSkiaGLGlue();
     MOZ_ASSERT(glue);
@@ -1030,6 +1030,7 @@ CanvasRenderingContext2D::DidRefresh()
     auto gl = glue->GetGLContext();
     gl->FlushIfHeavyGLCallsSinceLastFlush();
   }
+#endif
 }
 
 void
@@ -4866,13 +4867,16 @@ CanvasRenderingContext2D::GetCanvasLayer(nsDisplayListBuilder* aBuilder,
     CanvasLayer::Data data;
 
     GLuint skiaGLTex = SkiaGLTex();
+#ifdef USE_SKIA
     if (skiaGLTex) {
       SkiaGLGlue* glue = gfxPlatform::GetPlatform()->GetSkiaGLGlue();
       MOZ_ASSERT(glue);
 
       data.mGLContext = glue->GetGLContext();
       data.mFrontbufferGLTex = skiaGLTex;
-    } else {
+    } else 
+#endif
+	{
       data.mDrawTarget = mTarget;
     }
 
@@ -4912,6 +4916,7 @@ CanvasRenderingContext2D::GetCanvasLayer(nsDisplayListBuilder* aBuilder,
   data.mHasAlpha = !mOpaque;
 
   GLuint skiaGLTex = SkiaGLTex();
+#ifdef USE_SKIA
   if (skiaGLTex) {
     canvasLayer->SetPreTransactionCallback(
             CanvasRenderingContext2DUserData::PreTransactionCallback, userData);
@@ -4921,7 +4926,9 @@ CanvasRenderingContext2D::GetCanvasLayer(nsDisplayListBuilder* aBuilder,
 
     data.mGLContext = glue->GetGLContext();
     data.mFrontbufferGLTex = skiaGLTex;
-  } else {
+  } else 
+#endif
+  {
     data.mDrawTarget = mTarget;
   }
 

@@ -1199,7 +1199,7 @@ class AsmJSModule
         MOZ_ASSERT(funcSrcBegin < funcSrcEnd);
         ExportedFunction func(name, funcSrcBegin - srcStart_, funcSrcEnd - srcStart_,
                               maybeFieldName);
-        return exports_.length() < UINT32_MAX && exports_.append(mozilla::Move(func));
+        return exports_.length() < UINT32_MAX && exports_.append(mozilla::OldMove(func));
     }
     unsigned numExportedFunctions() const {
         MOZ_ASSERT(isFinishedWithFunctionBodies());

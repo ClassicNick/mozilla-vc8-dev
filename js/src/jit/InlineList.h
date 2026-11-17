@@ -216,7 +216,7 @@ class InlineListNode : public InlineForwardListNode<T>
     // stored in a resizable Vector -- when the Vector resizes, the new storage
     // is initialized by this move constructor. |other| is a reference to the
     // old node which the |this| node here is replacing.
-    InlineListNode(InlineListNode<T> &&other)
+    explicit InlineListNode(InlineListNode<T> &other)
       : InlineForwardListNode<T>(other.next)
     {
         InlineListNode<T> *newNext = static_cast<InlineListNode<T> *>(other.next);
