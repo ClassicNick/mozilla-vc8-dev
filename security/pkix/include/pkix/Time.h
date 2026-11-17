@@ -27,7 +27,7 @@
 
 #include <ctime>
 #include <limits>
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 #include "pkix/Result.h"
 

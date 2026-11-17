@@ -17,7 +17,7 @@
 #ifndef GMP_AUDIO_FRAME_h_
 #define GMP_AUDIO_FRAME_h_
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 #include "gmp-errors.h"
 #include "gmp-decryption.h"
 

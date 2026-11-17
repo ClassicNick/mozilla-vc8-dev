@@ -7,7 +7,7 @@
 #ifndef BOX_H_
 #define BOX_H_
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 #include "nsTArray.h"
 #include "MediaResource.h"
 #include "mozilla/Endian.h"

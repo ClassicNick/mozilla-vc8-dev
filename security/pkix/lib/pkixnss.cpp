@@ -180,8 +180,7 @@ DigestBuf(Input item, /*out*/ uint8_t* digestBuf, size_t digestBufLen)
   }
   SECItem itemSECItem = UnsafeMapInputToSECItem(item);
   if (itemSECItem.len >
-        static_cast<decltype(itemSECItem.len)>(
-          std::numeric_limits<int32_t>::max())) {
+        std::numeric_limits<int32_t>::max()) {
     PR_NOT_REACHED("large items should not be possible here");
     return Result::FATAL_ERROR_INVALID_ARGS;
   }

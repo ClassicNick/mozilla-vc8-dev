@@ -297,7 +297,6 @@ if CONFIG['OS_ARCH'] == 'WINNT':
         'uxtheme',
         'setupapi',
         'secur32',
-        'sensorsapi',
         'portabledeviceguids',
         'windowscodecs',
         'wininet',

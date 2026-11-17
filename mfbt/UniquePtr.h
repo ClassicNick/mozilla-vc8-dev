@@ -230,6 +230,7 @@ public:
     : mTuple(aOther.release(), aOther.getDeleter())
   {}
 
+#ifdef MOZ_HAVE_CXX11_NULLPTR
   template<typename N>
   UniquePtr(N,
             typename EnableIf<IsNullPointer<N>::value, int>::Type aDummy = 0)
@@ -238,6 +239,7 @@ public:
     static_assert(!IsPointer<D>::value, "must provide a deleter instance");
     static_assert(!IsReference<D>::value, "must provide a deleter instance");
   }
+#endif
 
   template<typename U, class E>
   UniquePtr(UniquePtr<U, E>& aOther,
@@ -409,6 +411,7 @@ public:
     : mTuple(aOther.release(), aOther.getDeleter())
   {}
 
+#ifdef MOZ_HAVE_CXX11_NULLPTR
   template<typename N>
   UniquePtr(N,
             typename EnableIf<IsNullPointer<N>::value, int>::Type aDummy = 0)
@@ -417,6 +420,7 @@ public:
     static_assert(!IsPointer<D>::value, "must provide a deleter instance");
     static_assert(!IsReference<D>::value, "must provide a deleter instance");
   }
+#endif
 
   ~UniquePtr() { reset(nullptr); }
 
@@ -465,6 +469,7 @@ public:
     }
   }
 
+#ifdef MOZ_HAVE_CXX11_NULLPTR
 private:
   // Kill off all remaining overloads that aren't true nullptr (the overload
   // above should handle that) or emulated nullptr (which acts like int/long
@@ -478,6 +483,7 @@ private:
                                                    long>::Type>::value,
                                int>::Type aDummy = 0)
 	{ };
+#endif
 
 public:
   void swap(UniquePtr& aOther) { mTuple.swap(aOther.mTuple); }

@@ -20,7 +20,7 @@
 #include "gmp-errors.h"
 #include "gmp-audio-samples.h"
 #include "gmp-audio-codec.h"
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 // ALL METHODS MUST BE CALLED ON THE MAIN THREAD
 class GMPAudioDecoderCallback

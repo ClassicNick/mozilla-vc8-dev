@@ -32,7 +32,9 @@
 
 #include "mozilla/layers/CompositorParent.h"   // for CompositorParent::IsInCompositorThread
 #include "DeviceManagerD3D9.h"
+#ifdef MOZ_ENABLE_D3D10_LAYER
 #include "mozilla/layers/ReadbackManagerD3D11.h"
+#endif
 
 #include "WinUtils.h"
 
@@ -1447,7 +1449,6 @@ gfxWindowsPlatform::GetD3D11Device()
 
   return mD3D11Device;
 }
-#endif
 
 ReadbackManagerD3D11*
 gfxWindowsPlatform::GetReadbackManager()
@@ -1458,6 +1459,7 @@ gfxWindowsPlatform::GetReadbackManager()
 
   return mD3D11ReadbackManager;
 }
+#endif
 
 bool
 gfxWindowsPlatform::IsOptimus()

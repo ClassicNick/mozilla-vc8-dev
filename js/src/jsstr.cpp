@@ -866,14 +866,14 @@ ToUpperCase(JSContext *cx, JSLinearString *str)
                 return nullptr;
 
             ToUpperCaseImpl(buf.get(), chars, i, length);
-            newChars.construct<Latin1CharPtr>(buf);
+            newChars.construct<Latin1CharPtr>(mozilla::OldMove(buf));
         } else {
             TwoByteCharPtr buf = cx->make_pod_array<jschar>(length + 1);
             if (!buf)
                 return nullptr;
 
             ToUpperCaseImpl(buf.get(), chars, i, length);
-            newChars.construct<TwoByteCharPtr>(buf);
+            newChars.construct<TwoByteCharPtr>(mozilla::OldMove(buf));
         }
     }
 

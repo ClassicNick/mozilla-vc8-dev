@@ -46,7 +46,7 @@ GMPTimerParent::RecvSetTimer(const uint32_t& aTimerId,
 PLDHashOperator
 GMPTimerParent::CancelTimers(nsPtrHashKey<Context>* aContext, void* aClosure)
 {
-  auto context = aContext->GetKey();
+  Context* context = aContext->GetKey();
   context->mTimer->Cancel();
   delete context;
   return PL_DHASH_NEXT;

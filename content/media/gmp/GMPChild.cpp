@@ -235,7 +235,7 @@ GMPChild::DeallocPGMPDecryptorChild(PGMPDecryptorChild* aActor)
 bool
 GMPChild::RecvPGMPAudioDecoderConstructor(PGMPAudioDecoderChild* aActor)
 {
-  auto vdc = static_cast<GMPAudioDecoderChild*>(aActor);
+  GMPAudioDecoderChild* vdc = static_cast<GMPAudioDecoderChild*>(aActor);
 
   void* vd = nullptr;
   GMPErr err = mGetAPIFunc("decode-audio", &vdc->Host(), &vd);
