@@ -337,6 +337,7 @@ pref("media.peerconnection.video.max_bitrate", 2000);
 #endif
 pref("media.navigator.permission.disabled", false);
 pref("media.peerconnection.default_iceservers", "[{\"url\": \"stun:stun.services.mozilla.com\"}]");
+pref("media.peerconnection.ice.loopback", false); // Set only for testing in offline environments.
 pref("media.peerconnection.use_document_iceservers", true);
 // Do not enable identity before ensuring that the UX cannot be spoofed
 // see Bug 884573 for details
@@ -534,6 +535,11 @@ pref("gfx.color_management.enablev4", false);
 
 pref("gfx.downloadable_fonts.enabled", true);
 pref("gfx.downloadable_fonts.fallback_delay", 3000);
+#ifdef RELEASE_BUILD
+pref("gfx.downloadable_fonts.woff2.enabled", false);
+#else
+pref("gfx.downloadable_fonts.woff2.enabled", true);
+#endif
 
 #ifdef ANDROID
 pref("gfx.bundled_fonts.enabled", true);
@@ -1241,16 +1247,6 @@ pref("network.http.spdy.ping-timeout", 8);
 pref("network.http.spdy.send-buffer-size", 131072);
 pref("network.http.spdy.allow-push", true);
 pref("network.http.spdy.push-allowance", 131072);
-
-// alt-svc allows separation of transport routing from
-// the origin host without using a proxy.
-#ifdef RELEASE_BUILD
-pref("network.http.altsvc.enabled", false);
-pref("network.http.altsvc.oe", false);
-#else
-pref("network.http.altsvc.enabled", true);
-pref("network.http.altsvc.oe", true);
-#endif
 
 pref("network.http.diagnostics", false);
 
@@ -2285,6 +2281,9 @@ pref("dom.ipc.plugins.reportCrashURL", true);
 pref("dom.ipc.plugins.unloadTimeoutSecs", 30);
 
 pref("dom.ipc.processCount", 1);
+
+// Enable caching of Moz2D Path objects for SVG geometry elements
+pref("svg.path-caching.enabled", true);
 
 // Enable the use of display-lists for SVG hit-testing and painting.
 pref("svg.display-lists.hit-testing.enabled", true);
@@ -4340,3 +4339,8 @@ pref("dom.udpsocket.enabled", false);
 //     nsHostResolver.cpp.
 pref("dns.ttl-experiment.variant", 0);
 pref("dns.ttl-experiment.enabled", true);
+
+// Use raw ICU instead of CoreServices API in Unicode collation
+#ifdef XP_MACOSX
+pref("intl.collation.mac.use_icu", true);
+#endif

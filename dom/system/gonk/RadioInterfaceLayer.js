@@ -53,12 +53,6 @@ const RADIOINTERFACE_CID =
   Components.ID("{6a7c91f0-a2b3-4193-8562-8969296c0b54}");
 const RILNETWORKINTERFACE_CID =
   Components.ID("{3bdd52a9-3965-4130-b569-0ac5afed045e}");
-const ICCINFO_CID =
-  Components.ID("{52eec7f0-26a4-11e4-8c21-0800200c9a66}");
-const GSMICCINFO_CID =
-  Components.ID("{d90c4261-a99d-47bc-8b05-b057bb7e8f8a}");
-const CDMAICCINFO_CID =
-  Components.ID("{39ba3c08-aacc-46d0-8c04-9b619c387061}");
 const NEIGHBORINGCELLINFO_CID =
   Components.ID("{f9dfe26a-851e-4a8b-a769-cbb1baae7ded}");
 const GSMCELLINFO_CID =
@@ -506,8 +500,8 @@ XPCOMUtils.defineLazyGetter(this, "gRadioEnabledController", function() {
 
     _isCardPresentAtClient: function(clientId) {
       let cardState = _ril.getRadioInterface(clientId).rilContext.cardState;
-      return cardState !== RIL.GECKO_CARDSTATE_UNDETECTED &&
-             cardState !== RIL.GECKO_CARDSTATE_UNKNOWN;
+      return cardState !== Ci.nsIIccProvider.CARD_STATE_UNDETECTED &&
+             cardState !== Ci.nsIIccProvider.CARD_STATE_UNKNOWN;
     },
 
     _isRadioAbleToEnableAtClient: function(clientId, numCards) {
@@ -941,16 +935,9 @@ try {
 
 function IccInfo() {}
 IccInfo.prototype = {
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIDOMMozIccInfo]),
-  classID: ICCINFO_CID,
-  classInfo: XPCOMUtils.generateCI({
-    classID:          ICCINFO_CID,
-    classDescription: "MozIccInfo",
-    flags:            Ci.nsIClassInfo.DOM_OBJECT,
-    interfaces:       [Ci.nsIDOMMozIccInfo]
-  }),
+  QueryInterface: XPCOMUtils.generateQI([Ci.nsIIccInfo]),
 
-  // nsIDOMMozIccInfo
+  // nsIIccInfo
 
   iccType: null,
   iccid: null,
@@ -964,16 +951,10 @@ IccInfo.prototype = {
 function GsmIccInfo() {}
 GsmIccInfo.prototype = {
   __proto__: IccInfo.prototype,
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIDOMMozGsmIccInfo]),
-  classID: GSMICCINFO_CID,
-  classInfo: XPCOMUtils.generateCI({
-    classID:          GSMICCINFO_CID,
-    classDescription: "MozGsmIccInfo",
-    flags:            Ci.nsIClassInfo.DOM_OBJECT,
-    interfaces:       [Ci.nsIDOMMozGsmIccInfo]
-  }),
+  QueryInterface: XPCOMUtils.generateQI([Ci.nsIGsmIccInfo,
+                                         Ci.nsIIccInfo]),
 
-  // nsIDOMMozGsmIccInfo
+  // nsIGsmIccInfo
 
   msisdn: null
 };
@@ -981,16 +962,10 @@ GsmIccInfo.prototype = {
 function CdmaIccInfo() {}
 CdmaIccInfo.prototype = {
   __proto__: IccInfo.prototype,
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIDOMMozCdmaIccInfo]),
-  classID: CDMAICCINFO_CID,
-  classInfo: XPCOMUtils.generateCI({
-    classID:          CDMAICCINFO_CID,
-    classDescription: "MozCdmaIccInfo",
-    flags:            Ci.nsIClassInfo.DOM_OBJECT,
-    interfaces:       [Ci.nsIDOMMozCdmaIccInfo]
-  }),
+  QueryInterface: XPCOMUtils.generateQI([Ci.nsICdmaIccInfo,
+                                         Ci.nsIIccInfo]),
 
-  // nsIDOMMozCdmaIccInfo
+  // nsICdmaIccInfo
 
   mdn: null,
   prlVersion: 0
@@ -1825,7 +1800,7 @@ function RadioInterface(aClientId, aWorkerMessenger) {
   aWorkerMessenger.registerClient(aClientId, this);
 
   this.rilContext = {
-    cardState:      RIL.GECKO_CARDSTATE_UNKNOWN,
+    cardState:      Ci.nsIIccProvider.CARD_STATE_UNKNOWN,
     iccInfo:        null,
     imsi:           null
   };
@@ -2141,10 +2116,10 @@ RadioInterface.prototype = {
    * Get phone number from iccInfo.
    *
    * If the icc card is gsm card, the phone number is in msisdn.
-   * @see nsIDOMMozGsmIccInfo
+   * @see nsIGsmIccInfo
    *
    * Otherwise, the phone number is in mdn.
-   * @see nsIDOMMozCdmaIccInfo
+   * @see nsICdmaIccInfo
    */
   getPhoneNumber: function() {
     let iccInfo = this.rilContext.iccInfo;
@@ -2154,7 +2129,7 @@ RadioInterface.prototype = {
     }
 
     // After moving SMS code out of RadioInterfaceLayer, we could use
-    // |iccInfo instanceof Ci.nsIDOMMozGsmIccInfo| here.
+    // |iccInfo instanceof Ci.nsIGsmIccInfo| here.
     // TODO: Bug 873351 - B2G SMS: move SMS code out of RadioInterfaceLayer to
     //                    SmsService
     let number = (iccInfo instanceof GsmIccInfo) ? iccInfo.msisdn : iccInfo.mdn;
@@ -3661,7 +3636,7 @@ RadioInterface.prototype = {
                  radioState == RIL.GECKO_RADIOSTATE_DISABLED) {
         if (DEBUG) this.debug("Error! Radio is disabled when sending SMS.");
         errorCode = Ci.nsIMobileMessageCallback.RADIO_DISABLED_ERROR;
-      } else if (this.rilContext.cardState != "ready") {
+      } else if (this.rilContext.cardState != Ci.nsIIccProvider.CARD_STATE_READY) {
         if (DEBUG) this.debug("Error! SIM card is not ready when sending SMS.");
         errorCode = Ci.nsIMobileMessageCallback.NO_SIM_CARD_ERROR;
       }

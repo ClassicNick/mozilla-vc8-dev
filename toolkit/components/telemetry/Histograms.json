@@ -1193,16 +1193,6 @@
     "kind": "boolean",
     "description": "Whether a HTTP base page load was over SSL or not."
   },
-  "HTTP_TRANSACTION_USE_ALTSVC": {
-    "expires_in_version": "never",
-    "kind": "boolean",
-    "description": "Whether a HTTP transaction was routed via Alt-Svc or not."
-  },
-  "HTTP_TRANSACTION_USE_ALTSVC_OE": {
-    "expires_in_version": "never",
-    "kind": "boolean",
-    "description": "Whether a HTTP transaction routed via Alt-Svc was scheme=http"
-  },
   "SSL_HANDSHAKE_VERSION": {
     "expires_in_version": "never",
     "kind": "enumerated",
@@ -6227,6 +6217,11 @@
     "kind": "boolean",
     "description": "The result of the startup default desktop browser check."
   },
+  "BROWSER_IS_ASSIST_DEFAULT": {
+    "expires_in_version": "never",
+    "kind": "boolean",
+    "description": "The result of the default browser check for assist intent."
+  },
   "MIXED_CONTENT_PAGE_LOAD": {
     "expires_in_version": "never",
     "kind": "enumerated",
@@ -6757,6 +6752,11 @@
     "expires_in_version": "never",
     "kind": "boolean",
     "description": "Stores 1 if generating a call URL succeeded, and 0 if it failed."
+  },
+  "LOOP_CLIENT_CALL_URL_SHARED": {
+    "expires_in_version": "never",
+    "kind": "boolean",
+    "description": "Stores 1 every time the URL is copied or shared."
   },
   "E10S_AUTOSTART": {
     "expires_in_version": "never",
