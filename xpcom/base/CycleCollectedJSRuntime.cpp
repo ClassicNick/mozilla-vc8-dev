@@ -348,7 +348,7 @@ NS_IMETHODIMP
 JSGCThingParticipant::Traverse(void* aPtr,
                                nsCycleCollectionTraversalCallback& aCb)
 {
-  auto runtime = reinterpret_cast<CycleCollectedJSRuntime*>(
+  CycleCollectedJSRuntime* runtime = reinterpret_cast<CycleCollectedJSRuntime*>(
     reinterpret_cast<char*>(this) - offsetof(CycleCollectedJSRuntime,
                                              mGCThingCycleCollectorGlobal));
 
@@ -364,7 +364,7 @@ static JSGCThingParticipant sGCThingCycleCollectorGlobal;
 NS_IMETHODIMP
 JSZoneParticipant::Traverse(void* aPtr, nsCycleCollectionTraversalCallback& aCb)
 {
-  auto runtime = reinterpret_cast<CycleCollectedJSRuntime*>(
+  CycleCollectedJSRuntime* runtime = reinterpret_cast<CycleCollectedJSRuntime*>(
     reinterpret_cast<char*>(this) - offsetof(CycleCollectedJSRuntime,
                                              mJSZoneCycleCollectorGlobal));
 

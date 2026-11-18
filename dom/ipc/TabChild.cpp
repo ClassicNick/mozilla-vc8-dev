@@ -153,8 +153,8 @@ private:
   nsCOMPtr<nsITimer> mTimer;
 };
 
-NS_IMPL_ISUPPORTS(TabChild::DelayedFireSingleTapEvent,
-                  nsITimerCallback)
+NS_IMPL_ISUPPORTS1(TabChild::DelayedFireSingleTapEvent,
+                   nsITimerCallback)
 
 class TabChild::DelayedFireContextMenuEvent MOZ_FINAL : public nsITimerCallback
 {
@@ -182,8 +182,8 @@ private:
   TabChild *mTabChild;
 };
 
-NS_IMPL_ISUPPORTS(TabChild::DelayedFireContextMenuEvent,
-                  nsITimerCallback)
+NS_IMPL_ISUPPORTS1(TabChild::DelayedFireContextMenuEvent,
+                   nsITimerCallback)
 
 TabChildBase::TabChildBase()
   : mContentDocumentIsDisplayed(false)

@@ -151,8 +151,8 @@ CreatePBufferSurface(GLLibraryEGL* egl,
                      EGLConfig config,
                      const gfx::IntSize& size)
 {
-    auto width = size.width;
-    auto height = size.height;
+    const int32_t width = size.width;
+    const int32_t height = size.height;
 
     EGLint attribs[] = {
         LOCAL_EGL_WIDTH, width,

@@ -1261,7 +1261,7 @@ void nsDisplayList::PaintForFrame(nsDisplayListBuilder* aBuilder,
 
   UniquePtr<LayerProperties> props;
   if (computeInvalidRect) {
-    props = Move(LayerProperties::CloneFrom(layerManager->GetRoot()));
+    props = LayerProperties::CloneFrom(layerManager->GetRoot());
   }
 
   ContainerLayerParameters containerParameters

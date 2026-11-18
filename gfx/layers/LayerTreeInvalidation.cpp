@@ -218,7 +218,7 @@ struct ContainerLayerProperties : public LayerPropertiesBase
     , mPreYScale(aLayer->GetPreYScale())
   {
     for (Layer* child = aLayer->GetFirstChild(); child; child = child->GetNextSibling()) {
-      mChildren.AppendElement(Move(CloneLayerTreePropertiesInternal(child)));
+      mChildren.AppendElement(OldMove(CloneLayerTreePropertiesInternal(child)));
     }
   }
 
@@ -393,11 +393,11 @@ CloneLayerTreePropertiesInternal(Layer* aRoot)
   switch (aRoot->GetType()) {
     case Layer::TYPE_CONTAINER:
     case Layer::TYPE_REF:
-      return MakeUnique<ContainerLayerProperties>(aRoot->AsContainerLayer());
+      return MakeConstUnique<ContainerLayerProperties>(aRoot->AsContainerLayer());
     case Layer::TYPE_COLOR:
-      return MakeUnique<ColorLayerProperties>(static_cast<ColorLayer*>(aRoot));
+      return MakeConstUnique<ColorLayerProperties>(static_cast<ColorLayer*>(aRoot));
     case Layer::TYPE_IMAGE:
-      return MakeUnique<ImageLayerProperties>(static_cast<ImageLayer*>(aRoot));
+      return MakeConstUnique<ImageLayerProperties>(static_cast<ImageLayer*>(aRoot));
     default:
       return MakeUnique<LayerPropertiesBase>(aRoot);
   }

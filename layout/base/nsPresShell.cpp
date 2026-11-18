@@ -6164,7 +6164,7 @@ PresShell::Paint(nsView*        aViewToPaint,
 
       UniquePtr<LayerProperties> props;
       if (computeInvalidRect) {
-        props = Move(LayerProperties::CloneFrom(layerManager->GetRoot()));
+        props = LayerProperties::CloneFrom(layerManager->GetRoot());
       }
 
       MaybeSetupTransactionIdAllocator(layerManager, aViewToPaint);

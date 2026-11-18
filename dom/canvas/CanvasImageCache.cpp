@@ -172,7 +172,7 @@ private:
   ImageCache* mImageCache;
 };
 
-NS_IMPL_ISUPPORTS(ImageCacheObserver, nsIObserver)
+NS_IMPL_ISUPPORTS1(ImageCacheObserver, nsIObserver)
 
 class CanvasImageCacheShutdownObserver MOZ_FINAL : public nsIObserver
 {

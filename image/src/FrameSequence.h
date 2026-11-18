@@ -41,11 +41,11 @@ public:
     , mFrameData(nullptr)
   {}
 
-  FrameDataPair(FrameDataPair&& aOther)
-    : mFrame(Move(aOther.mFrame))
-    , mFrameData(aOther.mFrameData)
+  FrameDataPair(MoveRef<FrameDataPair> aOther)
+    : mFrame(OldMove(aOther->mFrame))
+    , mFrameData(aOther->mFrameData)
   {
-    aOther.mFrameData = nullptr;
+    aOther->mFrameData = nullptr;
   }
 
   ~FrameDataPair()
@@ -64,12 +64,11 @@ public:
     return *this;
   }
 
-  FrameDataPair& operator=(FrameDataPair&& aOther)
+  FrameDataPair& operator=(MoveRef<FrameDataPair> aOther)
   {
-    MOZ_ASSERT(&aOther != this, "Moving to self");
-    mFrame = Move(aOther.mFrame);
-    mFrameData = aOther.mFrameData;
-    aOther.mFrameData = nullptr;
+    mFrame = OldMove(aOther->mFrame);
+    mFrameData = aOther->mFrameData;
+    aOther->mFrameData = nullptr;
     return *this;
   }
 

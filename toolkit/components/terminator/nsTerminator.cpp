@@ -113,7 +113,7 @@ static char const *const sObserverTopics[] = {
   "xpcom-shutdown",
 };
 
-NS_IMPL_ISUPPORTS(nsTerminator, nsIObserver)
+NS_IMPL_ISUPPORTS1(nsTerminator, nsIObserver)
 
 nsTerminator::nsTerminator()
   : mInitialized(false)
