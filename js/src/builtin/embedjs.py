@@ -121,6 +121,17 @@ def process_msgs(cpp, msgs):
   os.remove(tmp)
   return processed
 
+def messages(jsmsg):
+  defines = []
+  for line in open(jsmsg):
+    match = re.match("MSG_DEF\((JSMSG_(\w+))", line)
+    if match:
+      defines.append("#define %s %i" % (match.group(1), len(defines)))
+    else:
+      # Make sure that MSG_DEF isn't preceded by whitespace
+      assert not line.strip().startswith("MSG_DEF")
+  return '\n'.join(defines)
+
 def main():
   env = {}
   def define_env(option, opt, value, parser):

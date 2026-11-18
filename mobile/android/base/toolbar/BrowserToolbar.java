@@ -165,6 +165,7 @@ public class BrowserToolbar extends ThemedRelativeLayout
     private static final int FORWARD_ANIMATION_DURATION = 450;
 
     private final LightweightTheme theme;
+    private final ToolbarPrefs prefs;
 
     public BrowserToolbar(Context context) {
         this(context, null);
@@ -197,7 +198,8 @@ public class BrowserToolbar extends ThemedRelativeLayout
         urlBarEntryDefaultLayoutParams = (RelativeLayout.LayoutParams) urlBarEntry.getLayoutParams();
         // API level 19 adds a RelativeLayout.LayoutParams copy constructor, so we explicitly cast
         // to ViewGroup.MarginLayoutParams to ensure consistency across platforms.
-        urlBarEntryShrunkenLayoutParams = new RelativeLayout.LayoutParams(urlBarEntryDefaultLayoutParams);
+        urlBarEntryShrunkenLayoutParams =
+                new RelativeLayout.LayoutParams((ViewGroup.MarginLayoutParams) urlBarEntryDefaultLayoutParams);
         // Note: a shrunken phone layout is not displayed on any known devices,
         // and thus shrunken layout params for phone are not maintained.
         if (HardwareUtils.isTablet()) {
@@ -279,6 +281,10 @@ public class BrowserToolbar extends ThemedRelativeLayout
                 updateTabCountAndAnimate(Tabs.getInstance().getDisplayCount());
             }
         };
+
+        prefs = new ToolbarPrefs();
+        urlDisplayLayout.setToolbarPrefs(prefs);
+        urlEditLayout.setToolbarPrefs(prefs);
     }
 
     public ArrayList<View> populateTabletViews() {
@@ -312,6 +318,8 @@ public class BrowserToolbar extends ThemedRelativeLayout
     @Override
     public void onAttachedToWindow() {
         super.onAttachedToWindow();
+
+        prefs.open();
 
         setOnClickListener(new Button.OnClickListener() {
             @Override
@@ -461,6 +469,13 @@ public class BrowserToolbar extends ThemedRelativeLayout
                 }
             });
         }
+    }
+
+    @Override
+    public void onDetachedFromWindow() {
+        super.onDetachedFromWindow();
+
+        prefs.close();
     }
 
     public void setProgressBar(ToolbarProgressView progressBar) {
