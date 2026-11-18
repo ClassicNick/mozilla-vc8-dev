@@ -51,7 +51,7 @@ _SUBDIR_CONFIG_ARGS="$ac_configure_args"
 dnl Set the version number of the libs included with mozilla
 dnl ========================================================
 MOZJPEG=62
-MOZPNG=10610
+MOZPNG=10613
 NSPR_VERSION=4
 NSPR_MINVER=4.10.3
 NSS_VERSION=3
@@ -72,7 +72,7 @@ GCONF_VERSION=1.2.1
 GIO_VERSION=2.20
 STARTUP_NOTIFICATION_VERSION=0.8
 DBUS_VERSION=0.60
-SQLITE_VERSION=3.8.5
+SQLITE_VERSION=3.8.6
 
 MSMANIFEST_TOOL=
 
@@ -2071,6 +2071,9 @@ ia64*-hpux*)
         DLL_PREFIX=
         IMPORT_LIB_SUFFIX=dll.a
 
+        WIN32_CONSOLE_EXE_LDFLAGS=-mconsole
+        WIN32_GUI_EXE_LDFLAGS=-mwindows
+
         # We use mix of both POSIX and Win32 printf format across the tree, so format
         # warnings are useless on mingw.
         MOZ_C_SUPPORTS_WARNING(-Wno-, format, ac_c_has_wno_format)
@@ -2103,7 +2106,15 @@ ia64*-hpux*)
         MKCSHLIB='$(LD) -NOLOGO -DLL -OUT:$@ -PDB:$(LINK_PDBFILE) $(DSO_LDOPTS)'
         MKSHLIB_FORCE_ALL=
         MKSHLIB_UNFORCE_ALL=
-        DSO_LDOPTS=-SUBSYSTEM:WINDOWS
+        dnl Set subsystem version 5 for Windows XP.
+        if test "$CPU_ARCH" = "x86"; then
+            WIN32_SUBSYSTEM_VERSION=5.01
+        else
+            WIN32_SUBSYSTEM_VERSION=5.02
+        fi
+        WIN32_CONSOLE_EXE_LDFLAGS=-SUBSYSTEM:CONSOLE,$WIN32_SUBSYSTEM_VERSION
+        WIN32_GUI_EXE_LDFLAGS=-SUBSYSTEM:WINDOWS,$WIN32_SUBSYSTEM_VERSION
+        DSO_LDOPTS=-SUBSYSTEM:WINDOWS,$WIN32_SUBSYSTEM_VERSION
         _USE_CPP_INCLUDE_FLAG=1
         _DEFINES_CFLAGS='-FI $(DEPTH)/dist/include/mozilla-config.h -DMOZILLA_CLIENT'
         _DEFINES_CXXFLAGS='-FI $(DEPTH)/dist/include/mozilla-config.h -DMOZILLA_CLIENT'
@@ -3808,7 +3819,6 @@ MOZ_REFLOW_PERF=
 MOZ_SAFE_BROWSING=
 MOZ_HELP_VIEWER=
 MOZ_SPELLCHECK=1
-MOZ_ANDROID_OMTC=
 MOZ_ANDROID_APZ=
 MOZ_TOOLKIT_SEARCH=1
 MOZ_UI_LOCALE=en-US
@@ -3841,6 +3851,7 @@ MOZ_AUDIO_CHANNEL_MANAGER=
 NSS_NO_LIBPKIX=
 MOZ_CONTENT_SANDBOX=
 MOZ_GMP_SANDBOX=
+MOZ_SANDBOX=1
 JSGC_USE_EXACT_ROOTING=1
 JSGC_GENERATIONAL=
 
@@ -3904,6 +3915,11 @@ else
   if test "$MOZ_BUILD_APP" = "mobile" ; then
     AC_MSG_RESULT([none])
     AC_MSG_ERROR([--enable-application=mobile is no longer supported.])
+  fi
+  # Support comm-central.
+  if test -n "$EXTERNAL_SOURCE_DIR" ; then
+    MOZ_BUILD_APP="$EXTERNAL_SOURCE_DIR/$MOZ_BUILD_APP"
+    MOZ_BUILD_APP=`${PYTHON} -c "import os.path; print(os.path.relpath(\"${MOZ_BUILD_APP}\", \"${srcdir}\"))"`
   fi
   # We have a valid application only if it has a build.mk file in its top
   # directory.
@@ -4802,14 +4818,6 @@ if test -n "$MOZ_ANDROID_HISTORY"; then
     else
         AC_MSG_ERROR([Cannot use MOZ_ANDROID_HISTORY alongside MOZ_PLACES.])
     fi
-fi
-
-dnl ========================================================
-dnl = Build with the Android compositor
-dnl ========================================================
-if test -n "$MOZ_ANDROID_OMTC"; then
-     dnl Do this if defined in confvars.sh
-     AC_DEFINE(MOZ_ANDROID_OMTC)
 fi
 
 dnl ========================================================
@@ -6376,10 +6384,18 @@ fi
 AC_SUBST(NSS_NO_LIBPKIX)
 
 dnl ========================================================
+dnl = Sandboxing support
+dnl ========================================================
+MOZ_ARG_DISABLE_BOOL(sandbox,
+[  --disable-sandbox        Disable sandboxing support],
+    MOZ_SANDBOX=,
+    MOZ_SANDBOX=1)
+
+dnl ========================================================
 dnl = Content process sandboxing
 dnl ========================================================
 if test -n "$gonkdir"; then
-    MOZ_CONTENT_SANDBOX=1
+    MOZ_CONTENT_SANDBOX=$MOZ_SANDBOX
 fi
 
 MOZ_ARG_ENABLE_BOOL(content-sandbox,
@@ -6398,17 +6414,17 @@ dnl = Gecko Media Plugin sandboxing
 dnl ========================================================
 case $OS_TARGET in
 WINNT)
-    MOZ_GMP_SANDBOX=1
+    MOZ_GMP_SANDBOX=$MOZ_SANDBOX
     ;;
 Linux)
     case $CPU_ARCH in
     x86_64|x86)
-        MOZ_GMP_SANDBOX=1
+        MOZ_GMP_SANDBOX=$MOZ_SANDBOX
         ;;
     esac
     ;;
 Darwin)
-    MOZ_GMP_SANDBOX=1
+    MOZ_GMP_SANDBOX=$MOZ_SANDBOX
     ;;
 esac
 
@@ -6417,6 +6433,17 @@ if test -n "$MOZ_GMP_SANDBOX"; then
 fi
 
 AC_SUBST(MOZ_GMP_SANDBOX)
+
+if test -z "$MOZ_CONTENT_SANDBOX" -a -z "$MOZ_GMP_SANDBOX"; then
+    MOZ_SANDBOX=
+fi
+
+if test -n "$MOZ_SANDBOX"; then
+    AC_DEFINE(MOZ_SANDBOX)
+fi
+
+AC_SUBST(MOZ_SANDBOX)
+
 
 dnl ========================================================
 dnl =
@@ -8404,7 +8431,6 @@ AC_SUBST(ENABLE_TESTS)
 AC_SUBST(MOZ_UNIVERSALCHARDET)
 AC_SUBST(ACCESSIBILITY)
 AC_SUBST(MOZ_SPELLCHECK)
-AC_SUBST(MOZ_ANDROID_OMTC)
 AC_SUBST(MOZ_ANDROID_APZ)
 AC_SUBST(MOZ_ANDROID_ANR_REPORTER)
 AC_SUBST(MOZ_CRASHREPORTER)
@@ -8525,7 +8551,6 @@ AC_SUBST(MOZ_CHILD_PROCESS_BUNDLE)
 # - MOZ_APP_ID: When set, used for application.ini's "ID" field, and
 # crash reporter server url.
 # - MOZ_PROFILE_MIGRATOR: When set, enables profile migrator.
-# - MOZ_EXTENSION_MANAGER: When set, enabled extension manager.
 
 if test -z "$MOZ_APP_NAME"; then
    MOZ_APP_NAME=`echo $MOZ_APP_BASENAME | tr A-Z a-z`
@@ -8558,7 +8583,6 @@ AC_SUBST(MOZ_APP_ID)
 AC_SUBST(MAR_CHANNEL_ID)
 AC_SUBST(ACCEPTED_MAR_CHANNEL_IDS)
 AC_SUBST(MOZ_PROFILE_MIGRATOR)
-AC_SUBST(MOZ_EXTENSION_MANAGER)
 AC_DEFINE_UNQUOTED(MOZ_APP_UA_NAME, "$MOZ_APP_UA_NAME")
 AC_SUBST(MOZ_APP_UA_NAME)
 AC_DEFINE_UNQUOTED(MOZ_APP_UA_VERSION, "$MOZ_APP_VERSION")
@@ -8735,6 +8759,8 @@ AC_SUBST(CC_VERSION)
 AC_SUBST(CXX_VERSION)
 AC_SUBST(MSMANIFEST_TOOL)
 AC_SUBST(NS_ENABLE_TSF)
+AC_SUBST(WIN32_CONSOLE_EXE_LDFLAGS)
+AC_SUBST(WIN32_GUI_EXE_LDFLAGS)
 
 AC_SUBST(MOZ_WAVE)
 AC_SUBST(MOZ_VORBIS)
@@ -9055,7 +9081,7 @@ if test -n "$_subconfigure_subdir"; then
   srcdir="$srcdir/.."
   _save_ac_configure_args="$ac_configure_args"
   ac_configure_args="$_subconfigure_config_args"
-  AC_OUTPUT_SUBDIRS("$_subconfigure_subdir")
+  AC_OUTPUT_SUBDIRS("$_subconfigure_subdir",$cache_file)
   ac_configure_args="$_save_ac_configure_args"
   srcdir="$_save_srcdir"
 fi

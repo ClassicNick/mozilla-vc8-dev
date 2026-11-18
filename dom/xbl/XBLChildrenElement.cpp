@@ -80,9 +80,9 @@ NS_IMPL_CYCLE_COLLECTING_ADDREF(nsAnonymousContentList)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(nsAnonymousContentList)
 
 NS_INTERFACE_TABLE_HEAD(nsAnonymousContentList)
-  NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
+  NS_WRAPPERCACHE_INTERFACE_TABLE_ENTRY
   NS_INTERFACE_TABLE_INHERITED2(nsAnonymousContentList, nsINodeList,
-                                                        nsIDOMNodeList)
+                                nsIDOMNodeList)
   NS_INTERFACE_TABLE_TO_MAP_SEGUE
   NS_INTERFACE_MAP_ENTRIES_CYCLE_COLLECTION(nsAnonymousContentList)
   NS_INTERFACE_MAP_ENTRY(nsISupports)

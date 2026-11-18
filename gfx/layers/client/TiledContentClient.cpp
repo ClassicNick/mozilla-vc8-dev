@@ -30,6 +30,7 @@
 #include "gfx2DGlue.h"
 #include "LayersLogging.h"
 #include "UnitTransforms.h"             // for TransformTo
+#include "mozilla/UniquePtr.h"
 
 // This is the minimum area that we deem reasonable to copy from the front buffer to the
 // back buffer on tile updates. If the valid region is smaller than this, we just
@@ -318,6 +319,7 @@ ClientTiledLayerBuffer::GetContentType(SurfaceMode* aMode) const
   if (mode == SurfaceMode::SURFACE_COMPONENT_ALPHA) {
 #if defined(MOZ_GFX_OPTIMIZE_MOBILE) || defined(MOZ_WIDGET_GONK)
      mode = SurfaceMode::SURFACE_SINGLE_CHANNEL_ALPHA;
+  }
 #else
       if (!mThebesLayer->GetParent() ||
           !mThebesLayer->GetParent()->SupportsComponentAlphaChildren() ||
@@ -326,13 +328,13 @@ ClientTiledLayerBuffer::GetContentType(SurfaceMode* aMode) const
       } else {
         content = gfxContentType::COLOR;
       }
-#endif
   } else if (mode == SurfaceMode::SURFACE_OPAQUE) {
     if (mThebesLayer->MayResample()) {
       mode = SurfaceMode::SURFACE_SINGLE_CHANNEL_ALPHA;
       content = gfxContentType::COLOR_ALPHA;
     }
   }
+#endif
 
   if (aMode) {
     *aMode = mode;
@@ -348,6 +350,7 @@ gfxMemorySharedReadLock::gfxMemorySharedReadLock()
 
 gfxMemorySharedReadLock::~gfxMemorySharedReadLock()
 {
+  MOZ_ASSERT(mReadCount == 0);
   MOZ_COUNT_DTOR(gfxMemorySharedReadLock);
 }
 
@@ -434,28 +437,49 @@ class TileExpiry MOZ_FINAL : public nsExpirationTracker<TileClient, 3>
 {
   public:
     TileExpiry() : nsExpirationTracker<TileClient, 3>(1000) {}
+
+    static void AddTile(TileClient* aTile)
+    {
+      if (!sTileExpiry) {
+        sTileExpiry = MakeUnique<TileExpiry>();
+      }
+
+      sTileExpiry->AddObject(aTile);
+    }
+
+    static void RemoveTile(TileClient* aTile)
+    {
+      MOZ_ASSERT(sTileExpiry);
+      sTileExpiry->RemoveObject(aTile);
+    }
+
+    static void Shutdown() {
+      sTileExpiry = nullptr;
+    }
   private:
-    virtual void NotifyExpired(TileClient* aTile)
+    virtual void NotifyExpired(TileClient* aTile) MOZ_OVERRIDE
     {
       aTile->DiscardBackBuffer();
     }
-};
 
-TileExpiry *TileExpirer()
+    static UniquePtr<TileExpiry> sTileExpiry;
+};
+UniquePtr<TileExpiry> TileExpiry::sTileExpiry;
+
+void ShutdownTileCache()
 {
-  static TileExpiry * sTileExpiry = new TileExpiry();
-  return sTileExpiry;
+  TileExpiry::Shutdown();
 }
 
 void
 TileClient::PrivateProtector::Set(TileClient * const aContainer, RefPtr<TextureClient> aNewValue)
 {
   if (mBuffer) {
-    TileExpirer()->RemoveObject(aContainer);
+    TileExpiry::RemoveTile(aContainer);
   }
   mBuffer = aNewValue;
   if (mBuffer) {
-    TileExpirer()->AddObject(aContainer);
+    TileExpiry::AddTile(aContainer);
   }
 }
 
@@ -475,7 +499,7 @@ TileClient::~TileClient()
 {
   if (mExpirationState.IsTracked()) {
     MOZ_ASSERT(mBackBuffer);
-    TileExpirer()->RemoveObject(this);
+    TileExpiry::RemoveTile(this);
   }
 }
 
@@ -570,7 +594,8 @@ CopyFrontToBack(TextureClient* aFront,
 
 void
 TileClient::ValidateBackBufferFromFront(const nsIntRegion& aDirtyRegion,
-                                        bool aCanRerasterizeValidRegion)
+                                        bool aCanRerasterizeValidRegion,
+                                        nsIntRegion& aAddPaintedRegion)
 {
   if (mBackBuffer && mFrontBuffer) {
     gfx::IntSize tileSize = mFrontBuffer->GetSize();
@@ -585,6 +610,8 @@ TileClient::ValidateBackBufferFromFront(const nsIntRegion& aDirtyRegion,
       nsIntRegion regionToCopy = mInvalidBack;
 
       regionToCopy.Sub(regionToCopy, aDirtyRegion);
+
+      aAddPaintedRegion = regionToCopy;
 
       if (regionToCopy.IsEmpty() ||
           (aCanRerasterizeValidRegion &&
@@ -703,6 +730,7 @@ TileClient::GetBackBuffer(const nsIntRegion& aDirtyRegion,
                           gfxContentType aContent,
                           SurfaceMode aMode,
                           bool *aCreatedTextureClient,
+                          nsIntRegion& aAddPaintedRegion,
                           bool aCanRerasterizeValidRegion,
                           RefPtr<TextureClient>* aBackBufferOnWhite)
 {
@@ -735,6 +763,11 @@ TileClient::GetBackBuffer(const nsIntRegion& aDirtyRegion,
     if (aMode == SurfaceMode::SURFACE_COMPONENT_ALPHA) {
       mBackBufferOnWhite = pool->GetTextureClient();
     }
+
+    if (mBackLock) {
+      // Before we Replacing the lock by another one we need to unlock it!
+      mBackLock->ReadUnlock();
+    }
     // Create a lock for our newly created back-buffer.
     if (mManager->AsShadowForwarder()->IsSameProcess()) {
       // If our compositor is in the same process, we can save some cycles by not
@@ -750,7 +783,7 @@ TileClient::GetBackBuffer(const nsIntRegion& aDirtyRegion,
     mInvalidBack = nsIntRect(0, 0, mBackBuffer->GetSize().width, mBackBuffer->GetSize().height);
   }
 
-  ValidateBackBufferFromFront(aDirtyRegion, aCanRerasterizeValidRegion);
+  ValidateBackBufferFromFront(aDirtyRegion, aCanRerasterizeValidRegion, aAddPaintedRegion);
 
   *aBackBufferOnWhite = mBackBufferOnWhite;
   return mBackBuffer;
@@ -927,6 +960,7 @@ ClientTiledLayerBuffer::PaintThebes(const nsIntRegion& aNewValidRegion,
   PROFILER_LABEL("ClientTiledLayerBuffer", "PaintThebesUpdate",
     js::ProfileEntry::Category::GRAPHICS);
 
+  mNewValidRegion = aNewValidRegion;
   Update(aNewValidRegion, aPaintRegion);
 
 #ifdef GFX_TILEDLAYER_PREF_WARNINGS
@@ -1073,12 +1107,18 @@ ClientTiledLayerBuffer::ValidateTile(TileClient aTile,
   bool usingSinglePaintBuffer = !!mSinglePaintDrawTarget;
   SurfaceMode mode;
   gfxContentType content = GetContentType(&mode);
+  nsIntRegion extraPainted;
   RefPtr<TextureClient> backBufferOnWhite;
   RefPtr<TextureClient> backBuffer =
     aTile.GetBackBuffer(offsetScaledDirtyRegion,
                         content, mode,
-                        &createdTextureClient, !usingSinglePaintBuffer,
+                        &createdTextureClient, extraPainted,
+                        !usingSinglePaintBuffer && !gfxPrefs::TiledDrawTargetEnabled(),
                         &backBufferOnWhite);
+
+  extraPainted.MoveBy(aTileOrigin);
+  extraPainted.And(extraPainted, mNewValidRegion);
+  mPaintedRegion.Or(mPaintedRegion, extraPainted);
 
   // the back buffer may have been already locked in ValidateBackBufferFromFront
   if (!backBuffer->IsLocked()) {
@@ -1114,30 +1154,23 @@ ClientTiledLayerBuffer::ValidateTile(TileClient aTile,
       }
     }
 
-    if (backBuffer->HasInternalBuffer()) {
-      // If our new buffer has an internal buffer, we don't want to keep another
-      // TextureClient around unnecessarily, so discard the back-buffer.
-      aTile.DiscardBackBuffer();
-    }
-
     // prepare an array of Moz2D tiles that will be painted into in PostValidate
     gfx::Tile moz2DTile;
-    gfx::Tile moz2DTileOnWhite;
-    moz2DTile.mDrawTarget = backBuffer->BorrowDrawTarget();
+    RefPtr<DrawTarget> dt = backBuffer->BorrowDrawTarget();
+    RefPtr<DrawTarget> dtOnWhite;
     if (backBufferOnWhite) {
-      moz2DTileOnWhite.mDrawTarget = backBufferOnWhite->BorrowDrawTarget();
+      dtOnWhite = backBufferOnWhite->BorrowDrawTarget();
+      moz2DTile.mDrawTarget = Factory::CreateDualDrawTarget(dt, dtOnWhite);
+    } else {
+      moz2DTile.mDrawTarget = dt;
     }
-    moz2DTile.mTileOrigin = moz2DTileOnWhite.mTileOrigin = gfx::IntPoint(aTileOrigin.x, aTileOrigin.y);
-    if (!moz2DTile.mDrawTarget ||
-        (backBufferOnWhite && !moz2DTileOnWhite.mDrawTarget)) {
+    moz2DTile.mTileOrigin = gfx::IntPoint(aTileOrigin.x, aTileOrigin.y);
+    if (!dt || (backBufferOnWhite && !dtOnWhite)) {
       aTile.DiscardFrontBuffer();
       return aTile;
     }
 
     mMoz2DTiles.push_back(moz2DTile);
-    if (backBufferOnWhite) {
-      mMoz2DTiles.push_back(moz2DTileOnWhite);
-    }
 
     nsIntRegionRectIterator it(aDirtyRegion);
     for (const nsIntRect* dirtyRect = it.Next(); dirtyRect != nullptr; dirtyRect = it.Next()) {
@@ -1152,14 +1185,14 @@ ClientTiledLayerBuffer::ValidateTile(TileClient aTile,
                             drawRect.width,
                             drawRect.height);
       gfx::IntPoint copyTarget(NS_roundf(drawRect.x), NS_roundf(drawRect.y));
-      // Mark the newly updated area as invalid in the front buffer
-      aTile.mInvalidFront.Or(aTile.mInvalidFront, nsIntRect(copyTarget.x, copyTarget.y, copyRect.width, copyRect.height));
+      // Mark the newly updated area as invalid in the back buffer
+      aTile.mInvalidBack.Or(aTile.mInvalidBack, nsIntRect(copyTarget.x, copyTarget.y, copyRect.width, copyRect.height));
 
       if (mode == SurfaceMode::SURFACE_COMPONENT_ALPHA) {
-        moz2DTile.mDrawTarget->FillRect(drawRect, ColorPattern(Color(0.0, 0.0, 0.0, 1.0)));
-        moz2DTileOnWhite.mDrawTarget->FillRect(drawRect, ColorPattern(Color(1.0, 1.0, 1.0, 1.0)));
+        dt->FillRect(drawRect, ColorPattern(Color(0.0, 0.0, 0.0, 1.0)));
+        dtOnWhite->FillRect(drawRect, ColorPattern(Color(1.0, 1.0, 1.0, 1.0)));
       } else if (content == gfxContentType::COLOR_ALPHA) {
-        moz2DTile.mDrawTarget->ClearRect(drawRect);
+        dt->ClearRect(drawRect);
       }
     }
 
@@ -1409,7 +1442,7 @@ ClientTiledLayerBuffer::ComputeProgressiveUpdateRegion(const nsIntRegion& aInval
       viewTransform);
 #endif
 
-  TILING_LOG("TILING %p: Progressive update view transform %f %f zoom %f abort %d\n", mThebesLayer, viewTransform.mTranslation.x, viewTransform.mTranslation.y, viewTransform.mScale.scale, abortPaint);
+  TILING_LOG("TILING %p: Progressive update view transform %f %f zoom %f abort %d\n", mThebesLayer, viewTransform.mTranslation.x.value, viewTransform.mTranslation.y.value, viewTransform.mScale.scale, abortPaint);
 
   if (abortPaint) {
     // We ignore if front-end wants to abort if this is the first,

@@ -170,7 +170,7 @@ BufObject.prototype = {
 
     // We're going to leave room for the parcel size at the beginning.
     this.outgoingIndex = this.PARCEL_SIZE_SIZE;
-    this.writeInt32(type);
+    this.writeInt32(this._reMapRequestType(type));
     this.writeInt32(this.mToken);
 
     if (!options) {
@@ -190,6 +190,28 @@ BufObject.prototype = {
 
   onSendParcel: function(parcel) {
     postRILMessage(this.context.clientId, parcel);
+  },
+
+  /**
+   * Remapping the request type to different values based on RIL version.
+   * We only have to do this for SUBSCRIPTION right now, so I just make it
+   * simple. A generic logic or structure could be discussed if we have more
+   * use cases, especially the cases from different partners.
+   */
+  _reMapRequestType: function(type) {
+    let newType = type;
+    switch (type) {
+      case REQUEST_SET_UICC_SUBSCRIPTION:
+      case REQUEST_SET_DATA_SUBSCRIPTION:
+        if (this.context.RIL.version < 9) {
+          // Shift the CAF's proprietary parcels. Please see
+          // https://www.codeaurora.org/cgit/quic/la/platform/hardware/ril/tree/include/telephony/ril.h?h=b2g_jb_3.2
+          newType = type - 1;
+        }
+        break;
+    }
+
+    return newType;
   }
 };
 
@@ -355,6 +377,10 @@ function RilObject(aContext) {
 RilObject.prototype = {
   context: null,
 
+  /**
+   * RIL version.
+   */
+  version: null,
   v5Legacy: null,
 
   /**
@@ -6746,8 +6772,6 @@ RilObject.prototype[REQUEST_SET_DATA_SUBSCRIPTION] = function REQUEST_SET_DATA_S
   }
   this.sendChromeMessage(options);
 };
-RilObject.prototype[REQUEST_GET_UICC_SUBSCRIPTION] = null;
-RilObject.prototype[REQUEST_GET_DATA_SUBSCRIPTION] = null;
 RilObject.prototype[REQUEST_GET_UNLOCK_RETRY_COUNT] = function REQUEST_GET_UNLOCK_RETRY_COUNT(length, options) {
   options.success = (options.rilRequestError === 0);
   if (!options.success) {
@@ -7094,10 +7118,10 @@ RilObject.prototype[UNSOLICITED_RIL_CONNECTED] = function UNSOLICITED_RIL_CONNEC
     return;
   }
 
-  let version = this.context.Buf.readInt32List()[0];
-  this.v5Legacy = (version < 5);
+  this.version = this.context.Buf.readInt32List()[0];
+  this.v5Legacy = (this.version < 5);
   if (DEBUG) {
-    this.context.debug("Detected RIL version " + version);
+    this.context.debug("Detected RIL version " + this.version);
     this.context.debug("this.v5Legacy is " + this.v5Legacy);
   }
 
@@ -10844,7 +10868,6 @@ StkCommandParamsFactoryObject.prototype = {
     ctlv = StkProactiveCmdHelper.searchForTag(COMPREHENSIONTLV_TAG_ICON_ID_LIST, ctlvs);
     if (ctlv) {
       iconIdList = ctlv.value;
-      menu.itemIconSelfExplanatory = iconIdList.qualifier == 0 ? true : false;
       ids = ids.concat(iconIdList.identifiers);
     }
 
@@ -10862,8 +10885,10 @@ StkCommandParamsFactoryObject.prototype = {
         menu.icons = result.shift();
       }
 
+      let iconSelfExplanatory = iconIdList.qualifier == 0 ? true : false;
       for (let i = 0; i < result.length; i++) {
         menu.items[i].icons = result[i];
+        menu.items[i].iconSelfExplanatory = iconSelfExplanatory;
       }
 
       this.context.RIL.sendChromeMessage(cmdDetails);
@@ -15792,45 +15817,78 @@ IconLoaderObject.prototype = {
 
     switch (codingScheme) {
       case ICC_IMG_CODING_SCHEME_BASIC:
-        return {pixels: rawData.body,
-                width: rawData.width,
-                height: rawData.height};
+        return this._decodeBasicImage(rawData.width, rawData.height, rawData.body);
 
       case ICC_IMG_CODING_SCHEME_COLOR:
       case ICC_IMG_CODING_SCHEME_COLOR_TRANSPARENCY:
-        let bitsPerImgPoint = rawData.bitsPerImgPoint;
-        let mask = 0xff >> (8 - bitsPerImgPoint);
-        let bitsStartOffset = 8 - bitsPerImgPoint;
-        let bitIndex = bitsStartOffset;
-        let numOfClutEntries = rawData.numOfClutEntries;
-        let clut = rawData.clut;
-        let body = rawData.body;
-        let numOfPixels = rawData.width * rawData.height;
-        let pixelIndex = 0;
-        let currentByteIndex = 0;
-        let currentByte = body[currentByteIndex++];
-
-        let pixels = [];
-        while (pixelIndex < numOfPixels) {
-          // Reassign data and index for every byte (8 bits).
-          if (bitIndex < 0) {
-            currentByte = body[currentByteIndex++];
-            bitIndex = bitsStartOffset;
-          }
-          let clutEntry = ((currentByte >> bitIndex) & mask);
-          let clutIndex = clutEntry * ICC_CLUT_ENTRY_SIZE;
-          let alpha = codingScheme == ICC_IMG_CODING_SCHEME_COLOR_TRANSPARENCY &&
-                      clutEntry == numOfClutEntries - 1;
-          pixels[pixelIndex++] = {red: clut[clutIndex],
-                                  green: clut[clutIndex + 1],
-                                  blue: clut[clutIndex + 2],
-                                  alpha: alpha ? 0x00 : 0xff};
-          bitIndex -= bitsPerImgPoint;
-        }
-        return {pixels: pixels,
-                width: rawData.width,
-                height: rawData.height};
+        return this._decodeColorImage(codingScheme,
+                                      rawData.width, rawData.height,
+                                      rawData.bitsPerImgPoint,
+                                      rawData.numOfClutEntries,
+                                      rawData.clut, rawData.body);
     }
+
+    return null;
+  },
+
+  _decodeBasicImage: function(width, height, body) {
+    let numOfPixels = width * height;
+    let pixelIndex = 0;
+    let currentByteIndex = 0;
+    let currentByte = 0x00;
+
+    const BLACK = 0x000000FF;
+    const WHITE = 0xFFFFFFFF;
+
+    let pixels = [];
+    while (pixelIndex < numOfPixels) {
+      // Reassign data and index for every byte (8 bits).
+      if (pixelIndex % 8 == 0) {
+        currentByte = body[currentByteIndex++];
+      }
+      let bit = (currentByte >> (7 - (pixelIndex % 8))) & 0x01;
+      pixels[pixelIndex++] = bit ? WHITE : BLACK;
+    }
+
+    return {pixels: pixels,
+            codingScheme: GECKO_IMG_CODING_SCHEME_BASIC,
+            width: width,
+            height: height};
+  },
+
+  _decodeColorImage: function(codingScheme, width, height, bitsPerImgPoint,
+                              numOfClutEntries, clut, body) {
+    let mask = 0xff >> (8 - bitsPerImgPoint);
+    let bitsStartOffset = 8 - bitsPerImgPoint;
+    let bitIndex = bitsStartOffset;
+    let numOfPixels = width * height;
+    let pixelIndex = 0;
+    let currentByteIndex = 0;
+    let currentByte = body[currentByteIndex++];
+
+    let pixels = [];
+    while (pixelIndex < numOfPixels) {
+      // Reassign data and index for every byte (8 bits).
+      if (bitIndex < 0) {
+        currentByte = body[currentByteIndex++];
+        bitIndex = bitsStartOffset;
+      }
+      let clutEntry = ((currentByte >> bitIndex) & mask);
+      let clutIndex = clutEntry * ICC_CLUT_ENTRY_SIZE;
+      let alpha = codingScheme == ICC_IMG_CODING_SCHEME_COLOR_TRANSPARENCY &&
+                  clutEntry == numOfClutEntries - 1;
+      pixels[pixelIndex++] = alpha ? 0x00
+                                   : (clut[clutIndex] << 24 |
+                                      clut[clutIndex + 1] << 16 |
+                                      clut[clutIndex + 2] << 8 |
+                                      0xFF) >>> 0;
+      bitIndex -= bitsPerImgPoint;
+    }
+
+    return {pixels: pixels,
+            codingScheme: ICC_IMG_CODING_SCHEME_TO_GECKO[codingScheme],
+            width: width,
+            height: height};
   },
 };
 
