@@ -81,7 +81,7 @@
  * as a singleton.
  */
 
-class NS_COM_GLUE GenericClassInfo : public nsIClassInfo
+class GenericClassInfo : public nsIClassInfo
 {
 public:
   struct ClassInfoData
