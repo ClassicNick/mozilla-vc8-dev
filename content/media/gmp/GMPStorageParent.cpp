@@ -126,7 +126,7 @@ OpenStorageFile(const nsCString& aRecordName,
   recordNameHash.AppendInt(HashString(aRecordName.get()));
   f->Append(recordNameHash);
 
-  auto mode = PR_RDWR | PR_CREATE_FILE;
+  int mode = PR_RDWR | PR_CREATE_FILE;
   if (aMode == Truncate) {
     mode |= PR_TRUNCATE;
   }
@@ -193,8 +193,8 @@ GMPStorageParent::RecvRead(const nsCString& aRecordName)
     return true;
   }
   data.SetLength(len);
-  auto bytesRead = PR_Read(fd, data.Elements(), len);
-  auto res = (bytesRead == len) ? GMPNoErr : GMPGenericErr;
+  PRInt32 bytesRead = PR_Read(fd, data.Elements(), len);
+  GMPErr res = (bytesRead == len) ? GMPNoErr : GMPGenericErr;
   unused << SendReadComplete(aRecordName, res, data);
 
   return true;
@@ -231,7 +231,7 @@ GMPStorageParent::RecvWrite(const nsCString& aRecordName,
   mFiles.Put(aRecordName, fd);
 
   int32_t bytesWritten = PR_Write(fd, aBytes.Elements(), aBytes.Length());
-  auto res = (bytesWritten == (int32_t)aBytes.Length()) ? GMPNoErr : GMPGenericErr;
+  GMPErr res = (bytesWritten == (int32_t)aBytes.Length()) ? GMPNoErr : GMPGenericErr;
   unused << SendWriteComplete(aRecordName, res);
   return true;
 }

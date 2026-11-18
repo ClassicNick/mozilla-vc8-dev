@@ -16,8 +16,8 @@
 #include "prlog.h"
 
 #ifdef PR_LOGGING
-PRLogModuleInfo* GetDemuxerLog();
-#define LOG(...) PR_LOG(GetDemuxerLog(), PR_LOG_DEBUG, (__VA_ARGS__))
+PRLogModuleInfo* GetAppleMediaLog();
+#define LOG(...) PR_LOG(GetAppleMediaLog(), PR_LOG_DEBUG, (__VA_ARGS__))
 #else
 #define LOG(...)
 #endif
@@ -55,7 +55,7 @@ AppleATDecoder::AppleATDecoder(const mp4_demuxer::AudioDecoderConfig& aConfig,
 
 AppleATDecoder::~AppleATDecoder()
 {
-  MOZ_COUNT_DTOR(AppleATDecoer);
+  MOZ_COUNT_DTOR(AppleATDecoder);
   MOZ_ASSERT(!mConverter);
   MOZ_ASSERT(!mStream);
 }
@@ -129,6 +129,7 @@ nsresult
 AppleATDecoder::Flush()
 {
   LOG("Flushing AudioToolbox AAC decoder");
+  mTaskQueue->Flush();
   OSStatus rv = AudioConverterReset(mConverter);
   if (rv) {
     LOG("Error %d resetting AudioConverter", rv);

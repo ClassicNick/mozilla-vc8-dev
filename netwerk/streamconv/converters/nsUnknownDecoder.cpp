@@ -26,9 +26,9 @@
 
 #define MAX_BUFFER_SIZE 512u
 
-NS_IMPL_ISUPPORTS(nsUnknownDecoder::ConvertedStreamListener,
-                  nsIStreamListener,
-                  nsIRequestObserver)
+NS_IMPL_ISUPPORTS2(nsUnknownDecoder::ConvertedStreamListener,
+                   nsIStreamListener,
+                   nsIRequestObserver)
 
 nsUnknownDecoder::ConvertedStreamListener::
                   ConvertedStreamListener(nsUnknownDecoder *aDecoder)

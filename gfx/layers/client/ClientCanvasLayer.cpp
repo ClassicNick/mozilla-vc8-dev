@@ -121,7 +121,7 @@ ClientCanvasLayer::Initialize(const Data& aData)
 
     if (mStream) {
       // We're using a stream other than the one in the default screen
-      mFactory = Move(factory);
+      mFactory = factory;
       if (!mFactory) {
         // Absolutely must have a factory here, so create a basic one
         mFactory = MakeUnique<SurfaceFactory_Basic>(mGLContext, caps);
@@ -139,7 +139,7 @@ ClientCanvasLayer::Initialize(const Data& aData)
         MOZ_ASSERT(producer, "Failed to create initial canvas surface with basic factory");
       }
     } else if (factory) {
-      screen->Morph(Move(factory), streamType);
+      screen->Morph(factory, streamType);
     }
   }
 }

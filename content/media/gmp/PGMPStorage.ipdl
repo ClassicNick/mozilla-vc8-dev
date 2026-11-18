@@ -6,6 +6,8 @@
 include protocol PGMP;
 include GMPTypes;
 
+include "GMPMessageUtils.h";
+
 using GMPErr from "gmp-errors.h";
 
 namespace mozilla {

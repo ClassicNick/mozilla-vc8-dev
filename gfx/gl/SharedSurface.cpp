@@ -281,7 +281,7 @@ SurfaceFactory::NewSharedSurface(const gfx::IntSize& size)
         UniquePtr<SharedSurface> cur = mScraps.Pop();
 
         if (cur->mSize == size)
-            return Move(cur);
+            return cur;
 
         // Let `cur` be destroyed as it falls out of scope, if it wasn't
         // moved.
@@ -297,7 +297,7 @@ SurfaceFactory::Recycle(UniquePtr<SharedSurface> surf)
     MOZ_ASSERT(surf);
 
     if (surf->mType == mType) {
-        mScraps.Push(Move(surf));
+        mScraps.Push(surf);
     }
 }
 

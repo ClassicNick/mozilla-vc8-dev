@@ -30,13 +30,13 @@ SharedSurface_EGLImage::Create(GLContext* prodGL,
     UniquePtr<SharedSurface_EGLImage> ret;
 
     if (!HasExtensions(egl, prodGL)) {
-        return Move(ret);
+        return ret;
     }
 
     MOZ_ALWAYS_TRUE(prodGL->MakeCurrent());
     GLuint prodTex = CreateTextureForOffscreen(prodGL, formats, size);
     if (!prodTex) {
-        return Move(ret);
+        return ret;
     }
 
     EGLClientBuffer buffer = reinterpret_cast<EGLClientBuffer>(prodTex);
@@ -45,12 +45,12 @@ SharedSurface_EGLImage::Create(GLContext* prodGL,
                                        nullptr);
     if (!image) {
         prodGL->fDeleteTextures(1, &prodTex);
-        return Move(ret);
+        return ret;
     }
 
     ret.reset( new SharedSurface_EGLImage(prodGL, egl, size, hasAlpha,
                                           formats, prodTex, image) );
-    return Move(ret);
+    return ret;
 }
 
 bool
@@ -230,7 +230,7 @@ SurfaceFactory_EGLImage::Create(GLContext* prodGL,
         ret.reset( new ptrT(prodGL, context, caps) );
     }
 
-    return Move(ret);
+    return ret;
 }
 
 } /* namespace gfx */

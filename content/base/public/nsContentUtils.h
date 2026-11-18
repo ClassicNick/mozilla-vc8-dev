@@ -1572,10 +1572,6 @@ public:
   static nsresult CheckSameOrigin(nsIChannel *aOldChannel, nsIChannel *aNewChannel);
   static nsIInterfaceRequestor* GetSameOriginChecker();
 
-  // Trace the safe JS context.
-  static void TraceSafeJSContext(JSTracer* aTrc);
-
-
   /**
    * Get the Origin of the passed in nsIPrincipal or nsIURI. If the passed in
    * nsIURI or the URI of the passed in nsIPrincipal does not have a host, the
@@ -2252,9 +2248,7 @@ private:
 
   static bool sInitialized;
   static uint32_t sScriptBlockerCount;
-#ifdef DEBUG
   static uint32_t sDOMNodeRemovedSuppressCount;
-#endif
   static uint32_t sMicroTaskLevel;
   // Not an nsCOMArray because removing elements from those is slower
   static nsTArray< nsCOMPtr<nsIRunnable> >* sBlockedScriptRunners;
@@ -2311,14 +2305,10 @@ class MOZ_STACK_CLASS nsAutoScriptBlockerSuppressNodeRemoved :
                           public nsAutoScriptBlocker {
 public:
   nsAutoScriptBlockerSuppressNodeRemoved() {
-#ifdef DEBUG
     ++nsContentUtils::sDOMNodeRemovedSuppressCount;
-#endif
   }
   ~nsAutoScriptBlockerSuppressNodeRemoved() {
-#ifdef DEBUG
     --nsContentUtils::sDOMNodeRemovedSuppressCount;
-#endif
   }
 };
 

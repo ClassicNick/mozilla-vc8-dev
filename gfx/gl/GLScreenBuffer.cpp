@@ -36,7 +36,7 @@ GLScreenBuffer::Create(GLContext* gl,
     if (caps.antialias &&
         !gl->IsSupported(GLFeature::framebuffer_multisample))
     {
-        return Move(ret);
+        return ret;
     }
 
     UniquePtr<SurfaceFactory> factory;
@@ -61,13 +61,13 @@ GLScreenBuffer::Create(GLContext* gl,
         factory = MakeUnique<SurfaceFactory_Basic>(gl, caps);
     }
 
-    auto streamType = SurfaceStream::ChooseGLStreamType(SurfaceStream::MainThread,
+    SurfaceStreamType streamType = SurfaceStream::ChooseGLStreamType(SurfaceStream::MainThread,
                                                         caps.preserve);
     RefPtr<SurfaceStream> stream;
     stream = SurfaceStream::CreateForType(streamType, gl, nullptr);
 
-    ret.reset( new GLScreenBuffer(gl, caps, Move(factory), stream) );
-    return Move(ret);
+    ret.reset( new GLScreenBuffer(gl, caps, factory, stream) );
+    return ret;
 }
 
 GLScreenBuffer::~GLScreenBuffer()
@@ -381,7 +381,7 @@ GLScreenBuffer::Morph(UniquePtr<SurfaceFactory> newFactory,
     MOZ_ASSERT(mStream);
 
     if (newFactory) {
-        mFactory = Move(newFactory);
+        mFactory = newFactory;
     }
 
     if (mStream->mType == streamType)
@@ -421,8 +421,8 @@ GLScreenBuffer::Attach(SharedSurface* surf, const gfx::IntSize& size)
             return false;
         }
 
-        mDraw = Move(draw);
-        mRead = Move(read);
+        mDraw = draw;
+        mRead = read;
     }
 
     // Check that we're all set up.
@@ -581,7 +581,7 @@ DrawBuffer::Create(GLContext* const gl,
     if (!gl->IsFramebufferComplete(fb))
         return false;
 
-    *out_buffer = Move(ret);
+    *out_buffer = ret;
     return true;
 }
 
@@ -655,7 +655,7 @@ ReadBuffer::Create(GLContext* gl,
         ret = nullptr;
     }
 
-    return Move(ret);
+    return ret;
 }
 
 ReadBuffer::~ReadBuffer()

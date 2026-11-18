@@ -153,7 +153,7 @@ protected:
                    const RefPtr<SurfaceStream>& stream)
         : mGL(gl)
         , mCaps(caps)
-        , mFactory(Move(factory))
+        , mFactory(factory)
         , mStream(stream)
         , mDraw(nullptr)
         , mRead(nullptr)

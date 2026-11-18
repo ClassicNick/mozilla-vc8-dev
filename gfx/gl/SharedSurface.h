@@ -141,7 +141,7 @@ public:
             mQueue.pop();
         }
 
-        return Move(ret);
+        return ret;
     }
 };
 

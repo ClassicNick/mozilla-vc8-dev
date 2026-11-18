@@ -18,7 +18,7 @@
  * binding's <xbl:content> element.
  */
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 #include "nsAutoPtr.h"
 
 class nsIContent;
