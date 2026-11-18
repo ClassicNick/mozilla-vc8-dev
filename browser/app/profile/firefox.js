@@ -980,7 +980,11 @@ pref("browser.safebrowsing.reportMalwareURL", "http://%LOCALE%.malware-report.mo
 pref("browser.safebrowsing.reportMalwareErrorURL", "http://%LOCALE%.malware-error.mozilla.com/?hl=%LOCALE%");
 
 pref("browser.safebrowsing.malware.reportURL", "https://safebrowsing.google.com/safebrowsing/diagnostic?client=%NAME%&hl=%LOCALE%&site=");
+
+// Turn off remote lookups in beta and stable channel.
+#ifndef RELEASE_BUILD
 pref("browser.safebrowsing.appRepURL", "https://sb-ssl.google.com/safebrowsing/clientreport/download?key=%GOOGLE_API_KEY%");
+#endif
 
 #ifdef MOZILLA_OFFICIAL
 // Normally the "client ID" sent in updates is appinfo.name, but for
@@ -1281,8 +1285,8 @@ pref("devtools.appmanager.enabled", true);
 pref("devtools.appmanager.lastTab", "help");
 pref("devtools.appmanager.manifestEditor.enabled", true);
 
-// Disable devtools webide until bug 1007059
-pref("devtools.webide.enabled", false);
+// Enable DevTools WebIDE by default
+pref("devtools.webide.enabled", true);
 
 // Toolbox preferences
 pref("devtools.toolbox.footer.height", 250);
@@ -1523,7 +1527,7 @@ pref("browser.newtabpage.enhanced", false);
 pref("browser.newtabpage.rows", 3);
 
 // number of columns of newtab grid
-pref("browser.newtabpage.columns", 3);
+pref("browser.newtabpage.columns", 5);
 
 // directory tiles download URL
 pref("browser.newtabpage.directory.source", "chrome://global/content/directoryLinks.json");
@@ -1583,11 +1587,21 @@ pref("loop.retry_delay.start", 60000);
 pref("loop.retry_delay.limit", 300000);
 pref("loop.feedback.baseUrl", "https://input.mozilla.org/api/v1/feedback");
 pref("loop.feedback.product", "Loop");
+pref("loop.debug.websocket", false);
 
 // serverURL to be assigned by services team
 pref("services.push.serverURL", "wss://push.services.mozilla.com/");
 
 pref("social.sidebar.unload_timeout_ms", 10000);
+
+// activation from inside of share panel is possible if activationPanelEnabled
+// is true. Pref'd off for release while usage testing is done through beta.
+#ifdef RELEASE_BUILD
+pref("social.share.activationPanelEnabled", false);
+#else
+pref("social.share.activationPanelEnabled", true);
+#endif
+pref("social.shareDirectory", "https://activations.cdn.mozilla.net/en-US/sharePanel.html");
 
 pref("dom.identity.enabled", false);
 

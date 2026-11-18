@@ -27,6 +27,7 @@ WEBIDL_FILES = [
     'AnimationTimeline.webidl',
     'AppInfo.webidl',
     'AppNotificationServiceOptions.webidl',
+    'Apps.webidl',
     'APZTestData.webidl',
     'ArchiveReader.webidl',
     'ArchiveRequest.webidl',
@@ -314,6 +315,8 @@ WEBIDL_FILES = [
     'RTCIdentityAssertion.webidl',
     'RTCPeerConnection.webidl',
     'RTCPeerConnectionStatic.webidl',
+    'RTCRtpReceiver.webidl',
+    'RTCRtpSender.webidl',
     'RTCSessionDescription.webidl',
     'RTCStatsReport.webidl',
     'Screen.webidl',
@@ -323,6 +326,7 @@ WEBIDL_FILES = [
     'ServiceWorker.webidl',
     'ServiceWorkerContainer.webidl',
     'ServiceWorkerGlobalScope.webidl',
+    'ServiceWorkerRegistration.webidl',
     'SettingsManager.webidl',
     'ShadowRoot.webidl',
     'SharedWorker.webidl',
@@ -649,6 +653,7 @@ GENERATED_EVENTS_WEBIDL_FILES = [
     'HashChangeEvent.webidl',
     'IccChangeEvent.webidl',
     'MediaStreamEvent.webidl',
+    'MediaStreamTrackEvent.webidl',
     'MozApplicationEvent.webidl',
     'MozClirModeEvent.webidl',
     'MozContactChangeEvent.webidl',
@@ -720,6 +725,11 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gonk':
         'MozWifiP2pStatusChangeEvent.webidl',
         'MozWifiStationInfoEvent.webidl',
         'MozWifiStatusChangeEvent.webidl',
+    ]
+
+if CONFIG['MOZ_NFC']:
+    GENERATED_EVENTS_WEBIDL_FILES += [
+        'MozNFCPeerEvent.webidl',
     ]
 
 if CONFIG['MOZ_BUILD_APP'] in ['browser', 'xulrunner']:

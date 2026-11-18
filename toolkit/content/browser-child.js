@@ -89,6 +89,7 @@ let WebProgressListener = {
       json.canGoForward = docShell.canGoForward;
       json.documentURI = content.document.documentURIObject.spec;
       json.charset = content.document.characterSet;
+      json.mayEnableCharacterEncodingMenu = docShell.mayEnableCharacterEncodingMenu;
     }
 
     sendAsyncMessage("Content:LocationChange", json, objects);
@@ -353,6 +354,11 @@ addEventListener("TextZoomChange", function (aEvent) {
   }
 }, false);
 
+addMessageListener("UpdateCharacterSet", function (aMessage) {
+  docShell.charset = aMessage.data.value;
+  docShell.gatherCharsetMenuTelemetry();
+});
+
 // The AddonsChild needs to be rooted so that it stays alive as long as
 // the tab.
 let AddonsChild;
@@ -428,8 +434,12 @@ let AutoCompletePopup = {
   }
 }
 
-let [initData] = sendSyncMessage("Browser:Init");
-docShell.useGlobalHistory = initData.useGlobalHistory;
-if (initData.initPopup) {
-  setTimeout(function() AutoCompletePopup.init(), 0);
+// We may not get any responses to Browser:Init if the browser element
+// is torn down too quickly.
+let initData = sendSyncMessage("Browser:Init");
+if (initData.length) {
+  docShell.useGlobalHistory = initData[0].useGlobalHistory;
+  if (initData[0].initPopup) {
+    setTimeout(() => AutoCompletePopup.init(), 0);
+  }
 }
