@@ -77,7 +77,7 @@ public:
 protected:
   class SourceReference : public nsReferencedElement {
   public:
-    SourceReference(SVGUseElement* aContainer) : mContainer(aContainer) {}
+    explicit SourceReference(SVGUseElement* aContainer) : mContainer(aContainer) {}
   protected:
     virtual void ElementChanged(Element* aFrom, Element* aTo) MOZ_OVERRIDE {
       nsReferencedElement::ElementChanged(aFrom, aTo);

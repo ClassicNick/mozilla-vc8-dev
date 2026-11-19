@@ -66,7 +66,7 @@ public:
 protected:
   class PathReference : public nsReferencedElement {
   public:
-    PathReference(SVGMPathElement* aMpathElement) :
+    explicit PathReference(SVGMPathElement* aMpathElement) :
       mMpathElement(aMpathElement) {}
   protected:
     // We need to be notified when target changes, in order to request a sample

@@ -98,7 +98,7 @@ protected:
 class DistributedContentList : public nsINodeList
 {
 public:
-  DistributedContentList(HTMLContentElement* aHostElement);
+  explicit DistributedContentList(HTMLContentElement* aHostElement);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS(DistributedContentList)

@@ -617,7 +617,7 @@ protected:
 
   class WakeLockBoolWrapper {
   public:
-    WakeLockBoolWrapper(bool val = false)
+    explicit WakeLockBoolWrapper(bool val = false)
       : mValue(val), mCanPlay(true), mOuter(nullptr) {}
 
     ~WakeLockBoolWrapper();
